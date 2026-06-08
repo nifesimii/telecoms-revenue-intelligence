@@ -1,0 +1,158 @@
+// Axios client. Wraps backend FastAPI endpoints.
+//
+// Base URL is taken from VITE_API_URL (defaults to http://localhost:8000).
+// All three exported helpers return the response body directly so callers
+// don't have to dig past `.data`.
+
+import axios from 'axios';
+
+const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+const api = axios.create({
+  baseURL,
+  timeout: 60_000, // /chat can take ~30s when Claude runs tools
+  headers: { 'Content-Type': 'application/json' },
+});
+
+/**
+ * POST /chat
+ * @param {string} message The user's question.
+ * @param {Array<{role: string, content: string}>} conversation_history Prior turns.
+ * @param {string|null} mon_period Optional reporting period to pin (YYYYMM).
+ * @returns {Promise<{response: string, tools_called: string[], raw_data: object, error: string|null}>}
+ */
+export async function sendMessage(message, conversation_history = [], mon_period = null) {
+  const payload = { message, conversation_history };
+  if (mon_period) payload.mon_period = mon_period;
+  const { data } = await api.post('/chat', payload);
+  return data;
+}
+
+/**
+ * GET /periods
+ * @returns {Promise<{periods: string[]}>}
+ */
+export async function getPeriods() {
+  const { data } = await api.get('/periods');
+  return data;
+}
+
+/**
+ * GET /dealers?mon_period=YYYYMM
+ * @param {string|null} mon_period Optional reporting period; backend uses most recent if omitted.
+ * @returns {Promise<Array<{distributor_code: string, distributor_name: string, account_profile_class: string, total_activations: number, total_commission_ngn: number, zero_commission_count: number}>>}
+ */
+export async function getDealers(mon_period = null) {
+  const params = mon_period ? { mon_period } : {};
+  const { data } = await api.get('/dealers', { params });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2 — Activation Intelligence endpoints
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /activations/summary?mon_period=YYYYMM
+ * @param {string|null} mon_period
+ */
+export async function getActivationSummary(mon_period = null) {
+  const params = mon_period ? { mon_period } : {};
+  const { data } = await api.get('/activations/summary', { params });
+  return data;
+}
+
+/**
+ * GET /activations/variance?period_a=YYYYMM&period_b=YYYYMM
+ * @param {string} period_a
+ * @param {string} period_b
+ */
+export async function getActivationVariance(period_a, period_b) {
+  const { data } = await api.get('/activations/variance', {
+    params: { period_a, period_b },
+  });
+  return data;
+}
+
+/**
+ * GET /activations/exceptions?mon_period=YYYYMM
+ * @param {string|null} mon_period
+ */
+export async function getActivationExceptions(mon_period = null) {
+  const params = mon_period ? { mon_period } : {};
+  const { data } = await api.get('/activations/exceptions', { params });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Assurance Layer scaffolding endpoint
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /assurance/status?mon_period=YYYYMM
+ * @param {string|null} mon_period
+ * @returns {Promise<{period: string, modules: Array<object>}>}
+ */
+export async function getAssuranceStatus(mon_period = null) {
+  const params = mon_period ? { mon_period } : {};
+  const { data } = await api.get('/assurance/status', { params });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3 — Inventory Assurance endpoint
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /inventory/comparison?mon_period=YYYYMM
+ * @param {string|null} mon_period
+ * @param {boolean} include_within_allocation
+ */
+export async function getInventoryComparison(
+  mon_period = null,
+  include_within_allocation = false,
+) {
+  const params = {};
+  if (mon_period) params.mon_period = mon_period;
+  if (include_within_allocation) params.include_within_allocation = true;
+  const { data } = await api.get('/inventory/comparison', { params });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 — Payment Intelligence
+// ---------------------------------------------------------------------------
+
+/**
+ * GET /payments/summary?mon_period=YYYYMM
+ * @param {string|null} mon_period
+ */
+export async function getPaymentSummary(mon_period = null) {
+  const params = mon_period ? { mon_period } : {};
+  const { data } = await api.get('/payments/summary', { params });
+  return data;
+}
+
+/**
+ * GET /payments/exceptions?mon_period=YYYYMM
+ * @param {string|null} mon_period
+ */
+export async function getPaymentExceptions(mon_period = null) {
+  const params = mon_period ? { mon_period } : {};
+  const { data } = await api.get('/payments/exceptions', { params });
+  return data;
+}
+
+/**
+ * GET /payments/variance?period_a=YYYYMM&period_b=YYYYMM
+ * @param {string} period_a
+ * @param {string} period_b
+ */
+export async function getPaymentVariance(period_a, period_b) {
+  const { data } = await api.get('/payments/variance', {
+    params: { period_a, period_b },
+  });
+  return data;
+}
+
+export default api;
