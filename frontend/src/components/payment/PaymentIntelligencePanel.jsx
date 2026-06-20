@@ -232,15 +232,15 @@ export default function PaymentIntelligencePanel() {
         </div>
       )}
 
-      {/* Body: coverage card at natural height + tabbed table card that
-          fills remaining space and scrolls internally. ``min-h-0`` is
-          essential here — flex children default to ``min-height: auto``. */}
+      {/* Body: coverage card at natural height + tabbed table card below.
+          The body can scroll on short screens, and the table area has a real
+          minimum height so it never collapses to zero. */}
       <div className="flex-1 min-h-0 p-5 flex flex-col gap-4 overflow-hidden">
         <div className="shrink-0">
           <PaymentCoverageCard data={coverage} loading={loading} />
         </div>
 
-        <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-[360px] bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
           <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500 shrink-0 flex items-center justify-between">
             <span>
               {activeTab === 'exceptions' &&

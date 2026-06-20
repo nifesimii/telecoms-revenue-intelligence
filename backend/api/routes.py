@@ -118,35 +118,27 @@ def list_dealers(
         ),
     ),
 ) -> list[DealerSummary]:
-    """Direct data endpoint — bypasses the agent loop.
+    """Direct data endpoint — bypasses both the agent loop and the agent's
+    triaged tool-result envelope.
 
-    Calls ``get_dealer_summary`` through :mod:`tool_executor` so the same
-    envelope-shaping rules apply as when Claude invokes the tool. Returns the
-    rows projected into the lean :class:`DealerSummary` shape used by the
-    React dealer table (i.e. ``commission_by_denomination`` is dropped here —
-    the chat endpoint serves that level of detail).
+    The frontend needs the full dealer list to render its sidebar table, so
+    this endpoint calls :func:`execute_query` directly rather than going
+    through :mod:`tool_executor`. The triaged envelope returned to the agent
+    surfaces only the top must/worth-review rows, which is the wrong shape
+    for a UI list.
     """
     period = mon_period or _most_recent_period()
     if period is None:
         return []
 
-    result_block = tool_executor.execute_tool(
-        {
-            "id": "internal-list-dealers",
-            "name": "get_dealer_summary",
-            "input": {"mon_period": period},
-        }
-    )
-
-    if result_block.get("is_error"):
-        logger.error("GET /dealers tool failure: %s", result_block.get("content"))
+    try:
+        df = execute_query("get_dealer_summary", {"mon_period": period})
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("GET /dealers query failure")
         raise HTTPException(
             status_code=500,
-            detail=f"Dealer summary failed: {result_block.get('content')}",
+            detail=f"Dealer summary failed: {type(exc).__name__}: {exc}",
         )
-
-    envelope = _parse_envelope(result_block.get("content", ""))
-    rows = envelope.get("rows", [])
 
     return [
         DealerSummary(
@@ -157,7 +149,7 @@ def list_dealers(
             total_commission_ngn=float(row.get("total_commission_ngn", 0.0) or 0.0),
             zero_commission_count=int(row.get("zero_commission_count", 0) or 0),
         )
-        for row in rows
+        for row in df.to_dict(orient="records")
     ]
 
 

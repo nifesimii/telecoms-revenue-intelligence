@@ -5,6 +5,8 @@
 **Last updated:** June 2026  
 **Status:** Pilot phase — FBB first
 
+This is the always-resident (L1) core of the knowledge base. Reference material that is rarely needed inline — table schemas, calculation SQL, reconciliation anchors, documents inventory — has been moved to named addenda fetched on demand via the ``get_kb_section`` tool. Section numbers in this file preserve the original numbering (3-5 and 7-10 now point to addenda) so existing internal references still resolve.
+
 ---
 
 ## 1. Business Context
@@ -45,7 +47,7 @@ This report feeds directly into: Monthly Financial Reporting, Yearly Statutory A
 
 ### Rate card (from `mtnn_it.usp_dimension`)
 
-All commission rates are exactly **10% of the unit selling price**. There are four tiers based on device category:
+The MIFI / HYNETFLEX / HYNETFLEX_1 tiers are **exactly 10% of the unit selling price**. The **5G ROUTER tier is a tier-specific override** set to ₦8,215.81 (approximately 12% of unit price), not 10%. Use the rate-card value directly — **do not derive rates by computing 10% of the unit selling price for any tier**. The literal commission_rate column in `mtnn_it.usp_dimension` is the source of truth.
 
 
 | Product Denomination | Unit Selling Price (NGN) | Commission Rate (NGN) | Example Devices                                             |
@@ -81,155 +83,21 @@ All partner classes are eligible for both activation and ORSC commissions. Class
 
 ---
 
-## 3. Data Architecture
+## 3-5, 7-10. Extended reference — see addenda
 
-### Source systems
+The following reference material has been moved out of L1 and into named addenda. Fetch on demand via ``get_kb_section`` — each call costs roughly the size of that one addendum, instead of paying for everything on every request.
 
+| Section | Topic                                            | Fetch via                              |
+| ------- | ------------------------------------------------ | -------------------------------------- |
+| 3       | Source-system inventory + development schema     | ``get_kb_section("data_architecture")``        |
+| 4       | Column-level table schemas (dev_act, ORSC, USP)  | ``get_kb_section("table_schemas")``            |
+| 5       | Commission calculation pseudo-SQL                | ``get_kb_section("calculation_logic")``        |
+| 7       | FTTH subscriptions CDR query                     | ``get_kb_section("ftth_subscriptions_query")`` |
+| 8       | Reconciliation anchors used by Finance           | ``get_kb_section("reconciliation_reference")`` |
+| 9       | Underpinning documents inventory                 | ``get_kb_section("documents_inventory")``      |
+| 10      | Known gaps in this KB                            | ``get_kb_section("gaps_and_missing")``         |
 
-| Table                            | Schema         | Description                                                                  |
-| -------------------------------- | -------------- | ---------------------------------------------------------------------------- |
-| `device_activation_m`            | `dataops_prod` | Raw device activation records — one row per IMEI activation event            |
-| `device_orsc_summary`            | `dataops_prod` | Monthly ORSC summary — subscription revenue per active IMEI                  |
-| `ifs_vw_invoiced_sales_tran_new` | `flare_8`      | Oracle IFS invoiced sales — unit selling prices and order amounts            |
-| `tas_augmented_customer_master`  | `flare_8`      | Trade partner master — maps `distributor_code` to `partner_type`             |
-| `usp_dimension`                  | `mtnn_it`      | Unit Selling Price dimension — product pricing and commission rates by month |
-| `cs6_ccn_cdr`                    | `flare_8`      | CDR data — FBB/FIBRENET subscription revenue (FTTH subscriptions)            |
-
-
-### Development (staging) tables
-
-
-| Table                  | Schema        | Contents                                                       |
-| ---------------------- | ------------- | -------------------------------------------------------------- |
-| `fbb_comm_dev_act`     | `development` | Processed device activation commission records                 |
-| `fbb_comm_inv_sales`   | `development` | Processed invoiced sales records                               |
-| `fbb_comm_orsc`        | `development` | Processed ORSC commission records                              |
-| `fbb_comm_dev_act_rpt` | `development` | Final report output — product_code, product_name, tbl_dt       |
-| `usp_dimension`        | `development` | Monthly copy of mtnn_it.usp_dimension for the reporting period |
-
-
-### Script location
-
-`/opt/airflow/progs/fbb_commission/fbb_commission.py`
-
----
-
-## 4. Table Schemas
-
-### `development.fbb_comm_dev_act` — Device Activation
-
-
-| Field                 | Type    | Source                                 | Description                                          |
-| --------------------- | ------- | -------------------------------------- | ---------------------------------------------------- |
-| imei                  | BIGINT  | device_activation_m                    | Device IMEI — unique device identifier               |
-| distributor_code      | BIGINT  | device_activation_m                    | Partner ID — joins to TAS master                     |
-| distributor_name      | VARCHAR | device_activation_m                    | Partner name                                         |
-| account_profile_class | VARCHAR | tas_augmented_customer_master          | Partner type (FIXED BROADBAND, DATA PARTNERS, etc.)  |
-| product_code          | BIGINT  | device_activation_m                    | Product SKU code                                     |
-| product_name          | VARCHAR | device_activation_m                    | Full product description string                      |
-| invoice_date          | VARCHAR | device_activation_m                    | Date device was invoiced to partner                  |
-| source                | VARCHAR | hardcoded                              | Always 'DEVICE_ACTIVATION'                           |
-| first_activation_date | VARCHAR | device_activation_m                    | Timestamp of first subscriber activation             |
-| mon_period            | BIGINT  | derived                                | Reporting month in YYYYMM format                     |
-| unit_selling_price    | DOUBLE  | usp_dimension (joined on product_name) | Price from USP dimension for that month              |
-| product_denomination  | VARCHAR | usp_dimension                          | Device tier (MIFI, HYNETFLEX, etc.)                  |
-| commission_rate       | DOUBLE  | usp_dimension                          | 10% of unit_selling_price; NULL or 0 if no USP match |
-| tbl_dt                | BIGINT  | ifs_vw_invoiced_sales_tran_new         | Invoice date from Oracle IFS                         |
-
-
-### `development.fbb_comm_orsc` — ORSC
-
-
-| Field                    | Type    | Source                         | Description                                                     |
-| ------------------------ | ------- | ------------------------------ | --------------------------------------------------------------- |
-| imei                     | BIGINT  | device_orsc_summary            | Device IMEI                                                     |
-| distributor_code         | BIGINT  | device_orsc_summary            | Partner ID                                                      |
-| distributor_name         | VARCHAR | device_orsc_summary            | Partner name                                                    |
-| account_profile_class    | VARCHAR | tas_augmented_customer_master  | Partner type                                                    |
-| product_name             | VARCHAR | device_orsc_summary            | Product description                                             |
-| product_code             | BIGINT  | device_orsc_summary            | Product SKU                                                     |
-| data_subscription_amount | DOUBLE  | device_orsc_summary            | Monthly subscription revenue for this IMEI                      |
-| invoice_date             | VARCHAR | device_orsc_summary            | Invoice date                                                    |
-| source                   | VARCHAR | hardcoded                      | Always 'ORSC'                                                   |
-| first_activation_date    | VARCHAR | device_orsc_summary            | Maps to `last_detection_date` in source                         |
-| mon_period               | BIGINT  | derived                        | YYYYMM                                                          |
-| actual_completion_date   | DOUBLE  | ifs_vw_invoiced_sales_tran_new | Completion date from IFS (joined on IMEI truncated to 14 chars) |
-| tbl_dt                   | DOUBLE  | ifs_vw_invoiced_sales_tran_new | IFS tbl_dt                                                      |
-
-
-### `mtnn_it.usp_dimension` — USP Dimension
-
-
-| Field                | Type           | Description                                                                                         |
-| -------------------- | -------------- | --------------------------------------------------------------------------------------------------- |
-| item_no              | BIGINT         | Product item number — joins to product_code in commission tables                                    |
-| itemdescription      | VARCHAR        | Full product description — joins to product_name in dev_act                                         |
-| unit_selling_price   | VARCHAR/DOUBLE | Selling price (note: source has comma-formatted strings; must REGEXP_REPLACE commas before casting) |
-| product_denomination | VARCHAR        | Device tier bucket (MIFI, MIFI_1, HYNETFLEX, HYNETFLEX_1, 5G ROUTER)                                |
-| commission_rate      | VARCHAR/DOUBLE | 10% commission (same formatting issue as unit_selling_price)                                        |
-| tbl_dt               | BIGINT         | Snapshot date YYYYMMDD — filter to the reporting month window                                       |
-
-
----
-
-## 5. Commission Calculation Logic
-
-### Device Activation commission calculation
-
-```sql
--- Step 1: Pull activations for the reporting month
--- Eligibility window: first_activation_date must be within 6 months of mon_period
-WHERE mon_period = '{YYYYMM}'
-AND substring(first_activation_date, 1, 6) BETWEEN
-    substring(date_format(date_add('month', -5, date_parse(...)), '%Y%m'), 1, 6)
-    AND replace(cast(mon_period AS varchar), ',', '')
-AND first_activation_date != ''
-
--- Step 2: Join to USP dimension on product_name = itemdescription
--- Filter USP to the reporting month: tbl_dt BETWEEN '{YYYYMM}01' AND '{YYYYMM}30'
--- CRITICAL: strip comma formatting from unit_selling_price before casting to DOUBLE
-
--- Step 3: Deduplicate by IMEI (one activation record per device)
--- ROW_NUMBER() OVER (PARTITION BY imei ORDER BY product_code DESC) = 1
-
--- Step 4: commission_rate = unit_selling_price * 0.10
-```
-
-### ORSC commission calculation
-
-```sql
--- Step 1: Pull ORSC summary for the reporting month
--- Same 6-month eligibility window on last_detection_date
-WHERE month_period = {YYYYMM}
-AND rnk = 1  -- most recent last_detection_date per IMEI
-
--- Step 2: Join to IFS invoiced sales to get actual_completion_date
--- Join key: substring(imei, 1, 14) = substring(serial_no, 1, 14)  -- 14-char IMEI match
--- IFS filter: tbl_dt BETWEEN {YYYYMM}01 AND {YYYYMM}30, bill_to_customer_account_type_name = 'External', unit_selling_price > 0
-
--- Step 3: ORSC payable = data_subscription_amount (already a monetary value from source)
--- No rate multiplication needed — data_subscription_amount IS the commission basis
-```
-
-### Partner type enrichment (both tables)
-
-```sql
--- Both dev_act and ORSC join to TAS master for account_profile_class
-LEFT JOIN (
-    SELECT partner_type, partner_code, partner_name, max(tbl_dt)
-    FROM flare_8.tas_augmented_customer_master
-    GROUP BY partner_type, partner_code, partner_name
-) d ON distributor_code = d.partner_code
-```
-
-### Invoiced sales (fbb_comm_inv_sales)
-
-```sql
--- Source: flare_8.ifs_vw_invoiced_sales_tran_new
--- Filter: actual_completion_date in reporting month, External customers only, unit_selling_price > 0
--- Deduplication: dense_rank() over (partition by product_code order by unit_selling_price asc)
--- Aggregation: sum(ordered_amount) grouped by distributor + product + invoice_date + price
-```
+Use these when grounding an answer requires authoritative detail (e.g. a column type, a calculation step, a reconciliation rule). Do **not** paste raw SQL or table dumps back to the user — use the addenda for your own reasoning and explain results in plain English.
 
 ---
 
@@ -258,84 +126,6 @@ ORSC joins to IFS on `substring(imei, 1, 14) = substring(serial_no, 1, 14)`. IME
 ### Issue 6: NULL account_profile_class
 
 Some records have NULL `account_profile_class` because the `distributor_code` has no matching entry in `tas_augmented_customer_master`. These partners are unclassified and will not appear in any partner-type breakdowns.
-
----
-
-## 7. FTTH Subscriptions Revenue Query
-
-For FBB subscription revenue from CDR (separate from device commissions), the source is `flare_8.cs6_ccn_cdr`:
-
-```sql
-SELECT
-    COALESCE(b.msisdn_key, a.msisdn_key) AS msisdn,
-    'PREPAID' AS svc_category,
-    -- channel name logic handles DOM channel via JSON extract
-    'FIBRENET' AS product_category,
-    a.vas_productid AS vas_code,
-    a.vas_productname AS product_type,
-    (CAST(a.vas_chargeamount AS DOUBLE) / 100) AS revenue,
-    a.tbl_dt
-FROM flare_8.cs6_ccn_cdr a
-LEFT JOIN flare_8.cs6_sdp_cdr b ON a.vas_transactionid = b.origtransactionid
--- DOM channel resolution via flare_8.dom_order_transactions + flare_8.dclm_partyinteraction_details
-WHERE a.servicetype = 'VAS'
-AND regexp_like(LOWER(a.vas_productname), 'fibre|fiber')
-AND a.tbl_dt = {run_dt}
-```
-
-Note: `vas_chargeamount` is stored in kobo — divide by 100 to get Naira.
-
----
-
-## 8. Reconciliation Reference Points
-
-These are the comparison anchors Finance uses to validate the automated commission output:
-
-
-| Validation step           | Finance source                        | IT source                                                  | Expected match                              |
-| ------------------------- | ------------------------------------- | ---------------------------------------------------------- | ------------------------------------------- |
-| Activation record count   | Finance's UDDM copy from prior months | `development.fbb_comm_dev_act` row count                   | Must match within transaction lag tolerance |
-| Unit selling price        | Finance's manual Excel reports        | USP dimension joined to dev_act                            | Must match exactly for each product_code    |
-| ORSC subscription amounts | Finance's settlement statements       | `development.fbb_comm_orsc.data_subscription_amount`       | Must match per IMEI per month               |
-| Partner classification    | Finance's TAS master view             | `account_profile_class` from tas_augmented_customer_master | Mismatches indicate stale TAS join          |
-
-
----
-
-## 9. Documents Inventory
-
-The following documents underpin this knowledge base:
-
-
-| Document                                            | Type                  | Key content                                                                                                                |
-| --------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| FBB Revenue Reporting Methodology (signed Feb 2026) | Policy                | FBB revenue definition, Blended ERMB formula, device reclassification logic, RGS90 attribution rules, COO/CMO/CIO sign-off |
-| IT Test Report EVA-1792 (signed Dec 2025)           | QA                    | 36 UAT test cases across all three commission tables — 100% pass; field-level schema validation                            |
-| Partners Activation & ORSC Requirements Sheet       | Business requirements | Report description, source tables, field list, sign-off by Victor Ugboajah and Obinna Nwosu                                |
-| Device Activation & ORSC Analysis Reports (Excel)   | Technical spec        | Full field-to-source mapping, all four SQL INSERT statements, sample report output                                         |
-| FBB Commission Report Analysis (Excel)              | Technical spec        | Identical to above — production version                                                                                    |
-| Deployment & Release Plan v1.0 (Nov 2025)           | SDLC                  | Release type, dependencies, script path, deployment tasks                                                                  |
-| `usp_dimension` sample (200 rows)                   | Reference data        | 55 active SKUs across two monthly snapshots (June and July 2025), all four pricing tiers                                   |
-| `fbb_comm_dev_act` sample (200 rows)                | Reference data        | Device activation records for mon_period 202603                                                                            |
-| `fbb_comm_orsc` sample (200 rows)                   | Reference data        | ORSC records for mon_period 202602                                                                                         |
-
-
----
-
-## 10. What Is Still Missing
-
-The following items are not yet captured in this KB and should be gathered to complete it:
-
-
-| Missing item                               | Why it matters                                                                                                                                    |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Commission rate card document (formal)     | The 10% rate is inferred from data; no signed policy document explicitly authorises it                                                            |
-| Trade partner contract template            | Clawback conditions, payment timing, dispute resolution terms are unspecified                                                                     |
-| Transport allowance rules                  | The requirements doc mentions "manually provided transport allowances for FBB partners" — no amounts, conditions, or eligibility rules documented |
-| Full USP dimension history (pre-June 2025) | Only two monthly snapshots available; older activations within the 6-month window may reference SKUs not in the current KB                        |
-| DEALER and POS AGENCY classification rules | These classes appear in ORSC but not in the original requirements scope — eligibility is assumed but not confirmed                                |
-| UDDM platform upload specification         | The manual upload step is a reconciliation gap; understanding what UDDM expects vs. what the script outputs would close a leakage risk            |
-
 
 ---
 

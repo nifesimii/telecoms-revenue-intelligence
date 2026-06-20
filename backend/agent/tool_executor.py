@@ -1,13 +1,16 @@
-"""Routes Claude tool calls to queries.py. No Claude API calls here.
+"""Routes Claude tool calls to the right backend. No Claude API calls here.
 
-The agent loop (``backend/agent/agent.py``) hands each ``tool_use`` block
-from Claude to :func:`execute_tool`. This module:
+Two routing paths:
 
-  1. Extracts the tool name and input from the ``tool_use`` block.
-  2. Validates the tool name against :data:`backend.db.queries.QUERY_NAMES`.
-  3. Calls :func:`backend.db.connection.execute_query` to run the query.
-  4. Wraps the resulting DataFrame in a JSON envelope and returns it as a
-     ``tool_result`` block ready to send back to Claude.
+  * ``QUERY tools`` — names listed in
+    :data:`backend.db.queries.QUERY_NAMES`. The executor calls
+    :func:`backend.db.connection.execute_query` and wraps the resulting
+    DataFrame in a JSON envelope.
+
+  * ``DIRECT tools`` — names listed in :data:`_DIRECT_HANDLERS`. The executor
+    invokes the registered Python handler directly and returns its
+    ``tool_result`` block as-is. Used for L2 lookups (e.g.
+    ``get_kb_section``) that don't go through the SQL/pandas layer.
 
 Errors (unknown tool, missing parameter, query failure) are returned as
 ``tool_result`` blocks with ``is_error=True`` and a human-readable message —
@@ -16,12 +19,15 @@ the agent loop forwards them to Claude so it can recover or apologise.
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Callable
 
 import pandas as pd
 
+from backend.agent import prompts
 from backend.db import queries
+from backend.db.composite import assemble_dealer_full_context
 from backend.db.connection import execute_query
+from backend.db.triage import TRIAGE_HANDLERS
 
 # Defensive cap on the number of tool-result rows we hand back to Claude.
 # Anthropic's input context window is 200k tokens; very large tool results
@@ -59,12 +65,24 @@ def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:
             f"Tool input must be a JSON object, got {type(tool_input).__name__}.",
         )
 
+    # Direct handlers (L2 KB lookup, etc.) bypass the SQL/pandas layer.
+    if tool_name in _DIRECT_HANDLERS:
+        try:
+            return _DIRECT_HANDLERS[tool_name](tool_use_id, tool_input)
+        except Exception as exc:  # noqa: BLE001 — surface any failure to Claude
+            return _error_result(
+                tool_use_id,
+                f"Tool {tool_name!r} failed: {type(exc).__name__}: {exc}",
+            )
+
     if tool_name not in queries.QUERY_NAMES:
+        valid_query = list(queries.QUERY_NAMES)
+        valid_direct = list(_DIRECT_HANDLERS.keys())
         return _error_result(
             tool_use_id,
             (
                 f"Unknown tool: {tool_name!r}. "
-                f"Valid tools: {queries.QUERY_NAMES}."
+                f"Valid tools: {valid_query + valid_direct}."
             ),
         )
 
@@ -85,6 +103,123 @@ def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Direct handlers — non-query tools that bypass the SQL layer entirely
+# ---------------------------------------------------------------------------
+
+
+def _handle_get_kb_section(
+    tool_use_id: str, tool_input: dict[str, Any]
+) -> dict[str, Any]:
+    """L2 KB lookup. Returns the requested addendum's markdown verbatim."""
+    section = tool_input.get("section")
+    if not section or not isinstance(section, str):
+        valid = sorted(prompts.ADDENDA_REGISTRY.keys())
+        return _error_result(
+            tool_use_id,
+            (
+                "get_kb_section requires a 'section' string parameter. "
+                f"Valid sections: {valid}."
+            ),
+        )
+
+    try:
+        content = prompts.get_kb_section(section)
+    except KeyError:
+        valid = sorted(prompts.ADDENDA_REGISTRY.keys())
+        return _error_result(
+            tool_use_id,
+            (
+                f"Unknown KB section: {section!r}. "
+                f"Valid sections: {valid}."
+            ),
+        )
+    except FileNotFoundError as exc:
+        return _error_result(
+            tool_use_id,
+            f"KB addendum file missing on disk: {exc}",
+        )
+
+    envelope = {
+        "tool": "get_kb_section",
+        "section": section,
+        "description": str(
+            prompts.ADDENDA_REGISTRY[section].get("description", "")
+        ),
+        "content_chars": len(content),
+        "content": content,
+    }
+    return {
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": json.dumps(envelope, ensure_ascii=False),
+    }
+
+
+def _handle_get_dealer_full_context(
+    tool_use_id: str, tool_input: dict[str, Any]
+) -> dict[str, Any]:
+    """L1 composite — one call returns the full dealer dossier across Phases 1-4."""
+    distributor_code = tool_input.get("distributor_code")
+    mon_period = tool_input.get("mon_period")
+
+    if not distributor_code or not isinstance(distributor_code, (str, int)):
+        return _error_result(
+            tool_use_id,
+            "get_dealer_full_context requires a 'distributor_code' parameter.",
+        )
+    if not mon_period or not isinstance(mon_period, str):
+        return _error_result(
+            tool_use_id,
+            "get_dealer_full_context requires a 'mon_period' string parameter "
+            "in YYYYMM format.",
+        )
+
+    try:
+        dossier = assemble_dealer_full_context(
+            str(distributor_code), str(mon_period)
+        )
+    except Exception as exc:  # noqa: BLE001 — surface to Claude
+        return _error_result(
+            tool_use_id,
+            f"get_dealer_full_context failed: {type(exc).__name__}: {exc}",
+        )
+
+    envelope: dict[str, Any] = {
+        "tool": "get_dealer_full_context",
+        "parameters": {
+            "distributor_code": str(distributor_code),
+            "mon_period": str(mon_period),
+        },
+        **dossier,
+        "drill_down_hint": (
+            "This is the dealer's full Phase 1-4 dossier in one envelope. "
+            "Lead the response with the dealer name + period, then the "
+            "headline (commission, qualification rate, payment status). "
+            "If there are inventory.confirmed_mismatches > 0 or "
+            "activation_exceptions, present those next — they explain why "
+            "payment is DISPUTED / PARTIALLY_PAID. Always disclose SIMULATED "
+            "data when referencing payment fields. For prior-month "
+            "comparison call get_month_on_month_variance separately."
+        ),
+    }
+
+    return {
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": json.dumps(envelope, ensure_ascii=False),
+    }
+
+
+# Registry: tool name -> (tool_use_id, tool_input) -> tool_result dict
+_DIRECT_HANDLERS: dict[
+    str, Callable[[str, dict[str, Any]], dict[str, Any]]
+] = {
+    "get_kb_section": _handle_get_kb_section,
+    "get_dealer_full_context": _handle_get_dealer_full_context,
+}
+
+
+# ---------------------------------------------------------------------------
 # Result helpers
 # ---------------------------------------------------------------------------
 
@@ -97,12 +232,42 @@ def _success_result(
 ) -> dict[str, Any]:
     """Wrap a successful DataFrame result in a tool_result block.
 
-    If the DataFrame has more rows than :data:`_TOOL_ROW_CAP`, only the first
-    ``_TOOL_ROW_CAP`` rows (in the query's sort order) are serialised, and
-    the envelope includes ``truncated=True`` plus the full ``total_rows``
-    count so the agent can reason about coverage.
+    Two envelope shapes:
+
+      1. **Triaged** — if the tool has a registered triage handler in
+         :data:`backend.db.triage.TRIAGE_HANDLERS`, the envelope contains
+         ``headline`` + ``must_review`` (≤10 rows) + ``worth_review`` (≤10 rows)
+         plus the full ``row_count`` and an optional ``drill_down_hint``. The
+         full row dump is replaced — the agent gets the answer first, not the
+         haystack.
+
+      2. **Raw rows** — fallback for tools without a triage handler. Same shape
+         as before: ``row_count`` + ``rows`` (capped at ``_TOOL_ROW_CAP`` with
+         ``truncated`` / ``total_rows`` indicators if the cap kicks in).
     """
     total_rows = int(len(df))
+
+    triage_fn = TRIAGE_HANDLERS.get(tool_name)
+    if triage_fn is not None:
+        triage = triage_fn(df, tool_input)
+        envelope: dict[str, Any] = {
+            "tool": tool_name,
+            "parameters": tool_input,
+            "row_count": total_rows,
+            "envelope_shape": "triaged",
+            "headline": triage.get("headline", {}),
+            "must_review": triage.get("must_review", []),
+            "worth_review": triage.get("worth_review", []),
+        }
+        if "drill_down_hint" in triage:
+            envelope["drill_down_hint"] = triage["drill_down_hint"]
+        return {
+            "type": "tool_result",
+            "tool_use_id": tool_use_id,
+            "content": json.dumps(envelope, ensure_ascii=False),
+        }
+
+    # Untriaged fallback — same shape as before.
     if total_rows > _TOOL_ROW_CAP:
         df_for_wire = df.head(_TOOL_ROW_CAP)
         envelope = {

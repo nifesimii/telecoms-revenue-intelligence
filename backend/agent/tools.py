@@ -449,6 +449,118 @@ GET_PAYMENT_VARIANCE: dict[str, Any] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# L2 — on-demand KB section lookup
+# ---------------------------------------------------------------------------
+#
+# Reference material that is rarely needed inline (table schemas, calculation
+# SQL, reconciliation anchors, etc.) has been moved out of the always-resident
+# system prompt and into addendum files. The agent fetches them when needed
+# via this single lookup tool. Section names are stable: see
+# :data:`backend.agent.prompts.ADDENDA_REGISTRY` for the canonical list.
+
+GET_KB_SECTION: dict[str, Any] = {
+    "name": "get_kb_section",
+    "description": (
+        "Fetches a named addendum from the FBB commission knowledge base. "
+        "Reference material — table schemas, calculation SQL, reconciliation "
+        "anchors, documents inventory — lives outside the always-resident "
+        "system prompt to keep it small; use this tool when you need that "
+        "level of detail to ground a specific answer.\n\n"
+        "Valid section names:\n"
+        "  * data_architecture       — source-system inventory + dev schema\n"
+        "  * table_schemas           — column-level field definitions for "
+        "dev_act / ORSC / USP\n"
+        "  * calculation_logic       — pseudo-SQL for the commission "
+        "calculation pipeline\n"
+        "  * ftth_subscriptions_query — FBB / FIBRENET subscription "
+        "revenue CDR query\n"
+        "  * reconciliation_reference — comparison anchors Finance uses to "
+        "validate the report\n"
+        "  * documents_inventory     — underpinning policy / spec / sample "
+        "documents\n"
+        "  * gaps_and_missing        — known gaps in the KB worth flagging "
+        "to users\n\n"
+        "IMPORTANT: use the addendum content for your own reasoning only. "
+        "Do not paste raw SQL, table dumps, or addendum text back to the "
+        "user — translate any relevant detail into a plain-English answer."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "section": {
+                "type": "string",
+                "description": (
+                    "The addendum to fetch. One of: data_architecture, "
+                    "table_schemas, calculation_logic, "
+                    "ftth_subscriptions_query, reconciliation_reference, "
+                    "documents_inventory, gaps_and_missing."
+                ),
+                "enum": [
+                    "data_architecture",
+                    "table_schemas",
+                    "calculation_logic",
+                    "ftth_subscriptions_query",
+                    "reconciliation_reference",
+                    "documents_inventory",
+                    "gaps_and_missing",
+                ],
+            }
+        },
+        "required": ["section"],
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# L1 composite — one call returns the full dealer dossier across all phases
+# ---------------------------------------------------------------------------
+
+GET_DEALER_FULL_CONTEXT: dict[str, Any] = {
+    "name": "get_dealer_full_context",
+    "description": (
+        "Returns a complete dealer dossier in ONE call: identity + Phase 1 "
+        "commission summary + Phase 2 activation breakdown + Phase 2 "
+        "activation exceptions + Phase 3 inventory findings (sorted "
+        "CONFIRMED_MISMATCH first) + Phase 4 payment status (with "
+        "exception_flag linking back to the underlying root cause) + a "
+        "5-row sample of zero-commission records if any exist.\n\n"
+        "Use this tool whenever the user asks about a SPECIFIC dealer — "
+        "'tell me about Dealer X', 'why is Dealer Y disputed', 'what is the "
+        "situation with distributor_code Z'. It replaces what would otherwise "
+        "be 4-5 separate tool calls (get_dealer_summary, "
+        "get_activation_summary, get_inventory_comparison, get_payment_summary, "
+        "get_zero_commission_records) and presents the data already joined.\n\n"
+        "Both inputs are required:\n"
+        "  * distributor_code — the dealer's numeric distributor_code as a "
+        "string, e.g. '296065'\n"
+        "  * mon_period — reporting month in YYYYMM format\n\n"
+        "Response shape:\n"
+        "  found (bool), dealer{...}, commission{...}, activation{...}, "
+        "activation_exceptions[...], inventory{confirmed_mismatches, "
+        "no_invoice_records, within_allocation, findings[...]}, "
+        "payment{...}, zero_records_sample[...].\n\n"
+        "Payment data is SIMULATED — disclose this when quoting payment "
+        "figures. For month-on-month comparison run "
+        "get_month_on_month_variance separately."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "distributor_code": {
+                **_DISTRIBUTOR_CODE_SCHEMA,
+                "description": (
+                    _DISTRIBUTOR_CODE_SCHEMA["description"]
+                    + " Required — the dealer to assemble the dossier for."
+                ),
+            },
+            "mon_period": _MON_PERIOD_SCHEMA,
+        },
+        "required": ["distributor_code", "mon_period"],
+    },
+}
+
+
 TOOLS: list[dict[str, Any]] = [
     GET_DEALER_SUMMARY,
     GET_ZERO_COMMISSION_RECORDS,
@@ -464,6 +576,10 @@ TOOLS: list[dict[str, Any]] = [
     GET_PAYMENT_SUMMARY,
     GET_PAYMENT_EXCEPTIONS,
     GET_PAYMENT_VARIANCE,
+    # --- L2: on-demand KB lookup ---
+    GET_KB_SECTION,
+    # --- L1 composite — replaces 4+ tool calls for "tell me about Dealer X" ---
+    GET_DEALER_FULL_CONTEXT,
 ]
 
 TOOL_NAMES: list[str] = [tool["name"] for tool in TOOLS]

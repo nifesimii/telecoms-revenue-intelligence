@@ -36,7 +36,7 @@ export default function ActivationSummaryTable({ rows = [], loading = false }) {
   }
 
   return (
-    <div className="overflow-auto">
+    <div className="overflow-auto h-full">
       <table className="w-full text-xs border-collapse">
         <thead className="sticky top-0 bg-gray-50 z-10">
           <tr className="text-gray-600">

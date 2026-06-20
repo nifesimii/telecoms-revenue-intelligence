@@ -142,9 +142,9 @@ export default function InventoryIntelligencePanel() {
         </div>
       )}
 
-      {/* Body: cards row at natural height + table card that fills remaining
-          space and scrolls internally. ``min-h-0`` is essential — flex
-          children default to ``min-height: auto`` and won't shrink to fit. */}
+      {/* Body: cards row at natural height + table card below. The body can
+          scroll when the viewport is short, while the table itself keeps its
+          own internal scrollbar for large datasets. */}
       <div className="flex-1 min-h-0 p-5 flex flex-col gap-4 overflow-hidden">
         <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <SummaryCard
@@ -182,7 +182,7 @@ export default function InventoryIntelligencePanel() {
           />
         </div>
 
-        <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
+        <div className="flex-1 min-h-[360px] bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
           <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500 shrink-0">
             {rows.length.toLocaleString()} record{rows.length === 1 ? '' : 's'}
           </div>

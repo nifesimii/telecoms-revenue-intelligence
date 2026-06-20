@@ -220,17 +220,27 @@ export default function ActivationIntelligencePanel() {
         </div>
       )}
 
-      <div className="flex-1 overflow-auto p-5">
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
-          {activeTab === 'summary' && (
-            <ActivationSummaryTable rows={summary} loading={loading} />
-          )}
-          {activeTab === 'variance' && (
-            <ActivationVarianceTable rows={variance} loading={loading} />
-          )}
-          {activeTab === 'exceptions' && (
-            <ActivationExceptionsTable rows={exceptions} loading={loading} />
-          )}
+      {/* Body: table card fills remaining viewport and scrolls internally.
+          ``min-h-0`` is essential — flex children default to ``min-height:
+          auto`` and won't shrink to fit. */}
+      <div className="flex-1 min-h-0 p-5 flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
+          <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500 shrink-0">
+            {activeTab === 'summary' && `${summary.length.toLocaleString()} dealer${summary.length === 1 ? '' : 's'}`}
+            {activeTab === 'variance' && `${variance.length.toLocaleString()} dealer${variance.length === 1 ? '' : 's'} present in both periods`}
+            {activeTab === 'exceptions' && `${exceptions.length.toLocaleString()} exception${exceptions.length === 1 ? '' : 's'}`}
+          </div>
+          <div className="flex-1 min-h-0">
+            {activeTab === 'summary' && (
+              <ActivationSummaryTable rows={summary} loading={loading} />
+            )}
+            {activeTab === 'variance' && (
+              <ActivationVarianceTable rows={variance} loading={loading} />
+            )}
+            {activeTab === 'exceptions' && (
+              <ActivationExceptionsTable rows={exceptions} loading={loading} />
+            )}
+          </div>
         </div>
       </div>
     </div>
