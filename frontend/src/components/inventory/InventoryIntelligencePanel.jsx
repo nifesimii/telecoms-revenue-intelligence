@@ -2,67 +2,31 @@
 //
 // Summary cards on top (CONFIRMED_MISMATCH / NO_INVOICE_RECORD / WITHIN_ALLOCATION)
 // + a single table below. Toggle to include WITHIN_ALLOCATION rows.
-// Reuses the existing period dropdown pattern.
+// Period comes from the global PeriodProvider.
 
 import { useEffect, useMemo, useState } from 'react';
-import { getPeriods, getInventoryComparison } from '../../api/client.js';
+import { getInventoryComparison } from '../../api/client.js';
+import { usePeriod } from '../../context/PeriodContext.jsx';
+import { formatPeriod } from '../../lib/format.js';
 import InventoryComparisonTable from './InventoryComparisonTable.jsx';
-
-function Stat({ label, value, tone = 'text-gray-900', sub }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-wide text-gray-500">
-        {label}
-      </span>
-      <span className={`text-base font-semibold tabular-nums ${tone}`}>
-        {value}
-      </span>
-      {sub && <span className="text-[10px] text-gray-500">{sub}</span>}
-    </div>
-  );
-}
 
 function SummaryCard({ label, count, sub, tone, accent }) {
   return (
-    <div
-      className={`bg-white border border-gray-200 rounded-lg shadow-sm p-4 relative overflow-hidden`}
-    >
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 relative overflow-hidden">
       <div className={`absolute top-0 left-0 h-full w-1 ${accent}`} />
-      <div className="text-[11px] uppercase tracking-wide text-gray-500">
-        {label}
-      </div>
-      <div className={`mt-1 text-2xl font-bold tabular-nums ${tone}`}>
-        {count}
-      </div>
-      {sub && (
-        <div className="mt-1 text-[11px] text-gray-500 leading-snug">{sub}</div>
-      )}
+      <div className="text-[11px] uppercase tracking-wide text-gray-500">{label}</div>
+      <div className={`mt-1 text-2xl font-bold tabular-nums ${tone}`}>{count}</div>
+      {sub && <div className="mt-1 text-[11px] text-gray-500 leading-snug">{sub}</div>}
     </div>
   );
 }
 
 export default function InventoryIntelligencePanel() {
-  const [periods, setPeriods] = useState([]);
-  const [period, setPeriod] = useState('');
+  const { period } = usePeriod();
   const [includeWithin, setIncludeWithin] = useState(false);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    getPeriods()
-      .then((data) => {
-        if (cancelled) return;
-        const ps = data.periods || [];
-        setPeriods(ps);
-        if (ps.length) setPeriod(ps[0]);
-      })
-      .catch((e) => !cancelled && setError(String(e?.message || e)));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     if (!period) return;
@@ -72,8 +36,7 @@ export default function InventoryIntelligencePanel() {
     getInventoryComparison(period, includeWithin)
       .then((data) => !cancelled && setRows(Array.isArray(data) ? data : []))
       .catch((e) => {
-        if (!cancelled)
-          setError(e?.response?.data?.detail || e?.message || String(e));
+        if (!cancelled) setError(e?.response?.data?.detail || e?.message || String(e));
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -104,22 +67,11 @@ export default function InventoryIntelligencePanel() {
   return (
     <div className="h-full flex flex-col bg-gray-50 text-gray-800">
       <div className="px-5 py-3 bg-white border-b border-gray-200 flex flex-wrap items-end gap-4">
-        <div>
-          <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-            Reporting period
-          </label>
-          <select
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow focus:border-mtn-yellow"
-          >
-            {periods.length === 0 && <option value="">—</option>}
-            {periods.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+        <div className="text-sm font-semibold text-gray-800">
+          Inventory Intelligence
+          <span className="ml-2 text-xs font-normal text-gray-500">
+            · {formatPeriod(period) || '—'}
+          </span>
         </div>
         <label className="flex items-center gap-2 text-xs text-gray-600 select-none">
           <input
@@ -131,9 +83,7 @@ export default function InventoryIntelligencePanel() {
           Show WITHIN_ALLOCATION rows
         </label>
         <div className="flex-1" />
-        <div className="text-[11px] text-gray-500">
-          Phase 3 · activations vs IFS purchases
-        </div>
+        <div className="text-[11px] text-gray-500">Activations vs IFS purchases</div>
       </div>
 
       {error && (
@@ -142,9 +92,6 @@ export default function InventoryIntelligencePanel() {
         </div>
       )}
 
-      {/* Body: cards row at natural height + table card below. The body can
-          scroll when the viewport is short, while the table itself keeps its
-          own internal scrollbar for large datasets. */}
       <div className="flex-1 min-h-0 p-5 flex flex-col gap-4 overflow-hidden">
         <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-4">
           <SummaryCard
@@ -167,11 +114,7 @@ export default function InventoryIntelligencePanel() {
           />
           <SummaryCard
             label="Within allocation"
-            count={
-              includeWithin
-                ? counts.WITHIN_ALLOCATION
-                : '—'
-            }
+            count={includeWithin ? counts.WITHIN_ALLOCATION : '—'}
             sub={
               includeWithin
                 ? 'Activations covered by purchased units'

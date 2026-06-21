@@ -38,6 +38,15 @@ export async function getPeriods() {
 }
 
 /**
+ * GET /health
+ * @returns {Promise<{status: string, sample_data_mode: boolean}>}
+ */
+export async function getHealth() {
+  const { data } = await api.get('/health');
+  return data;
+}
+
+/**
  * GET /dealers?mon_period=YYYYMM
  * @param {string|null} mon_period Optional reporting period; backend uses most recent if omitted.
  * @returns {Promise<Array<{distributor_code: string, distributor_name: string, account_profile_class: string, total_activations: number, total_commission_ngn: number, zero_commission_count: number}>>}

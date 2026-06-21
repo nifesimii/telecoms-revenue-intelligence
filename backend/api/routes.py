@@ -296,9 +296,26 @@ async def get_assurance_status(
             kwargs["high_count"] = int(result.metadata.get("high_count", 0))
             kwargs["medium_count"] = int(result.metadata.get("medium_count", 0))
             kwargs["low_count"] = int(result.metadata.get("low_count", 0))
+            # Pass through up to 50 findings per module — enough to render
+            # top-N inline and offer an expansion view without flooding the
+            # response.
+            kwargs["findings"] = [
+                {
+                    "type": str(f.get("type", "")),
+                    "severity": str(f.get("severity", "LOW")),
+                    "dealer_id": str(f.get("dealer_id", "")),
+                    "dealer_name": str(f.get("dealer_name", "")),
+                    "description": str(f.get("description", "")),
+                    "recommended_action": f.get("recommended_action"),
+                }
+                for f in (result.findings or [])[:50]
+            ]
 
         modules.append(AssuranceModuleStatus(**kwargs))
 
+    # Stable display order by phase so cards always read 1 → 4 regardless
+    # of registry insertion order.
+    modules.sort(key=lambda m: m.phase)
     return AssuranceStatusResponse(period=period, modules=modules)
 
 

@@ -12,16 +12,7 @@
 //   delta < 0 → red down arrow
 //   delta === 0 → grey em dash
 
-function formatNaira(n) {
-  const v = Math.abs(Number(n) || 0);
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
+import { formatNGN, formatPeriod } from '../lib/format.js';
 
 function UpArrow() {
   return (
@@ -86,15 +77,15 @@ export default function VarianceCard({
         >
           {arrow}
           <span className="tabular-nums">
-            {value === 0 ? '₦0.00' : formatNaira(value)}
+            {formatNGN(Math.abs(value))}
           </span>
           {pct && <span className="text-xs font-normal opacity-80">({pct})</span>}
         </div>
       </div>
       <div className="mt-2 text-[11px] text-gray-500">
-        <span className="font-medium text-gray-700">{current_period}</span>
+        <span className="font-medium text-gray-700">{formatPeriod(current_period)}</span>
         <span className="mx-1">vs</span>
-        <span>{prior_period}</span>
+        <span>{formatPeriod(prior_period)}</span>
       </div>
     </div>
   );

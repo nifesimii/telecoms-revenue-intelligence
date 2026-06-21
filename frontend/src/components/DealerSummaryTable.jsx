@@ -5,17 +5,7 @@
 // Zero-Commission Count > 0 renders in amber with a warning glyph.
 
 import { useMemo, useState } from 'react';
-
-function formatNaira(n) {
-  const v = Number(n) || 0;
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
+import { formatNGN } from '../lib/format.js';
 
 function WarningIcon() {
   return (
@@ -43,7 +33,7 @@ function SortArrow({ direction }) {
   );
 }
 
-export default function DealerSummaryTable({ dealers = [], loading = false }) {
+export default function DealerSummaryTable({ dealers = [], loading = false, onDealerClick }) {
   const [sortDir, setSortDir] = useState('desc');
 
   const sorted = useMemo(() => {
@@ -72,7 +62,7 @@ export default function DealerSummaryTable({ dealers = [], loading = false }) {
 
   return (
     <div className="overflow-auto">
-      <table className="w-full text-xs border-collapse table-fixed">
+      <table className="w-full text-xs border-collapse">
         <thead className="sticky top-0 bg-gray-50 z-10">
           <tr className="text-gray-600">
             <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold w-7">
@@ -103,18 +93,21 @@ export default function DealerSummaryTable({ dealers = [], loading = false }) {
           {sorted.map((d, i) => (
             <tr
               key={d.distributor_code || i}
-              className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0 align-top"
+              onClick={onDealerClick ? () => onDealerClick(d) : undefined}
+              className={`border-b border-gray-100 last:border-b-0 align-top ${
+                onDealerClick
+                  ? 'hover:bg-yellow-50 cursor-pointer'
+                  : 'hover:bg-gray-50'
+              }`}
+              title={onDealerClick ? 'Click to template a question about this dealer' : undefined}
             >
               <td className="px-2 py-1.5 text-gray-400 tabular-nums">{i + 1}</td>
-              <td className="px-2 py-1.5 min-w-0">
-                <div
-                  className="truncate text-gray-800"
-                  title={d.distributor_name}
-                >
+              <td className="px-2 py-1.5">
+                <div className="text-gray-800" title={d.distributor_name}>
                   {d.distributor_name}
                 </div>
                 <div
-                  className="truncate text-[10px] uppercase tracking-wide text-gray-400"
+                  className="text-[10px] uppercase tracking-wide text-gray-400"
                   title={d.account_profile_class}
                 >
                   {d.account_profile_class}
@@ -124,7 +117,7 @@ export default function DealerSummaryTable({ dealers = [], loading = false }) {
                 {d.total_activations}
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">
-                {formatNaira(d.total_commission_ngn)}
+                {formatNGN(d.total_commission_ngn)}
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums">
                 {Number(d.zero_commission_count) > 0 ? (

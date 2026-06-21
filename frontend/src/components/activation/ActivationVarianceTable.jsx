@@ -2,16 +2,7 @@
 // Delta column: green up arrow if positive, red down arrow if negative.
 // Reuses the same colour cues as VarianceCard for consistency.
 
-function formatNaira(n) {
-  const v = Math.abs(Number(n) || 0);
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
+import { formatNGN } from '../../lib/format.js';
 
 function UpArrow() {
   return (
@@ -124,7 +115,7 @@ export default function ActivationVarianceTable({ rows = [], loading = false }) 
                   )}`}
                 >
                   {dCom > 0 ? <UpArrow /> : dCom < 0 ? <DownArrow /> : null}
-                  {dCom === 0 ? '₦0.00' : (dCom > 0 ? '+' : '−') + formatNaira(dCom)}
+                  {dCom === 0 ? formatNGN(0) : (dCom > 0 ? '+' : '−') + formatNGN(Math.abs(dCom))}
                 </td>
                 <td
                   className={`px-2 py-1.5 text-right tabular-nums ${deltaTone(

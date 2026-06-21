@@ -1,66 +1,96 @@
-// Main layout component.
-//
-// Header:    "FBB Commission Intelligence" with MTN-yellow accent bar.
-// Sidebar (25%): period dropdown + DealerSummaryTable; both refresh when
-//                the period selection changes.
-// Main (75%):    scrollable message thread, empty-state suggestions,
-//                textarea + send button at the bottom.
+// Commission Intelligence view: chat thread + dealer summary sidebar.
+// Period is owned by the global <PeriodProvider> — see context/PeriodContext.jsx.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getPeriods, getDealers } from '../api/client.js';
+import { getDealers } from '../api/client.js';
+import { usePeriod } from '../context/PeriodContext.jsx';
+import { formatPeriod } from '../lib/format.js';
 import useChat from '../hooks/useChat.js';
 import MessageBubble, { LoadingBubble } from './MessageBubble.jsx';
 import DealerSummaryTable from './DealerSummaryTable.jsx';
 
+const SIDEBAR_MIN = 240;
+const SIDEBAR_MAX = 720;
+const SIDEBAR_DEFAULT = 320;
+const SIDEBAR_STORAGE_KEY = 'fbb.commission.sidebarWidth';
+
 const SUGGESTIONS = [
-  (period) =>
-    `Summarise dealer commissions for ${period || 'the latest period'}`,
+  (label) =>
+    `Summarise dealer commissions for ${label || 'the latest period'}`,
   () => 'Which dealers have zero-commission records and why?',
-  (period) => `Show me the ORSC summary for ${period || 'the latest period'}`,
-  () => "Why did Kashmir Global's commission change this month?",
+  (label) => `Show me the ORSC summary for ${label || 'the latest period'}`,
+  (_label, topDealer) =>
+    topDealer
+      ? `Why did ${topDealer}'s commission change this month?`
+      : "Why did this dealer's commission change this month?",
 ];
 
-export default function ChatInterface() {
-  const {
-    messages,
-    isLoading,
-    error,
-    selectedPeriod,
-    setSelectedPeriod,
-    sendMessage,
-    clearChat,
-  } = useChat();
+export default function ChatInterface({ pendingPrompt = '', onPromptConsumed } = {}) {
+  const { period } = usePeriod();
+  const { messages, isLoading, error, sendMessage, clearChat } = useChat();
 
-  const [periods, setPeriods] = useState([]);
   const [dealers, setDealers] = useState([]);
   const [dealersLoading, setDealersLoading] = useState(false);
   const [inputText, setInputText] = useState('');
   const threadRef = useRef(null);
 
-  // Load periods once on mount; default selectedPeriod to the most recent.
+  // If the Overview asked us to start with a templated question, prefill the
+  // input and let the user hit Send. Don't auto-submit — give them a beat to
+  // edit the prompt or change their mind.
   useEffect(() => {
-    let cancelled = false;
-    getPeriods()
-      .then((data) => {
-        if (cancelled) return;
-        const ps = data.periods || [];
-        setPeriods(ps);
-        if (ps.length && !selectedPeriod) setSelectedPeriod(ps[0]);
-      })
-      .catch(() => {
-        /* Silent — period dropdown just stays empty. Error surfaces on /chat too. */
-      });
-    return () => {
-      cancelled = true;
-    };
+    if (pendingPrompt) {
+      setInputText(pendingPrompt);
+      onPromptConsumed?.();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPrompt]);
+
+  // Sidebar width — drag-resizable, persisted across reloads.
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const raw = Number(localStorage.getItem(SIDEBAR_STORAGE_KEY));
+    return Number.isFinite(raw) && raw >= SIDEBAR_MIN && raw <= SIDEBAR_MAX
+      ? raw
+      : SIDEBAR_DEFAULT;
+  });
+  const draggingRef = useRef(false);
+
+  useEffect(() => {
+    function onMove(e) {
+      if (!draggingRef.current) return;
+      const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, e.clientX));
+      setSidebarWidth(w);
+    }
+    function onUp() {
+      if (!draggingRef.current) return;
+      draggingRef.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, String(sidebarWidth));
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [sidebarWidth]);
+
+  const startDrag = useCallback(() => {
+    draggingRef.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  const resetSidebar = useCallback(() => {
+    setSidebarWidth(SIDEBAR_DEFAULT);
+    localStorage.setItem(SIDEBAR_STORAGE_KEY, String(SIDEBAR_DEFAULT));
   }, []);
 
   // Reload dealers any time the selected period changes.
   useEffect(() => {
     let cancelled = false;
     setDealersLoading(true);
-    getDealers(selectedPeriod || null)
+    getDealers(period || null)
       .then((rows) => {
         if (!cancelled) setDealers(Array.isArray(rows) ? rows : []);
       })
@@ -73,55 +103,51 @@ export default function ChatInterface() {
     return () => {
       cancelled = true;
     };
-  }, [selectedPeriod]);
+  }, [period]);
 
-  // Auto-scroll thread to the bottom whenever messages or loading state change.
   useEffect(() => {
     const el = threadRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, isLoading]);
 
+  const submit = useCallback(
+    (text) => {
+      const t = (text ?? inputText).trim();
+      if (!t || isLoading) return;
+      setInputText('');
+      sendMessage(t, period || null);
+    },
+    [inputText, isLoading, sendMessage, period],
+  );
+
   const onKeyDown = useCallback(
     (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        if (!isLoading && inputText.trim()) {
-          const text = inputText;
-          setInputText('');
-          sendMessage(text);
-        }
+        submit();
       }
     },
-    [inputText, isLoading, sendMessage],
+    [submit],
   );
 
-  const onSubmit = useCallback(() => {
-    if (!isLoading && inputText.trim()) {
-      const text = inputText;
-      setInputText('');
-      sendMessage(text);
-    }
-  }, [inputText, isLoading, sendMessage]);
-
+  const periodLabel = formatPeriod(period);
+  const topDealer = dealers[0]?.distributor_name;
   const emptyThread = messages.length === 0;
 
   return (
     <div className="h-full flex flex-col bg-gray-50 text-gray-800">
-      {/* ----- Header ----- */}
-      <header className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 bg-white">
-        <div className="w-1.5 h-8 bg-mtn-yellow rounded-sm" />
-        <h1 className="text-base font-semibold tracking-tight">
-          FBB Commission Intelligence
+      <header className="flex items-center gap-3 px-4 py-2 border-b border-gray-200 bg-white">
+        <h1 className="text-sm font-semibold tracking-tight">
+          Commission Intelligence
         </h1>
-        <div className="ml-auto flex items-center gap-2 text-xs text-gray-500">
-          <span className="inline-flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-            Sample data mode
-          </span>
+        <span className="text-xs text-gray-500">
+          Period <span className="font-semibold text-gray-700">{periodLabel || '—'}</span>
+        </span>
+        <div className="ml-auto">
           {messages.length > 0 && (
             <button
               onClick={clearChat}
-              className="ml-3 text-gray-500 hover:text-gray-800 hover:underline"
+              className="text-xs text-gray-500 hover:text-gray-800 hover:underline"
             >
               Clear chat
             </button>
@@ -129,56 +155,56 @@ export default function ChatInterface() {
         </div>
       </header>
 
-      {/* ----- Body: sidebar + thread ----- */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Sidebar */}
-        <aside className="w-1/4 min-w-[260px] max-w-[360px] border-r border-gray-200 bg-white flex flex-col overflow-hidden">
-          <div className="p-3 border-b border-gray-100">
-            <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-              Reporting period
-            </label>
-            <select
-              value={selectedPeriod}
-              onChange={(e) => setSelectedPeriod(e.target.value)}
-              className="w-full text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow focus:border-mtn-yellow"
+        <aside
+          style={{ width: `${sidebarWidth}px` }}
+          className="shrink-0 border-r border-gray-200 bg-white flex flex-col overflow-hidden"
+        >
+          <div className="p-3 border-b border-gray-100 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[11px] uppercase tracking-wide text-gray-500">
+                Dealer summary
+              </div>
+              <div className="text-[11px] text-gray-500 truncate">
+                {dealers.length} dealers · {periodLabel || '—'}
+              </div>
+            </div>
+            <button
+              onClick={resetSidebar}
+              title="Reset sidebar width"
+              className="text-[10px] text-gray-400 hover:text-gray-700 uppercase tracking-wide"
             >
-              {periods.length === 0 && <option value="">—</option>}
-              {periods.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-            <p className="mt-2 text-[11px] text-gray-500 leading-snug">
-              Chat questions are answered in the context of the period selected
-              above.
-            </p>
-          </div>
-          <div className="p-3 border-b border-gray-100">
-            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-              Dealer summary
-            </div>
-            <div className="text-[11px] text-gray-500">
-              {dealers.length} dealers · period {selectedPeriod || '—'}
-            </div>
+              Reset
+            </button>
           </div>
           <div className="flex-1 overflow-auto">
             <DealerSummaryTable
               dealers={dealers}
               loading={dealersLoading}
+              onDealerClick={(d) =>
+                setInputText(
+                  `Why did ${d.distributor_name}'s commission change vs last month?`,
+                )
+              }
             />
           </div>
         </aside>
+        {/* Drag handle — 4px hit area, visual hover state, persists width. */}
+        <div
+          onMouseDown={startDrag}
+          onDoubleClick={resetSidebar}
+          role="separator"
+          aria-orientation="vertical"
+          title="Drag to resize · double-click to reset"
+          className="w-1 shrink-0 cursor-col-resize bg-gray-200 hover:bg-mtn-yellow transition-colors"
+        />
 
-        {/* Thread + input */}
         <main className="flex-1 flex flex-col overflow-hidden">
-          <div
-            ref={threadRef}
-            className="flex-1 overflow-y-auto px-6 py-4"
-          >
+          <div ref={threadRef} className="flex-1 overflow-y-auto px-6 py-4">
             {emptyThread ? (
               <EmptyState
-                period={selectedPeriod}
+                periodLabel={periodLabel}
+                topDealer={topDealer}
                 onPick={(s) => setInputText(s)}
               />
             ) : (
@@ -209,7 +235,7 @@ export default function ChatInterface() {
                 disabled={isLoading}
               />
               <button
-                onClick={onSubmit}
+                onClick={() => submit()}
                 disabled={isLoading || !inputText.trim()}
                 className="self-stretch px-5 rounded-lg bg-mtn-yellow text-gray-900 text-sm font-semibold hover:brightness-95 disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
@@ -217,7 +243,7 @@ export default function ChatInterface() {
               </button>
             </div>
             <div className="mt-1.5 text-[11px] text-gray-400">
-              Enter to send · Shift + Enter for newline
+              Enter to send · Shift + Enter for newline · Click a dealer in the sidebar to template a question
             </div>
           </div>
         </main>
@@ -226,29 +252,23 @@ export default function ChatInterface() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Empty-state suggestions
-// ---------------------------------------------------------------------------
-
-function EmptyState({ period, onPick }) {
+function EmptyState({ periodLabel, topDealer, onPick }) {
   return (
     <div className="h-full flex flex-col items-center justify-center text-center px-6">
-      <div className="w-12 h-12 rounded-full bg-mtn-yellow flex items-center justify-center text-gray-900 font-bold text-lg shadow-sm">
-        ₦
+      <div className="w-12 h-12 rounded-full bg-mtn-yellow flex items-center justify-center text-gray-900 font-bold text-xs shadow-sm">
+        NGN
       </div>
       <h2 className="mt-4 text-lg font-semibold text-gray-800">
         Ask about trade partner commissions
       </h2>
       <p className="mt-1 text-sm text-gray-500 max-w-md">
         Try one of the suggested questions, or type your own. Period{' '}
-        <span className="font-semibold text-gray-700">
-          {period || '—'}
-        </span>{' '}
+        <span className="font-semibold text-gray-700">{periodLabel || '—'}</span>{' '}
         is selected.
       </p>
       <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-2xl w-full">
         {SUGGESTIONS.map((tpl, i) => {
-          const text = tpl(period);
+          const text = tpl(periodLabel, topDealer);
           return (
             <button
               key={i}

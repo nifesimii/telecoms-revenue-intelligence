@@ -3,7 +3,7 @@
 // User msg     → right-aligned, MTN yellow (#FFCB00) background, dark text
 // Assistant    → left-aligned, white background, subtle border
 //                Markdown rendered (bold, lists, line breaks, tables) via
-//                react-markdown + remark-gfm. ₦ amounts get a darker weight.
+//                react-markdown + remark-gfm. NGN amounts get a darker weight.
 //                Tools_called rendered as small grey pills below the body.
 //                If get_dealer_summary or get_orsc_summary was called, a
 //                compact "top 10 by commission" mini-table renders below.
@@ -12,20 +12,20 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { formatNGN, formatPeriod, NGN_RE, NGN_MATCH_RE } from '../lib/format.js';
 
 // ---------------------------------------------------------------------------
-// Currency highlighter — wraps ₦X[,XXX].XX matches in a bolder span.
+// Currency highlighter — wraps "NGN X[,XXX].XX" matches in a bolder span.
+// Mirrors the agent's KB-mandated output format (see CLAUDE.md).
 // Applied via custom react-markdown component overrides for p / li / td / strong.
 // ---------------------------------------------------------------------------
 
-const CURRENCY_RE = /(₦[\d,]+\.\d{2})/g;
-
 function enhanceText(node) {
   if (typeof node === 'string') {
-    if (!node.includes('₦')) return node;
-    const parts = node.split(CURRENCY_RE);
+    if (!node.includes('NGN')) return node;
+    const parts = node.split(NGN_RE);
     return parts.map((part, i) =>
-      /^₦[\d,]+\.\d{2}$/.test(part) ? (
+      NGN_MATCH_RE.test(part) ? (
         <span key={i} className="font-bold text-gray-900">
           {part}
         </span>
@@ -100,24 +100,18 @@ const mdComponents = {
 // amount (orsc). Rendered below assistant text when applicable.
 // ---------------------------------------------------------------------------
 
-function formatNaira(n) {
-  const v = Number(n) || 0;
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
-
-function MiniDealerTable({ rows, valueKey, valueHeader, countKey, countHeader }) {
+function MiniDealerTable({ rows, valueKey, valueHeader, countKey, countHeader, period }) {
   const top = [...rows]
     .sort((a, b) => (b[valueKey] || 0) - (a[valueKey] || 0))
     .slice(0, 10);
   if (top.length === 0) return null;
   return (
     <div className="mt-3 overflow-x-auto">
+      {period && (
+        <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">
+          Top 10 by {valueHeader.toLowerCase()} · {formatPeriod(period)}
+        </div>
+      )}
       <table className="text-xs border-collapse border border-gray-200 w-full">
         <thead className="bg-gray-100 text-gray-700">
           <tr>
@@ -147,7 +141,7 @@ function MiniDealerTable({ rows, valueKey, valueHeader, countKey, countHeader })
                 {r[countKey] ?? 0}
               </td>
               <td className="border border-gray-200 px-2 py-1 text-right tabular-nums font-semibold text-gray-900">
-                {formatNaira(r[valueKey])}
+                {formatNGN(r[valueKey])}
               </td>
             </tr>
           ))}
@@ -157,7 +151,7 @@ function MiniDealerTable({ rows, valueKey, valueHeader, countKey, countHeader })
   );
 }
 
-function pickDealerMiniTable(tools_called, raw_data) {
+function pickDealerMiniTable(tools_called, raw_data, period) {
   if (!raw_data) return null;
   if (tools_called?.includes('get_dealer_summary')) {
     const rows = raw_data['get_dealer_summary']?.rows || [];
@@ -168,6 +162,7 @@ function pickDealerMiniTable(tools_called, raw_data) {
         valueHeader="Commission"
         countKey="total_activations"
         countHeader="Activations"
+        period={period}
       />
     );
   }
@@ -180,6 +175,7 @@ function pickDealerMiniTable(tools_called, raw_data) {
         valueHeader="Subscription"
         countKey="device_count"
         countHeader="Devices"
+        period={period}
       />
     );
   }
@@ -190,10 +186,10 @@ function pickDealerMiniTable(tools_called, raw_data) {
 // Tool pills
 // ---------------------------------------------------------------------------
 
-function ToolPills({ tools_called }) {
+function ToolPills({ tools_called, period }) {
   if (!tools_called || tools_called.length === 0) return null;
   return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
+    <div className="mb-2 flex flex-wrap items-center gap-1.5">
       {tools_called.map((name, i) => (
         <span
           key={`${name}-${i}`}
@@ -202,6 +198,9 @@ function ToolPills({ tools_called }) {
           {name}
         </span>
       ))}
+      {period && (
+        <span className="text-[10px] text-gray-500">· {formatPeriod(period)}</span>
+      )}
     </div>
   );
 }
@@ -240,7 +239,7 @@ export function LoadingBubble() {
 export default function MessageBubble({ message }) {
   const isUser = message.role === 'user';
   const miniTable = !isUser
-    ? pickDealerMiniTable(message.tools_called, message.raw_data)
+    ? pickDealerMiniTable(message.tools_called, message.raw_data, message.mon_period)
     : null;
 
   if (isUser) {
@@ -256,11 +255,11 @@ export default function MessageBubble({ message }) {
   return (
     <div className="flex justify-start mb-3">
       <div className="max-w-[90%] bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm text-sm text-gray-800 leading-relaxed">
+        <ToolPills tools_called={message.tools_called} period={message.mon_period} />
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
           {message.content || ''}
         </ReactMarkdown>
         {miniTable}
-        <ToolPills tools_called={message.tools_called} />
       </div>
     </div>
   );

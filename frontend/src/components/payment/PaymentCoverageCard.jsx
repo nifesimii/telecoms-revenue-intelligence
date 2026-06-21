@@ -4,16 +4,7 @@
 //   60-84%  → amber
 //   < 60%   → red
 
-function fmtNaira(n) {
-  const v = Number(n) || 0;
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
+import { formatNGN, formatPeriod } from '../../lib/format.js';
 
 function coverageTone(pct) {
   if (pct >= 85) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
@@ -52,22 +43,22 @@ export default function PaymentCoverageCard({ data, loading }) {
             {loading ? '…' : `${pct.toFixed(1)}%`}
           </span>
           <span className="text-[10px] uppercase tracking-wide opacity-80">
-            for {data?.period || '—'}
+            for {formatPeriod(data?.period) || '—'}
           </span>
         </div>
         <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4 pl-4 border-l border-gray-100">
           <SubStat
             label="Total owed"
-            value={loading ? '…' : fmtNaira(data?.total_commission_owed)}
+            value={loading ? '…' : formatNGN(data?.total_commission_owed)}
           />
           <SubStat
             label="Total paid"
-            value={loading ? '…' : fmtNaira(data?.total_amount_paid)}
+            value={loading ? '…' : formatNGN(data?.total_amount_paid)}
             tone="text-emerald-700"
           />
           <SubStat
             label="Outstanding"
-            value={loading ? '…' : fmtNaira(data?.total_amount_unpaid)}
+            value={loading ? '…' : formatNGN(data?.total_amount_unpaid)}
             tone="text-amber-700"
           />
           <SubStat

@@ -4,16 +4,7 @@
 //   HIGH_UNQUALIFIED_RATE → amber
 //   UNUSUAL_VOLUME        → blue  (NOT red — investigation, not fraud)
 
-function formatNaira(n) {
-  const v = Number(n) || 0;
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
+import { formatNGN } from '../../lib/format.js';
 
 const BADGE_STYLE = {
   ALL_UNQUALIFIED: 'bg-red-100 text-red-800 border-red-200',
@@ -116,7 +107,7 @@ export default function ActivationExceptionsTable({ rows = [], loading = false }
                 {Number(r.qualification_rate_pct).toFixed(2)}%
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">
-                {formatNaira(r.activation_commission_amount)}
+                {formatNGN(r.activation_commission_amount)}
               </td>
             </tr>
           ))}

@@ -1,13 +1,15 @@
 // Phase 4 panel — Payment Intelligence.
 // PaymentCoverageCard at top + tabbed table (Exceptions | All | Variance).
+// Period comes from the global PeriodProvider.
 
 import { useEffect, useState } from 'react';
 import {
-  getPeriods,
   getPaymentSummary,
   getPaymentExceptions,
   getPaymentVariance,
 } from '../../api/client.js';
+import { usePeriod } from '../../context/PeriodContext.jsx';
+import { formatNGN, formatPeriod } from '../../lib/format.js';
 import PaymentCoverageCard from './PaymentCoverageCard.jsx';
 import PaymentSummaryTable from './PaymentSummaryTable.jsx';
 import PaymentExceptionsTable from './PaymentExceptionsTable.jsx';
@@ -18,22 +20,9 @@ const TABS = [
   { id: 'variance', label: 'Variance' },
 ];
 
-function fmtNaira(n) {
-  const v = Number(n) || 0;
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
-
 function VarianceTable({ rows = [], loading }) {
   if (loading) {
-    return (
-      <div className="p-4 text-sm text-gray-500 italic">Loading variance…</div>
-    );
+    return <div className="p-4 text-sm text-gray-500 italic">Loading variance…</div>;
   }
   if (!rows.length) {
     return <div className="p-4 text-sm text-gray-500 italic">No data.</div>;
@@ -47,10 +36,10 @@ function VarianceTable({ rows = [], loading }) {
               Dealer
             </th>
             <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
-              Paid {rows[0]?.period_a}
+              Paid {formatPeriod(rows[0]?.period_a)}
             </th>
             <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
-              Paid {rows[0]?.period_b}
+              Paid {formatPeriod(rows[0]?.period_b)}
             </th>
             <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
               Δ Paid
@@ -79,14 +68,14 @@ function VarianceTable({ rows = [], loading }) {
                   {r.dealer_name}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
-                  {fmtNaira(r.amount_paid_a)}
+                  {formatNGN(r.amount_paid_a)}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-gray-800">
-                  {fmtNaira(r.amount_paid_b)}
+                  {formatNGN(r.amount_paid_b)}
                 </td>
                 <td className={`px-2 py-1.5 text-right tabular-nums font-semibold ${tone}`}>
                   {delta > 0 ? '+' : delta < 0 ? '−' : ''}
-                  {fmtNaira(Math.abs(delta))}
+                  {formatNGN(Math.abs(delta))}
                 </td>
                 <td className="px-2 py-1.5 text-[11px] text-gray-600">
                   {r.payment_status_a} → {r.payment_status_b}
@@ -108,8 +97,7 @@ function VarianceTable({ rows = [], loading }) {
 }
 
 export default function PaymentIntelligencePanel() {
-  const [periods, setPeriods] = useState([]);
-  const [period, setPeriod] = useState('');
+  const { periods, period, priorPeriod } = usePeriod();
   const [activeTab, setActiveTab] = useState('exceptions');
 
   const [coverage, setCoverage] = useState(null);
@@ -121,30 +109,11 @@ export default function PaymentIntelligencePanel() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    let cancelled = false;
-    getPeriods()
-      .then((data) => {
-        if (cancelled) return;
-        const ps = data.periods || [];
-        setPeriods(ps);
-        if (ps.length) setPeriod(ps[0]);
-      })
-      .catch((e) => !cancelled && setError(String(e?.message || e)));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Fetch coverage card + records for the period.
-  useEffect(() => {
     if (!period) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([
-      getPaymentSummary(period),
-      getPaymentExceptions(period),
-    ])
+    Promise.all([getPaymentSummary(period), getPaymentExceptions(period)])
       .then(([summary, exc]) => {
         if (cancelled) return;
         setCoverage(summary);
@@ -152,8 +121,7 @@ export default function PaymentIntelligencePanel() {
         setExceptions(Array.isArray(exc) ? exc : []);
       })
       .catch((e) => {
-        if (!cancelled)
-          setError(e?.response?.data?.detail || e?.message || String(e));
+        if (!cancelled) setError(e?.response?.data?.detail || e?.message || String(e));
       })
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -161,41 +129,26 @@ export default function PaymentIntelligencePanel() {
     };
   }, [period]);
 
-  // Variance is loaded lazily when its tab is opened.
   useEffect(() => {
     if (activeTab !== 'variance') return;
-    if (periods.length < 2) return;
-    const prior = periods[1] || periods[0];
-    const current = periods[0];
-    if (!current || !prior) return;
+    if (!period || !priorPeriod) return;
     let cancelled = false;
-    getPaymentVariance(prior, current)
+    getPaymentVariance(priorPeriod, period)
       .then((rows) => !cancelled && setVariance(Array.isArray(rows) ? rows : []))
       .catch(() => !cancelled && setVariance([]));
     return () => {
       cancelled = true;
     };
-  }, [activeTab, periods]);
+  }, [activeTab, period, priorPeriod, periods]);
 
   return (
     <div className="h-full flex flex-col bg-gray-50 text-gray-800">
       <div className="px-5 py-3 bg-white border-b border-gray-200 flex flex-wrap items-end gap-4">
-        <div>
-          <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-            Reporting period
-          </label>
-          <select
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow focus:border-mtn-yellow"
-          >
-            {periods.length === 0 && <option value="">—</option>}
-            {periods.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+        <div className="text-sm font-semibold text-gray-800">
+          Payment Intelligence
+          <span className="ml-2 text-xs font-normal text-gray-500">
+            · {formatPeriod(period) || '—'}
+          </span>
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
@@ -215,14 +168,13 @@ export default function PaymentIntelligencePanel() {
         </div>
       </div>
 
-      {/* Simulated-data banner — always visible */}
       <div className="mx-5 mt-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-xs text-amber-800 flex items-start gap-2">
         <span className="font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded px-1.5 py-0.5">
           Simulated
         </span>
         <span>
-          Payment data is simulated from real commission and exception
-          records. Live Oracle AP integration pending.
+          Payment data is simulated from real commission and exception records.
+          Live Oracle AP integration pending.
         </span>
       </div>
 
@@ -232,9 +184,6 @@ export default function PaymentIntelligencePanel() {
         </div>
       )}
 
-      {/* Body: coverage card at natural height + tabbed table card below.
-          The body can scroll on short screens, and the table area has a real
-          minimum height so it never collapses to zero. */}
       <div className="flex-1 min-h-0 p-5 flex flex-col gap-4 overflow-hidden">
         <div className="shrink-0">
           <PaymentCoverageCard data={coverage} loading={loading} />

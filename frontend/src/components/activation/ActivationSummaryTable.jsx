@@ -2,16 +2,7 @@
 // Columns: Rank | Dealer | Class | Total Acts | Qualified | Non-Qual | Rate % | Commission
 // Rate % cell traffic-light: green (>=80), amber (50-79), red (<50).
 
-function formatNaira(n) {
-  const v = Number(n) || 0;
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
+import { formatNGN } from '../../lib/format.js';
 
 function rateTone(pct) {
   const v = Number(pct);
@@ -104,7 +95,7 @@ export default function ActivationSummaryTable({ rows = [], loading = false }) {
                 </span>
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">
-                {formatNaira(r.activation_commission_amount)}
+                {formatNGN(r.activation_commission_amount)}
               </td>
             </tr>
           ))}

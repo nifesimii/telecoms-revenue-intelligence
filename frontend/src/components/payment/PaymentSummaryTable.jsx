@@ -5,16 +5,7 @@
 //   DISPUTED       → red
 //   PENDING        → grey
 
-function fmtNaira(n) {
-  const v = Number(n) || 0;
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
+import { formatNGN } from '../../lib/format.js';
 
 const STATUS_TONE = {
   FULLY_PAID: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -101,13 +92,13 @@ export default function PaymentSummaryTable({ rows = [], loading = false }) {
                 {r.account_profile_class || '—'}
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
-                {fmtNaira(r.commission_owed)}
+                {formatNGN(r.commission_owed)}
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">
-                {fmtNaira(r.amount_paid)}
+                {formatNGN(r.amount_paid)}
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">
-                {fmtNaira(r.amount_unpaid)}
+                {formatNGN(r.amount_unpaid)}
               </td>
               <td className="px-2 py-1.5">
                 <StatusBadge status={r.payment_status} />

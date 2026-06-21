@@ -1,18 +1,7 @@
 // React hook. Manages chat state and POST /chat calls.
 //
-// State surface:
-//   messages: array of { role, content, tools_called, raw_data }
-//   isLoading: bool — true while a /chat round-trip is in flight
-//   error:    string | null — set from ChatResponse.error or thrown API errors
-//   selectedPeriod: string — current period context, prepended on the backend
-//
-// Actions:
-//   sendMessage(text)        — append user msg, hit /chat, append assistant msg
-//   clearChat()              — wipe messages and clear error
-//   setSelectedPeriod(value) — store the period selection
-//
-// Conversation history sent to the API is the lean shape the backend expects:
-// [{ role: 'user' | 'assistant', content: string }, ...]
+// Period context lives in PeriodContext now — sendMessage accepts the period
+// at call time rather than holding it as hook-local state.
 
 import { useCallback, useState } from 'react';
 import { sendMessage as apiSendMessage } from '../api/client.js';
@@ -21,22 +10,19 @@ export default function useChat() {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [selectedPeriod, setSelectedPeriod] = useState('');
 
   const sendMessage = useCallback(
-    async (text) => {
+    async (text, monPeriod = null) => {
       const trimmed = (text || '').trim();
       if (!trimmed || isLoading) return;
 
       setError(null);
 
-      // Build the wire-shape history from current messages BEFORE appending.
       const wireHistory = messages.map((m) => ({
         role: m.role,
         content: m.content,
       }));
 
-      // Optimistically append the user message so it renders immediately.
       const userMsg = {
         role: 'user',
         content: trimmed,
@@ -47,17 +33,14 @@ export default function useChat() {
       setIsLoading(true);
 
       try {
-        const data = await apiSendMessage(
-          trimmed,
-          wireHistory,
-          selectedPeriod || null,
-        );
+        const data = await apiSendMessage(trimmed, wireHistory, monPeriod);
 
         const assistantMsg = {
           role: 'assistant',
           content: data.response || '',
           tools_called: Array.isArray(data.tools_called) ? data.tools_called : [],
           raw_data: data.raw_data || {},
+          mon_period: monPeriod || null,
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
@@ -68,8 +51,6 @@ export default function useChat() {
           err?.message ||
           'Network error contacting the API.';
         setError(message);
-        // Surface the failure as an assistant message so the thread still
-        // closes the loop visually.
         setMessages((prev) => [
           ...prev,
           {
@@ -84,7 +65,7 @@ export default function useChat() {
         setIsLoading(false);
       }
     },
-    [messages, isLoading, selectedPeriod],
+    [messages, isLoading],
   );
 
   const clearChat = useCallback(() => {
@@ -96,8 +77,6 @@ export default function useChat() {
     messages,
     isLoading,
     error,
-    selectedPeriod,
-    setSelectedPeriod,
     sendMessage,
     clearChat,
   };

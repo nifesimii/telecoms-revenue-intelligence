@@ -4,16 +4,7 @@
 //   CONFIRMED_MISMATCH    → amber  "Phase 3"
 //   HIGH_UNQUALIFIED_RATE → amber  "Phase 2"
 
-function fmtNaira(n) {
-  const v = Number(n) || 0;
-  return (
-    '₦' +
-    v.toLocaleString('en-NG', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })
-  );
-}
+import { formatNGN } from '../../lib/format.js';
 
 const STATUS_TONE = {
   PARTIALLY_PAID: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -66,7 +57,7 @@ function FlagBadge({ flag }) {
 }
 
 function actionFor(row) {
-  const amount = fmtNaira(row.amount_unpaid);
+  const amount = formatNGN(row.amount_unpaid);
   const name = row.distributor_name;
   if (row.payment_status === 'DISPUTED')
     return `${amount} disputed for ${name}. Linked to ${row.exception_flag} exception. Verify activation records before settlement.`;
@@ -132,10 +123,10 @@ export default function PaymentExceptionsTable({ rows = [], loading = false }) {
                 <StatusBadge status={r.payment_status} />
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
-                {fmtNaira(r.commission_owed)}
+                {formatNGN(r.commission_owed)}
               </td>
               <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">
-                {fmtNaira(r.amount_unpaid)}
+                {formatNGN(r.amount_unpaid)}
               </td>
               <td className="px-2 py-1.5">
                 <FlagBadge flag={r.exception_flag} />

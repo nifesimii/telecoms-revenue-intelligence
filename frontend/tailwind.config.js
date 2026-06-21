@@ -5,7 +5,6 @@ export default {
     extend: {
       colors: {
         'mtn-yellow': '#FFCB00',
-        'mtn-yellow-soft': '#FFE680',
       },
       fontFamily: {
         sans: [

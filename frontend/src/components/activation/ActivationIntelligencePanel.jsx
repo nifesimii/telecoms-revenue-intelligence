@@ -1,14 +1,15 @@
 // Phase 2 panel — Activation Intelligence.
-// Period selector + 3 tabs (Summary | Variance | Exceptions) backed by the
-// three Phase 2 endpoints. Standalone — no agent loop, no chat.
+// Period selector lives in the global header (PeriodProvider). This panel
+// owns only the "compare against" prior-period dropdown for the variance tab.
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  getPeriods,
   getActivationSummary,
   getActivationVariance,
   getActivationExceptions,
 } from '../../api/client.js';
+import { usePeriod } from '../../context/PeriodContext.jsx';
+import { formatPeriod } from '../../lib/format.js';
 import ActivationSummaryTable from './ActivationSummaryTable.jsx';
 import ActivationVarianceTable from './ActivationVarianceTable.jsx';
 import ActivationExceptionsTable from './ActivationExceptionsTable.jsx';
@@ -20,9 +21,7 @@ const TABS = [
 ];
 
 export default function ActivationIntelligencePanel() {
-  const [periods, setPeriods] = useState([]);
-  const [period, setPeriod] = useState('');
-  const [priorPeriod, setPriorPeriod] = useState('');
+  const { periods, period, priorPeriod, setPriorPeriod } = usePeriod();
   const [activeTab, setActiveTab] = useState('summary');
 
   const [summary, setSummary] = useState([]);
@@ -32,26 +31,6 @@ export default function ActivationIntelligencePanel() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Load periods once on mount.
-  useEffect(() => {
-    let cancelled = false;
-    getPeriods()
-      .then((data) => {
-        if (cancelled) return;
-        const ps = data.periods || [];
-        setPeriods(ps);
-        if (ps.length) {
-          setPeriod(ps[0]);
-          setPriorPeriod(ps[1] || ps[0]);
-        }
-      })
-      .catch((e) => !cancelled && setError(String(e?.message || e)));
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Refetch the active tab's data whenever the period(s) change.
   useEffect(() => {
     if (!period) return;
     let cancelled = false;
@@ -91,24 +70,12 @@ export default function ActivationIntelligencePanel() {
 
   return (
     <div className="h-full flex flex-col bg-gray-50 text-gray-800">
-      {/* Sub-header: period selectors + tab strip */}
       <div className="px-5 py-3 bg-white border-b border-gray-200 flex flex-wrap items-end gap-4">
-        <div>
-          <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-            Reporting period
-          </label>
-          <select
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow focus:border-mtn-yellow"
-          >
-            {periods.length === 0 && <option value="">—</option>}
-            {periods.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
+        <div className="text-sm font-semibold text-gray-800">
+          Activation Intelligence
+          <span className="ml-2 text-xs font-normal text-gray-500">
+            · {formatPeriod(period) || '—'}
+          </span>
         </div>
 
         {activeTab === 'variance' && (
@@ -123,7 +90,7 @@ export default function ActivationIntelligencePanel() {
             >
               {periods.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {formatPeriod(p)}
                 </option>
               ))}
             </select>
@@ -149,7 +116,6 @@ export default function ActivationIntelligencePanel() {
         </div>
       </div>
 
-      {/* Stats strip — gives a one-glance summary of the current period */}
       <div className="px-5 py-3 bg-white border-b border-gray-100 flex flex-wrap items-center gap-6 text-xs">
         {activeTab === 'summary' && summary.length > 0 && (
           <>
@@ -177,10 +143,7 @@ export default function ActivationIntelligencePanel() {
         )}
         {activeTab === 'variance' && variance.length > 0 && (
           <>
-            <Stat
-              label="Dealers in both"
-              value={variance.length.toLocaleString()}
-            />
+            <Stat label="Dealers in both" value={variance.length.toLocaleString()} />
             <Stat
               label="Growing"
               value={variance.filter((r) => r.delta_activations > 0).length}
@@ -195,21 +158,9 @@ export default function ActivationIntelligencePanel() {
         )}
         {activeTab === 'exceptions' && exceptions.length > 0 && (
           <>
-            <Stat
-              label="ALL_UNQUALIFIED"
-              value={exceptionCounts.ALL_UNQUALIFIED}
-              tone="text-red-600"
-            />
-            <Stat
-              label="HIGH_UNQUALIFIED_RATE"
-              value={exceptionCounts.HIGH_UNQUALIFIED_RATE}
-              tone="text-amber-600"
-            />
-            <Stat
-              label="UNUSUAL_VOLUME"
-              value={exceptionCounts.UNUSUAL_VOLUME}
-              tone="text-blue-600"
-            />
+            <Stat label="ALL_UNQUALIFIED" value={exceptionCounts.ALL_UNQUALIFIED} tone="text-red-600" />
+            <Stat label="HIGH_UNQUALIFIED_RATE" value={exceptionCounts.HIGH_UNQUALIFIED_RATE} tone="text-amber-600" />
+            <Stat label="UNUSUAL_VOLUME" value={exceptionCounts.UNUSUAL_VOLUME} tone="text-blue-600" />
           </>
         )}
       </div>
@@ -220,9 +171,6 @@ export default function ActivationIntelligencePanel() {
         </div>
       )}
 
-      {/* Body: table card fills remaining viewport and scrolls internally.
-          ``min-h-0`` is essential — flex children default to ``min-height:
-          auto`` and won't shrink to fit. */}
       <div className="flex-1 min-h-0 p-5 flex flex-col overflow-hidden">
         <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
           <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500 shrink-0">
@@ -231,15 +179,9 @@ export default function ActivationIntelligencePanel() {
             {activeTab === 'exceptions' && `${exceptions.length.toLocaleString()} exception${exceptions.length === 1 ? '' : 's'}`}
           </div>
           <div className="flex-1 min-h-0">
-            {activeTab === 'summary' && (
-              <ActivationSummaryTable rows={summary} loading={loading} />
-            )}
-            {activeTab === 'variance' && (
-              <ActivationVarianceTable rows={variance} loading={loading} />
-            )}
-            {activeTab === 'exceptions' && (
-              <ActivationExceptionsTable rows={exceptions} loading={loading} />
-            )}
+            {activeTab === 'summary' && <ActivationSummaryTable rows={summary} loading={loading} />}
+            {activeTab === 'variance' && <ActivationVarianceTable rows={variance} loading={loading} />}
+            {activeTab === 'exceptions' && <ActivationExceptionsTable rows={exceptions} loading={loading} />}
           </div>
         </div>
       </div>
@@ -250,12 +192,8 @@ export default function ActivationIntelligencePanel() {
 function Stat({ label, value, tone = 'text-gray-900' }) {
   return (
     <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wide text-gray-500">
-        {label}
-      </span>
-      <span className={`text-sm font-semibold tabular-nums ${tone}`}>
-        {value}
-      </span>
+      <span className="text-[10px] uppercase tracking-wide text-gray-500">{label}</span>
+      <span className={`text-sm font-semibold tabular-nums ${tone}`}>{value}</span>
     </div>
   );
 }

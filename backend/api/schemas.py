@@ -158,6 +158,22 @@ class ActivationExceptionResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class AssuranceFinding(BaseModel):
+    """A single dealer-level finding produced by an assurance module.
+
+    Mirrors :class:`backend.assurance.base.AssuranceResult.findings` dict
+    entries. Surfaces the rich context (name, description, recommended
+    action) that the dashboard needs to be actionable, not just countable.
+    """
+
+    type: str
+    severity: str  # HIGH | MEDIUM | LOW
+    dealer_id: str
+    dealer_name: str
+    description: str
+    recommended_action: str | None = None
+
+
 class AssuranceModuleStatus(BaseModel):
     """Per-module summary inside ``AssuranceStatusResponse``.
 
@@ -174,6 +190,7 @@ class AssuranceModuleStatus(BaseModel):
     high_count: int | None = None
     medium_count: int | None = None
     low_count: int | None = None
+    findings: list[AssuranceFinding] = []
 
 
 class AssuranceStatusResponse(BaseModel):
