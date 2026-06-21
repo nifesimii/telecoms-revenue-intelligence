@@ -1,0 +1,23 @@
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# OS
+.DS_Store
+
+# Pre-staged apache-flink wheels for offline Docker build (see flink_jobs/download_wheels.sh)
+flink_jobs/wheels/*
+!flink_jobs/wheels/.gitkeep

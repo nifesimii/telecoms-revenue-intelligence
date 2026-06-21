@@ -1,0 +1,270 @@
+version: "3.9"
+
+services:
+
+  # ── Kafka (KRaft mode — no Zookeeper needed) ──────────────
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: app_kafka
+    ports:
+      - "9092:9092"   # External client access
+      - "9101:9101"   # JMX metrics
+    environment:
+      # ── KRaft identity ────────────────────────────────────
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller        # Single node acts as both
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093  # NodeID@host:controllerPort
+
+      # ── Listeners ─────────────────────────────────────────
+      KAFKA_LISTENERS: CONTROLLER://kafka:9093,PLAINTEXT://kafka:29092,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # ── Cluster ───────────────────────────────────────────
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+
+      # ── KRaft requires a cluster UUID (generated once) ────
+      CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+
+  # ── Schema Registry ───────────────────────────────────────
+  schema-registry:
+    image: confluentinc/cp-schema-registry:7.5.0
+    container_name: app_schema_registry
+    depends_on:
+      kafka:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
+      SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
+
+  # ── Kafka Topic Initializer ───────────────────────────────
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: app_kafka_init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    volumes:
+      - ./infra/kafka:/scripts
+    entrypoint: ["/bin/bash", "/scripts/create-topics.sh"]
+
+  # ── Kafka UI (for debugging/demo) ─────────────────────────
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: app_kafka_ui
+    depends_on:
+      - kafka
+      - schema-registry
+    ports:
+      - "8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: african-payment-platform
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_SCHEMAREGISTRY: http://schema-registry:8081
+
+  # ── Redis ─────────────────────────────────────────────────
+  redis:
+    image: redis:7.2-alpine
+    container_name: app_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Postgres (analytical store + dbt target) ──────────────
+  postgres:
+    image: postgres:15-alpine
+    container_name: app_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: payment_platform
+      POSTGRES_USER: platform_user
+      POSTGRES_PASSWORD: platform_pass
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U platform_user -d payment_platform"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Ingestion Service (FastAPI webhook receivers) ──────────
+  ingestion:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    container_name: app_ingestion
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      REDIS_HOST: redis
+    volumes:
+      - ./ingestion:/app/ingestion
+    command: uvicorn ingestion.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # ── Mono Open-Banking Batch Poller ────────────────────────
+  # Runs the EOD bank statement pull at 23:00 WAT daily.
+  # Uses supercronic for reliable cron execution in Docker.
+  # Mono is batch-only — real-time reconciliation is not available
+  # for direct bank-connected merchants.
+  mono-batch:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    container_name: app_mono_batch
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      DATABASE_URL: postgresql://platform_user:platform_pass@postgres:5432/payment_platform
+    volumes:
+      - ./ingestion:/app/ingestion
+    # Uses a dedicated entrypoint script to avoid shell quoting issues with
+    # inline sh -c commands. Script writes the crontab and execs supercronic.
+    command: ["/bin/sh", "/app/ingestion/pollers/mono_entrypoint.sh"]
+    restart: unless-stopped
+
+
+  # ── FX Rate Refresher ─────────────────────────────────────
+  # Fetches live rates from ExchangeRate API and writes to Redis.
+  # Runs immediately on startup then loops every hour.
+  # Supports: USD, GBP, EUR, GHS, KES → NGN
+  fx-refresher:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    container_name: app_fx_refresher
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - ./flink_jobs:/app/flink_jobs
+    command: python /app/flink_jobs/fx_refresher.py
+    restart: unless-stopped
+
+  # ── Prometheus ────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:v2.47.0
+    container_name: app_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+
+  # ── Grafana ───────────────────────────────────────────────
+  grafana:
+    image: grafana/grafana:10.1.0
+    container_name: app_grafana
+    depends_on:
+      - prometheus
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infra/grafana/dashboards:/etc/grafana/provisioning/dashboards
+
+  # ── Flink Normalization Job ───────────────────────────────
+  flink-normalizer:
+    build:
+      context: ./flink_jobs
+      dockerfile: Dockerfile
+    container_name: app_flink_normalizer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    command: python /opt/flink/jobs/normalizer.py
+    restart: on-failure
+
+  # ── Kafka → Postgres Sink ─────────────────────────────────
+  # Consumes normalized.transactions and UPSERTs into the Postgres
+  # normalized.transactions table. Idempotent on transaction_id.
+  # Closes the end-to-end pipeline loop (raw → normalized → queryable).
+  postgres-sink:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    container_name: app_postgres_sink
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC: normalized.transactions
+      KAFKA_GROUP_ID: postgres-sink
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: payment_platform
+      POSTGRES_USER: platform_user
+      POSTGRES_PASSWORD: platform_pass
+      METRICS_PORT: "9100"
+    ports:
+      - "9100:9100"   # Prometheus metrics
+    volumes:
+      - ./services:/app/services
+    command: python /app/services/postgres_sink/main.py
+    restart: on-failure
+
+
+volumes:
+  kafka_data:
+  redis_data:
+  postgres_data:
+  prometheus_data:
+  grafana_data:
