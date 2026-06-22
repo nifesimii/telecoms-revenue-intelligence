@@ -16,7 +16,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getAssuranceStatus } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
-import { formatPeriod } from '../../lib/format.js';
+import { formatNGN, formatPeriod } from '../../lib/format.js';
+import useDealerVerification from '../../hooks/useDealerVerification.js';
 
 const STATUS_TONE = {
   PASS: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -232,7 +233,71 @@ function CrossModuleRollup({ rows, periodLabel, onAsk }) {
 // Module cards
 // ---------------------------------------------------------------------------
 
-function FindingRow({ finding, onAsk, periodLabel }) {
+function FindingMetric({ label, value, tone = 'text-gray-900' }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-gray-500">{label}</div>
+      <div className={`text-sm font-semibold tabular-nums ${tone}`}>{value}</div>
+    </div>
+  );
+}
+
+function FindingVerificationPanel({ finding, activation, dealer, periodLabel }) {
+  // Dealer snapshot — answers "what does this dealer actually look like
+  // this period?" so the finding can be read in context, not in isolation.
+  const totalActs  = Number(activation?.activation_count || 0);
+  const qualified  = Number(activation?.qualified_activation_count || 0);
+  const unqualif   = Number(activation?.non_qualified_activation_count || 0);
+  const qualRate   = Number(activation?.qualification_rate_pct || 0);
+  const earned     = Number(activation?.activation_commission_amount || 0);
+  const zeroCount  = Number(dealer?.zero_commission_count || 0);
+
+  if (!activation && !dealer) {
+    return (
+      <div className="mt-2 ml-7 p-3 bg-gray-50 border border-gray-200 rounded text-[11px] text-gray-500 italic">
+        No matching activation / dealer record for {finding.dealer_name} in {periodLabel}.
+        {finding.recommended_action && (
+          <div className="mt-1 not-italic text-gray-700">
+            → {finding.recommended_action}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-2 ml-7 p-3 bg-gray-50 border border-gray-200 rounded">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">
+        Dealer snapshot · {periodLabel || '—'}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <FindingMetric label="Activations" value={totalActs.toLocaleString()} />
+        <FindingMetric label="Qualified" value={qualified.toLocaleString()} tone="text-emerald-700" />
+        <FindingMetric label="Unqualified" value={unqualif.toLocaleString()} tone="text-amber-700" />
+        <FindingMetric
+          label="Qual rate"
+          value={`${qualRate.toFixed(1)}%`}
+          tone={qualRate >= 80 ? 'text-emerald-700' : qualRate >= 50 ? 'text-amber-700' : 'text-red-700'}
+        />
+        <FindingMetric label="Commission earned" value={formatNGN(earned)} />
+        <FindingMetric
+          label="Zero-comm records"
+          value={zeroCount.toLocaleString()}
+          tone={zeroCount > 0 ? 'text-amber-700' : 'text-gray-500'}
+        />
+      </div>
+      {finding.recommended_action && (
+        <div className="mt-2 text-[11px] text-gray-600 border-t border-gray-200 pt-2">
+          <span className="font-semibold uppercase tracking-wide text-gray-500">Next step:</span>{' '}
+          {finding.recommended_action}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FindingRow({ finding, onAsk, periodLabel, activation, dealer }) {
+  const [open, setOpen] = useState(false);
   return (
     <li className="py-2 first:pt-0 last:pb-0 border-b border-gray-100 last:border-b-0">
       <div className="flex items-start gap-2">
@@ -247,31 +312,42 @@ function FindingRow({ finding, onAsk, periodLabel }) {
           <div className="text-xs text-gray-700 leading-snug">
             {finding.description}
           </div>
-          {finding.recommended_action && (
-            <div className="text-[11px] text-gray-500 italic mt-0.5">
-              → {finding.recommended_action}
-            </div>
-          )}
+          <div className="mt-1 flex items-center gap-3">
+            <button
+              onClick={() => setOpen((o) => !o)}
+              className="text-[10px] text-gray-600 hover:text-gray-900 hover:underline"
+            >
+              {open ? '▼ Hide verification' : '▶ Verify'}
+            </button>
+            {onAsk && (
+              <button
+                onClick={() =>
+                  onAsk(
+                    `Investigate ${finding.dealer_name} for ${periodLabel || 'this period'}: ${finding.description}`,
+                  )
+                }
+                className="text-[10px] text-gray-500 hover:text-gray-900 hover:underline"
+                title="Ask Claude about this finding"
+              >
+                Ask Claude
+              </button>
+            )}
+          </div>
         </div>
-        {onAsk && (
-          <button
-            onClick={() =>
-              onAsk(
-                `Investigate ${finding.dealer_name} for ${periodLabel || 'this period'}: ${finding.description}`,
-              )
-            }
-            className="shrink-0 text-[10px] text-gray-500 hover:text-gray-900 hover:underline"
-            title="Ask Claude about this finding"
-          >
-            Ask Claude
-          </button>
-        )}
       </div>
+      {open && (
+        <FindingVerificationPanel
+          finding={finding}
+          activation={activation}
+          dealer={dealer}
+          periodLabel={periodLabel}
+        />
+      )}
     </li>
   );
 }
 
-function FlagCard({ module, onNavigate, onAsk, periodLabel, expanded, onToggle }) {
+function FlagCard({ module, onNavigate, onAsk, periodLabel, expanded, onToggle, activationByDealer, dealerByCode }) {
   const accent = ACCENT_BY_STATUS[module.status] || 'bg-gray-300';
   const findings = module.findings || [];
   const sevRank = { HIGH: 0, MEDIUM: 1, LOW: 2 };
@@ -334,6 +410,8 @@ function FlagCard({ module, onNavigate, onAsk, periodLabel, expanded, onToggle }
                   finding={f}
                   onAsk={onAsk}
                   periodLabel={periodLabel}
+                  activation={activationByDealer?.[f.dealer_id]}
+                  dealer={dealerByCode?.[f.dealer_id]}
                 />
               ))}
             </ul>
@@ -496,6 +574,9 @@ export default function AssuranceStatusPanel({ onNavigate, onAsk }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState({});
+  // Dealer-keyed lookup for inline finding verification panels. One fetch
+  // per period change — used by every FlagCard's FindingRow on expand.
+  const { activationByDealer, dealerByCode } = useDealerVerification(period);
 
   useEffect(() => {
     if (!period) return;
@@ -678,6 +759,8 @@ export default function AssuranceStatusPanel({ onNavigate, onAsk }) {
                       onToggle={() =>
                         setExpanded((e) => ({ ...e, [m.module]: !e[m.module] }))
                       }
+                      activationByDealer={activationByDealer}
+                      dealerByCode={dealerByCode}
                     />
                   );
                 })}

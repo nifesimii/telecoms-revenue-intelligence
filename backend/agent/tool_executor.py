@@ -210,12 +210,62 @@ def _handle_get_dealer_full_context(
     }
 
 
+def _handle_compile_data_coverage_ticket(
+    tool_use_id: str, tool_input: dict[str, Any]
+) -> dict[str, Any]:
+    """Compile the ServiceNow ticket draft for FBB data coverage gaps."""
+    from backend.db.data_coverage import compile_data_coverage_ticket
+
+    mon_period = tool_input.get("mon_period")
+    source = tool_input.get("source", "both")
+
+    if not mon_period or not isinstance(mon_period, str):
+        return _error_result(
+            tool_use_id,
+            "compile_data_coverage_ticket requires a 'mon_period' string "
+            "parameter in YYYYMM format.",
+        )
+    if source not in ("ifs", "usp", "both"):
+        return _error_result(
+            tool_use_id,
+            f"compile_data_coverage_ticket: invalid source {source!r}. "
+            "Must be 'ifs', 'usp', or 'both'.",
+        )
+
+    try:
+        payload = compile_data_coverage_ticket(str(mon_period), source=source)  # type: ignore[arg-type]
+    except Exception as exc:  # noqa: BLE001 — surface to Claude
+        return _error_result(
+            tool_use_id,
+            f"compile_data_coverage_ticket failed: {type(exc).__name__}: {exc}",
+        )
+
+    envelope = {
+        "tool": "compile_data_coverage_ticket",
+        "parameters": {"mon_period": mon_period, "source": source},
+        **payload,
+        "drill_down_hint": (
+            "Lead with the severity + affected_dealers count. Present the "
+            "IFS and USP dealer tables verbatim if the user wants the full "
+            "list, otherwise summarise the top-3 by activation count. "
+            "Hand the markdown ticket_body to the user as-is — they paste "
+            "it into ServiceNow themselves (Stage 1 — no live submission)."
+        ),
+    }
+    return {
+        "type": "tool_result",
+        "tool_use_id": tool_use_id,
+        "content": json.dumps(envelope, ensure_ascii=False),
+    }
+
+
 # Registry: tool name -> (tool_use_id, tool_input) -> tool_result dict
 _DIRECT_HANDLERS: dict[
     str, Callable[[str, dict[str, Any]], dict[str, Any]]
 ] = {
     "get_kb_section": _handle_get_kb_section,
     "get_dealer_full_context": _handle_get_dealer_full_context,
+    "compile_data_coverage_ticket": _handle_compile_data_coverage_ticket,
 }
 
 

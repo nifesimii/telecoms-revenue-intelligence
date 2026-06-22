@@ -21,3 +21,12 @@ dbt/logs/
 # Pre-staged apache-flink wheels for offline Docker build (see flink_jobs/download_wheels.sh)
 flink_jobs/wheels/*
 !flink_jobs/wheels/.gitkeep
+
+# Runtime artifacts from the telecom-batch ingestor — only the dir markers
+# are tracked (see telecom_data/{inbox,archive,quarantine}/.gitkeep).
+telecom_data/inbox/*
+telecom_data/archive/*
+telecom_data/quarantine/*
+!telecom_data/inbox/.gitkeep
+!telecom_data/archive/.gitkeep
+!telecom_data/quarantine/.gitkeep

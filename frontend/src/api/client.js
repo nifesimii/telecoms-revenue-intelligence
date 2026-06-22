@@ -128,6 +128,30 @@ export async function getInventoryComparison(
   return data;
 }
 
+/**
+ * GET /inventory/data-coverage-issues?mon_period=YYYYMM&source=ifs|usp|both
+ * Returns the ServiceNow-ready ticket draft for data coverage gaps.
+ *
+ * @param {string|null} mon_period
+ * @param {'ifs'|'usp'|'both'} source
+ * @returns {Promise<{
+ *   mon_period: string,
+ *   source: string,
+ *   severity: 'LOW'|'MEDIUM'|'HIGH',
+ *   severity_action: string,
+ *   affected_dealers: number,
+ *   ifs_missing: Array<object>,
+ *   usp_missing: Array<object>,
+ *   ticket_body: string,
+ * }>}
+ */
+export async function getDataCoverageIssues(mon_period = null, source = 'both') {
+  const params = { source };
+  if (mon_period) params.mon_period = mon_period;
+  const { data } = await api.get('/inventory/data-coverage-issues', { params });
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Phase 4 — Payment Intelligence
 // ---------------------------------------------------------------------------

@@ -82,6 +82,7 @@ def health() -> dict:
     return {
         "status": "ok",
         "sample_data_mode": config.USE_SAMPLE_DATA,
+        "payment_source": config.PAYMENT_SOURCE,   # "simulated" | "apdp"
     }
 
 

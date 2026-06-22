@@ -228,6 +228,37 @@ services:
     command: python /opt/flink/jobs/normalizer.py
     restart: on-failure
 
+  # ── Telecom Batch Ingestor ────────────────────────────────
+  # Watches ./telecom_data/inbox for CSV drops from dealer management
+  # systems, commission engines, and AP systems. Routes by filename
+  # prefix to the right raw.telecom.* topic. Processed files move to
+  # ./telecom_data/archive; bad files to ./telecom_data/quarantine.
+  # Drop a file in inbox/ and within 30s it lands in Kafka.
+  telecom-batch:
+    build:
+      context: .
+      dockerfile: ingestion/Dockerfile
+    container_name: app_telecom_batch
+    depends_on:
+      kafka:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      TELECOM_INBOX_DIR: /data/telecom/inbox
+      TELECOM_ARCHIVE_DIR: /data/telecom/archive
+      TELECOM_QUARANTINE_DIR: /data/telecom/quarantine
+      TELECOM_POLL_INTERVAL_SECONDS: "30"
+      METRICS_PORT: "9102"
+    ports:
+      - "9102:9102"   # Prometheus metrics (9101 is Kafka JMX)
+    volumes:
+      - ./ingestion:/app/ingestion
+      - ./telecom_data:/data/telecom
+    command: python -m ingestion.pollers.telecom_batch
+    restart: on-failure
+
   # ── Kafka → Postgres Sink ─────────────────────────────────
   # Consumes normalized.transactions and UPSERTs into the Postgres
   # normalized.transactions table. Idempotent on transaction_id.

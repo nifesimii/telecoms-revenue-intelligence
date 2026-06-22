@@ -96,7 +96,7 @@ function VarianceTable({ rows = [], loading }) {
   );
 }
 
-export default function PaymentIntelligencePanel() {
+export default function PaymentIntelligencePanel({ onAsk } = {}) {
   const { periods, period, priorPeriod } = usePeriod();
   const [activeTab, setActiveTab] = useState('exceptions');
 
@@ -168,15 +168,29 @@ export default function PaymentIntelligencePanel() {
         </div>
       </div>
 
-      <div className="mx-5 mt-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-xs text-amber-800 flex items-start gap-2">
-        <span className="font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded px-1.5 py-0.5">
-          Simulated
-        </span>
-        <span>
-          Payment data is simulated from real commission and exception records.
-          Live Oracle AP integration pending.
-        </span>
-      </div>
+      {coverage?.data_source === 'APDP' ? (
+        <div className="mx-5 mt-4 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2 text-xs text-emerald-800 flex items-start gap-2">
+          <span className="font-semibold uppercase tracking-wide bg-emerald-200 text-emerald-900 rounded px-1.5 py-0.5">
+            Live · APDP
+          </span>
+          <span>
+            Reconciliation sourced from APDP's <code>normalized.partner_settlements</code> view.
+            Sales captured, expected commission, settled amount, and variance are derived from
+            real dealer / commission / settlement events.
+          </span>
+        </div>
+      ) : (
+        <div className="mx-5 mt-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-xs text-amber-800 flex items-start gap-2">
+          <span className="font-semibold uppercase tracking-wide bg-amber-200 text-amber-900 rounded px-1.5 py-0.5">
+            Simulated
+          </span>
+          <span>
+            Payment data is simulated from real commission and exception records.
+            Live Oracle AP / APDP integration pending — set{' '}
+            <code>PAYMENT_SOURCE=apdp</code> when ready.
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="mx-5 mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
@@ -199,11 +213,20 @@ export default function PaymentIntelligencePanel() {
               {activeTab === 'variance' &&
                 `${variance.length.toLocaleString()} dealer${variance.length === 1 ? '' : 's'} present in both periods`}
             </span>
-            <span className="text-amber-700 font-semibold">[SIMULATED]</span>
+            {coverage?.data_source === 'APDP' ? (
+              <span className="text-emerald-700 font-semibold">[APDP]</span>
+            ) : (
+              <span className="text-amber-700 font-semibold">[SIMULATED]</span>
+            )}
           </div>
           <div className="flex-1 min-h-0">
             {activeTab === 'exceptions' && (
-              <PaymentExceptionsTable rows={exceptions} loading={loading} />
+              <PaymentExceptionsTable
+                rows={exceptions}
+                loading={loading}
+                period={period}
+                onAsk={onAsk}
+              />
             )}
             {activeTab === 'all' && (
               <PaymentSummaryTable rows={allRows} loading={loading} />

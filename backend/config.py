@@ -33,6 +33,21 @@ PRESTO_SCHEMA: str = os.getenv("PRESTO_SCHEMA", "development")
 # --- Mode flag ---
 USE_SAMPLE_DATA: bool = os.getenv("USE_SAMPLE_DATA", "true").lower() == "true"
 
+# --- Payment Intelligence source ---
+# "simulated" (default) → read from backend/data/samples/payment_simulation.csv
+# "apdp"                → read from APDP Postgres normalized.partner_settlements
+# Anything else is treated as "simulated" for safety.
+PAYMENT_SOURCE: str = os.getenv("PAYMENT_SOURCE", "simulated").lower()
+if PAYMENT_SOURCE not in ("simulated", "apdp"):
+    PAYMENT_SOURCE = "simulated"
+
+# --- APDP Postgres (only used when PAYMENT_SOURCE=apdp) ---
+APDP_PG_HOST: str = os.getenv("APDP_PG_HOST", "localhost")
+APDP_PG_PORT: int = int(os.getenv("APDP_PG_PORT", "5432"))
+APDP_PG_DB: str = os.getenv("APDP_PG_DB", "payment_platform")
+APDP_PG_USER: str = os.getenv("APDP_PG_USER", "platform_user")
+APDP_PG_PASSWORD: str = os.getenv("APDP_PG_PASSWORD", "platform_pass")
+
 # --- CORS ---
 CORS_ORIGINS: list[str] = [
     o.strip()

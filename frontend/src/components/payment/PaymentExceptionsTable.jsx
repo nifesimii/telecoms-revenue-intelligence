@@ -1,10 +1,17 @@
 // Exceptions-only payment table.
-// Exception flag badges link back to Phase 2/3:
-//   ALL_UNQUALIFIED       → red    "Phase 2"
-//   CONFIRMED_MISMATCH    → amber  "Phase 3"
-//   HIGH_UNQUALIFIED_RATE → amber  "Phase 2"
+// Replaces the old passive "Recommended action" prose with an inline
+// Verify expandable that shows the actual activation evidence behind the
+// claim. The verdict line tells the finance officer whether the activations
+// actually support what the statement says they're owed.
+//
+// Data sources used for verification:
+//   /activations/summary?mon_period=<period>   ← qualified vs unqualified
+//   /dealers?mon_period=<period>               ← zero-commission count
+// Both fetched once when the table mounts; verification is instant on expand.
 
+import { useMemo, useState } from 'react';
 import { formatNGN } from '../../lib/format.js';
+import useDealerVerification from '../../hooks/useDealerVerification.js';
 
 const STATUS_TONE = {
   PARTIALLY_PAID: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -56,17 +63,137 @@ function FlagBadge({ flag }) {
   );
 }
 
-function actionFor(row) {
-  const amount = formatNGN(row.amount_unpaid);
-  const name = row.distributor_name;
-  if (row.payment_status === 'DISPUTED')
-    return `${amount} disputed for ${name}. Linked to ${row.exception_flag} exception. Verify activation records before settlement.`;
-  if (row.payment_status === 'PARTIALLY_PAID')
-    return `${amount} outstanding for ${name}. Partial payment processed. Review qualification rate.`;
-  return `${amount} pending settlement for ${name}. Within normal payment window.`;
+// ---------------------------------------------------------------------------
+// Verification panel
+// ---------------------------------------------------------------------------
+// Renders the activation evidence behind one exception row. Computes
+// variance = (commission earned from qualified activations) − (statement claim).
+// Verdict logic (with a 1 NGN tolerance for rounding):
+//   |variance| ≤ 1   →  ✓ Matches statement
+//   variance >  1    →  ⚠ Under-claimed (dealer earned more than claimed)
+//   variance < -1    →  ✗ Statement exceeds what activations support
+
+function VerificationPanel({ row, activation, dealer, onAsk, period }) {
+  // No activation record for this dealer in this period — that IS the verdict.
+  if (!activation) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-md px-4 py-3 m-2 text-xs">
+        <div className="font-semibold text-amber-900">
+          ⚠ No activation record found for {row.distributor_name} in this period
+        </div>
+        <div className="mt-1 text-amber-800">
+          A commission claim of <strong>{formatNGN(row.commission_owed)}</strong>{' '}
+          has no matching activation data. This is a SALES_WITHOUT_STATEMENT-style
+          discrepancy and needs investigation before settlement.
+        </div>
+        {onAsk && (
+          <div className="mt-2">
+            <AskButton onAsk={onAsk} row={row} period={period} />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  const total      = Number(activation.activation_count || 0);
+  const qualified  = Number(activation.qualified_activation_count || 0);
+  const unqualified = Number(activation.non_qualified_activation_count || 0);
+  const rate       = Number(activation.qualification_rate_pct || 0);
+  const earned     = Number(activation.activation_commission_amount || 0);
+  const claimed    = Number(row.commission_owed || 0);
+  const variance   = earned - claimed;
+  const zeroCount  = Number(dealer?.zero_commission_count || 0);
+
+  let verdict, verdictTone;
+  if (Math.abs(variance) <= 1) {
+    verdict = `✓ Activations support the NGN ${claimed.toLocaleString('en-NG', { minimumFractionDigits: 2 })} claim`;
+    verdictTone = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+  } else if (variance > 1) {
+    verdict = `⚠ Dealer appears under-claimed by ${formatNGN(variance)} — activations earned more than the statement shows`;
+    verdictTone = 'text-amber-800 bg-amber-50 border-amber-200';
+  } else {
+    verdict = `✗ Statement exceeds activation support by ${formatNGN(Math.abs(variance))} — investigate before settlement`;
+    verdictTone = 'text-red-700 bg-red-50 border-red-200';
+  }
+
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-md px-4 py-3 m-2">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">
+        Activation verification · {row.distributor_name}
+      </div>
+
+      {/* 4-column metric grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <Metric label="Total activations"   value={total.toLocaleString()} />
+        <Metric label="Qualified"           value={qualified.toLocaleString()} tone="text-emerald-700" />
+        <Metric label="Unqualified"         value={unqualified.toLocaleString()} tone="text-amber-700" />
+        <Metric label="Qualification rate"  value={`${rate.toFixed(1)}%`} tone={rate >= 80 ? 'text-emerald-700' : rate >= 50 ? 'text-amber-700' : 'text-red-700'} />
+        <Metric label="Earned from qualified" value={formatNGN(earned)} />
+        <Metric label="Statement claims"      value={formatNGN(claimed)} />
+        <Metric
+          label="Variance (earned − claim)"
+          value={(variance > 0 ? '+' : variance < 0 ? '−' : '') + formatNGN(Math.abs(variance))}
+          tone={Math.abs(variance) <= 1 ? 'text-gray-700' : variance > 0 ? 'text-amber-700' : 'text-red-700'}
+        />
+        <Metric
+          label="Zero-commission records"
+          value={zeroCount.toLocaleString()}
+          tone={zeroCount > 0 ? 'text-amber-700' : 'text-gray-500'}
+        />
+      </div>
+
+      {/* Verdict */}
+      <div className={`mt-3 text-xs font-semibold border rounded px-3 py-2 ${verdictTone}`}>
+        {verdict}
+      </div>
+
+      {/* Action */}
+      {onAsk && (
+        <div className="mt-2 flex justify-end">
+          <AskButton onAsk={onAsk} row={row} period={period} zeroCount={zeroCount} />
+        </div>
+      )}
+    </div>
+  );
 }
 
-export default function PaymentExceptionsTable({ rows = [], loading = false }) {
+function Metric({ label, value, tone = 'text-gray-900' }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-gray-500">{label}</div>
+      <div className={`text-sm font-semibold tabular-nums ${tone}`}>{value}</div>
+    </div>
+  );
+}
+
+function AskButton({ onAsk, row, period, zeroCount = 0 }) {
+  const text = zeroCount > 0
+    ? `Verify the activations for ${row.distributor_name} in ${period}. How many activations, qualified vs unqualified, and what's the expected commission? There are ${zeroCount} zero-commission records — classify each by KB root cause (USP snapshot miss, outside 6-month window, NULL account_profile_class, or Hynex/Hynex_1 split).`
+    : `Verify the activations for ${row.distributor_name} in ${period}. How many activations qualified, what's the expected commission, and does it match the statement claim of ${formatNGN(row.commission_owed)}?`;
+
+  return (
+    <button
+      onClick={() => onAsk(text)}
+      className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-2 py-1 hover:bg-yellow-50 hover:border-mtn-yellow transition"
+    >
+      Ask Claude →
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main table
+// ---------------------------------------------------------------------------
+
+export default function PaymentExceptionsTable({
+  rows = [],
+  loading = false,
+  period = null,
+  onAsk = null,
+}) {
+  const { activationByDealer, dealerByCode } = useDealerVerification(period);
+  const [expanded, setExpanded] = useState({}); // { distributor_code: bool }
+
   if (loading) {
     return (
       <div className="p-4 text-sm text-gray-500 italic">
@@ -82,11 +209,15 @@ export default function PaymentExceptionsTable({ rows = [], loading = false }) {
     );
   }
 
+  const toggle = (code) =>
+    setExpanded((e) => ({ ...e, [code]: !e[code] }));
+
   return (
     <div className="overflow-auto h-full">
       <table className="w-full text-xs border-collapse">
         <thead className="sticky top-0 bg-gray-50 z-10">
           <tr className="text-gray-600">
+            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold w-6"></th>
             <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">
               Dealer
             </th>
@@ -103,39 +234,67 @@ export default function PaymentExceptionsTable({ rows = [], loading = false }) {
               Exception flag
             </th>
             <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">
-              Recommended action
+              Verify
             </th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr
-              key={`${r.distributor_code}-${i}`}
-              className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0 align-top"
-            >
-              <td
-                className="px-2 py-1.5 text-gray-800 truncate max-w-[180px]"
-                title={r.distributor_name}
+          {rows.map((r, i) => {
+            const code     = r.distributor_code;
+            const isOpen   = !!expanded[code];
+            const arrow    = isOpen ? '▼' : '▶';
+            return [
+              <tr
+                key={`${code}-${i}`}
+                className="hover:bg-gray-50 border-b border-gray-100 align-top"
               >
-                {r.distributor_name}
-              </td>
-              <td className="px-2 py-1.5">
-                <StatusBadge status={r.payment_status} />
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
-                {formatNGN(r.commission_owed)}
-              </td>
-              <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">
-                {formatNGN(r.amount_unpaid)}
-              </td>
-              <td className="px-2 py-1.5">
-                <FlagBadge flag={r.exception_flag} />
-              </td>
-              <td className="px-2 py-1.5 text-[11px] text-gray-600 max-w-[420px]">
-                {actionFor(r)}
-              </td>
-            </tr>
-          ))}
+                <td className="px-2 py-1.5 text-gray-400 cursor-pointer select-none"
+                    onClick={() => toggle(code)}
+                    title={isOpen ? 'Collapse' : 'Expand verification'}>
+                  {arrow}
+                </td>
+                <td
+                  className="px-2 py-1.5 text-gray-800 truncate max-w-[180px]"
+                  title={r.distributor_name}
+                >
+                  {r.distributor_name}
+                </td>
+                <td className="px-2 py-1.5">
+                  <StatusBadge status={r.payment_status} />
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
+                  {formatNGN(r.commission_owed)}
+                </td>
+                <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-gray-900">
+                  {formatNGN(r.amount_unpaid)}
+                </td>
+                <td className="px-2 py-1.5">
+                  <FlagBadge flag={r.exception_flag} />
+                </td>
+                <td className="px-2 py-1.5">
+                  <button
+                    onClick={() => toggle(code)}
+                    className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded px-2 py-0.5 hover:bg-yellow-50 hover:border-mtn-yellow transition"
+                  >
+                    {isOpen ? 'Hide' : 'Verify'}
+                  </button>
+                </td>
+              </tr>,
+              isOpen && (
+                <tr key={`${code}-${i}-detail`} className="bg-gray-50">
+                  <td colSpan={7} className="p-0">
+                    <VerificationPanel
+                      row={r}
+                      activation={activationByDealer[code]}
+                      dealer={dealerByCode[code]}
+                      onAsk={onAsk}
+                      period={period}
+                    />
+                  </td>
+                </tr>
+              ),
+            ];
+          })}
         </tbody>
       </table>
     </div>

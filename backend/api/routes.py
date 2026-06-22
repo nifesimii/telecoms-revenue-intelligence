@@ -30,6 +30,7 @@ from backend.api.schemas import (
     AssuranceStatusResponse,
     ChatRequest,
     ChatResponse,
+    DataCoverageTicketResponse,
     DealerSummary,
     InventoryComparisonRecord,
     PaymentCoverageResponse,
@@ -37,6 +38,7 @@ from backend.api.schemas import (
     PaymentVarianceRecord,
     PeriodList,
 )
+from backend import config
 from backend.assurance.registry import ASSURANCE_REGISTRY, is_implemented
 from backend.db import queries
 from backend.db.connection import execute_query
@@ -367,6 +369,48 @@ def list_inventory_comparison(
 
 
 # ---------------------------------------------------------------------------
+# Data coverage ticket compiler (Stage 1 — no live ServiceNow submission)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/inventory/data-coverage-issues",
+    response_model=DataCoverageTicketResponse,
+)
+def get_data_coverage_issues(
+    mon_period: str | None = Query(
+        default=None,
+        pattern=r"^\d{6}$",
+        description=(
+            "Reporting month (YYYYMM). If omitted, defaults to the most "
+            "recent period available in the data."
+        ),
+    ),
+    source: str = Query(
+        default="both",
+        pattern=r"^(ifs|usp|both)$",
+        description=(
+            "Which coverage gap class to include. ``ifs`` = dealers with "
+            "NO_INVOICE_RECORD inventory rows. ``usp`` = dealers with NULL "
+            "account_profile_class. ``both`` (default) = both."
+        ),
+    ),
+) -> DataCoverageTicketResponse:
+    """Compile a ServiceNow-ready ticket draft for data coverage gaps.
+
+    Stage 1 — returns the structured dealer list + a markdown ticket body
+    for the finance officer to paste into ServiceNow manually. No external
+    write happens here. Stage 2 (live ServiceNow API call) is deferred
+    pending credentials + an explicit CLAUDE.md whitelist update.
+    """
+    from backend.db.data_coverage import compile_data_coverage_ticket
+
+    period = mon_period or _most_recent_period() or ""
+    payload = compile_data_coverage_ticket(period, source=source)  # type: ignore[arg-type]
+    return DataCoverageTicketResponse(**payload)
+
+
+# ---------------------------------------------------------------------------
 # Phase 4 — Payment Intelligence endpoints
 # ---------------------------------------------------------------------------
 
@@ -380,6 +424,95 @@ def _row_to_payment_record(row: dict[str, Any]) -> PaymentSummaryRecord:
         else:
             cleaned[k] = v
     return PaymentSummaryRecord(**cleaned)
+
+
+# ---------------------------------------------------------------------------
+# APDP Postgres → PaymentSummaryRecord adapter
+# ---------------------------------------------------------------------------
+# When PAYMENT_SOURCE=apdp the /payments/* endpoints read from APDP's
+# normalized.partner_settlements view instead of the simulated CSV. The
+# view's reconciliation_status drives payment_status mapping; the rest of
+# the record carries the v1.3.0 enrichment fields so the UI can show
+# sales-vs-statement-vs-settlement context.
+
+_RECON_TO_STATUS = {
+    "RECONCILED":               "FULLY_PAID",
+    "PARTIALLY_PAID":           "PARTIALLY_PAID",
+    "AMOUNT_MISMATCH":          "PARTIALLY_PAID",
+    "DISPUTED":                 "DISPUTED",
+    "STATEMENT_WITHOUT_PAYMENT": "PENDING",
+    "SALES_WITHOUT_STATEMENT":  "PENDING",
+}
+
+
+def _apdp_row_to_payment_record(row: dict[str, Any]) -> PaymentSummaryRecord:
+    owed   = float(row.get("expected_commission_ngn") or 0)
+    paid   = float(row.get("total_settled_ngn") or 0)
+    unpaid = max(0.0, round(owed - paid, 2))
+    recon  = row.get("reconciliation_status") or "RECONCILED"
+    dealer = row.get("dealer_id") or ""
+    return PaymentSummaryRecord(
+        distributor_code      = dealer,
+        distributor_name      = dealer,  # APDP view doesn't carry the name
+        account_profile_class = "",
+        report_month          = row.get("settlement_period") or "",
+        commission_owed       = round(owed, 2),
+        amount_paid           = round(paid, 2),
+        amount_unpaid         = unpaid,
+        payment_status        = _RECON_TO_STATUS.get(recon, "PENDING"),
+        payment_channel       = "",
+        payment_date          = None,
+        exception_flag        = recon if recon != "RECONCILED" else None,
+        data_source           = "APDP",
+        reconciliation_status = recon,
+        sale_count            = int(row.get("sale_count") or 0),
+        total_sales_ngn       = float(row.get("total_sales_ngn") or 0),
+        statement_gross_revenue_ngn = float(row.get("statement_gross_revenue_ngn") or 0),
+        payment_variance_ngn  = float(row.get("payment_variance_ngn") or 0),
+        paid_count            = int(row.get("paid_count") or 0),
+        partial_count         = int(row.get("partial_count") or 0),
+        disputed_count        = int(row.get("disputed_count") or 0),
+    )
+
+
+# Status sort ranking used by the APDP exceptions endpoint and as a tie-breaker
+# elsewhere — matches the simulated path's DISPUTED → PARTIAL → PENDING order.
+_STATUS_RANK = {"DISPUTED": 0, "PARTIALLY_PAID": 1, "PENDING": 2, "FULLY_PAID": 3}
+
+
+def _apdp_summary_response(period: str) -> PaymentCoverageResponse:
+    """Build /payments/summary from APDP partner_settlements rows."""
+    from backend.db import apdp as apdp_db  # imported lazily to avoid psycopg2 cost in sample mode
+    try:
+        raw_rows = apdp_db.get_partner_settlements(period)
+    except Exception as e:
+        logger.exception("APDP partner_settlements read failed")
+        raise HTTPException(status_code=503, detail=f"APDP unreachable: {e}")
+
+    records = [_apdp_row_to_payment_record(r) for r in raw_rows]
+
+    total_owed   = round(sum(r.commission_owed for r in records), 2)
+    total_paid   = round(sum(r.amount_paid     for r in records), 2)
+    total_unpaid = round(sum(r.amount_unpaid   for r in records), 2)
+    coverage_pct = round(total_paid / total_owed * 100.0, 1) if total_owed > 0 else 0.0
+
+    status_counts: dict[str, int] = {}
+    for r in records:
+        status_counts[r.payment_status] = status_counts.get(r.payment_status, 0) + 1
+
+    return PaymentCoverageResponse(
+        period                 = period,
+        total_commission_owed  = total_owed,
+        total_amount_paid      = total_paid,
+        total_amount_unpaid    = total_unpaid,
+        payment_coverage_pct   = coverage_pct,
+        disputed_count         = status_counts.get("DISPUTED", 0),
+        partially_paid_count   = status_counts.get("PARTIALLY_PAID", 0),
+        pending_count          = status_counts.get("PENDING", 0),
+        fully_paid_count       = status_counts.get("FULLY_PAID", 0),
+        data_source            = "APDP",
+        records                = records,
+    )
 
 
 @router.get(
@@ -398,10 +531,15 @@ def get_payment_summary(
 ) -> PaymentCoverageResponse:
     """Payment status across all dealers for the period.
 
-    Returns aggregate coverage stats + the full per-dealer record list.
-    Payment data is simulated — see KB Section 13.
+    Source switches on ``config.PAYMENT_SOURCE``:
+      * ``simulated`` → reads from payment_simulation.csv (KB Section 13)
+      * ``apdp``     → reads from APDP ``normalized.partner_settlements`` view
     """
     period = mon_period or _most_recent_period() or ""
+
+    if config.PAYMENT_SOURCE == "apdp":
+        return _apdp_summary_response(period)
+
     df = execute_query("get_payment_summary", {"mon_period": period})
 
     records = [
@@ -452,6 +590,13 @@ def list_payment_exceptions(
 ) -> list[PaymentSummaryRecord]:
     """Non-FULLY_PAID payment records, sorted DISPUTED → PARTIAL → PENDING."""
     period = mon_period or _most_recent_period() or ""
+
+    if config.PAYMENT_SOURCE == "apdp":
+        summary = _apdp_summary_response(period)
+        exceptions = [r for r in summary.records if r.payment_status != "FULLY_PAID"]
+        exceptions.sort(key=lambda r: _STATUS_RANK.get(r.payment_status, 9))
+        return exceptions
+
     df = execute_query("get_payment_exceptions", {"mon_period": period})
     return [_row_to_payment_record(row) for row in df.to_dict(orient="records")]
 
@@ -473,6 +618,41 @@ def list_payment_variance(
     ),
 ) -> list[PaymentVarianceRecord]:
     """Per-dealer payment delta between two periods (dealers in both only)."""
+    if config.PAYMENT_SOURCE == "apdp":
+        from backend.db import apdp as apdp_db
+        try:
+            rows_a, rows_b = apdp_db.get_partner_settlements_two_periods(period_a, period_b)
+        except Exception as e:
+            logger.exception("APDP partner_settlements variance read failed")
+            raise HTTPException(status_code=503, detail=f"APDP unreachable: {e}")
+
+        by_a = {r["dealer_id"]: r for r in rows_a}
+        by_b = {r["dealer_id"]: r for r in rows_b}
+        records: list[PaymentVarianceRecord] = []
+        for dealer_id in sorted(by_a.keys() & by_b.keys()):
+            a, b = by_a[dealer_id], by_b[dealer_id]
+            owed_a = round(float(a.get("expected_commission_ngn") or 0), 2)
+            owed_b = round(float(b.get("expected_commission_ngn") or 0), 2)
+            paid_a = round(float(a.get("total_settled_ngn") or 0), 2)
+            paid_b = round(float(b.get("total_settled_ngn") or 0), 2)
+            status_a = _RECON_TO_STATUS.get(a.get("reconciliation_status") or "", "PENDING")
+            status_b = _RECON_TO_STATUS.get(b.get("reconciliation_status") or "", "PENDING")
+            records.append(PaymentVarianceRecord(
+                dealer_id         = dealer_id,
+                dealer_name       = dealer_id,
+                period_a          = period_a,
+                period_b          = period_b,
+                commission_owed_a = owed_a,
+                amount_paid_a     = paid_a,
+                payment_status_a  = status_a,
+                commission_owed_b = owed_b,
+                amount_paid_b     = paid_b,
+                payment_status_b  = status_b,
+                delta_paid        = round(paid_b - paid_a, 2),
+                status_changed    = status_a != status_b,
+            ))
+        return records
+
     df = execute_query(
         "get_payment_variance",
         {"period_a": period_a, "period_b": period_b},

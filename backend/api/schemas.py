@@ -228,7 +228,13 @@ class InventoryComparisonRecord(BaseModel):
 
 
 class PaymentSummaryRecord(BaseModel):
-    """One row of the simulated payment dataset for a dealer-month."""
+    """One row of the payment dataset for a dealer-month.
+
+    The base fields are populated by every source. The reconciliation fields
+    are only populated when ``data_source == "APDP"`` — they're derived from
+    ``normalized.partner_settlements`` and let the UI show the richer
+    reconciliation state (sales captured vs commissions earned vs paid).
+    """
 
     distributor_code: str
     distributor_name: str
@@ -242,6 +248,16 @@ class PaymentSummaryRecord(BaseModel):
     payment_date: str | None = None
     exception_flag: str | None = None
     data_source: str = "SIMULATED"
+
+    # --- v1.3.0 APDP reconciliation enrichment (None when SIMULATED) ---
+    reconciliation_status: str | None = None       # 6-state canonical
+    sale_count: int | None = None                   # consumer sales captured
+    total_sales_ngn: float | None = None
+    statement_gross_revenue_ngn: float | None = None
+    payment_variance_ngn: float | None = None       # signed: paid − owed
+    paid_count: int | None = None
+    partial_count: int | None = None
+    disputed_count: int | None = None
 
 
 class PaymentCoverageResponse(BaseModel):
@@ -258,6 +274,43 @@ class PaymentCoverageResponse(BaseModel):
     fully_paid_count: int
     data_source: str = "SIMULATED"
     records: list[PaymentSummaryRecord]
+
+
+class IfsMissingItem(BaseModel):
+    """One dealer with NO_INVOICE_RECORD inventory rows for the period."""
+
+    dealer_id: str
+    dealer_name: str
+    affected_products: int
+    activation_count: int
+
+
+class UspMissingItem(BaseModel):
+    """One dealer with NULL account_profile_class for the period."""
+
+    dealer_id: str
+    dealer_name: str
+    total_activations: int
+    zero_commission_count: int
+    commission_ngn: float
+
+
+class DataCoverageTicketResponse(BaseModel):
+    """Payload for ``GET /inventory/data-coverage-issues``.
+
+    ``ticket_body`` is markdown ready to paste into a ServiceNow incident
+    or change-request. The structured ``ifs_missing`` / ``usp_missing``
+    lists are included for the UI to render the same data natively.
+    """
+
+    mon_period: str
+    source: str  # "ifs" | "usp" | "both"
+    severity: str  # "LOW" | "MEDIUM" | "HIGH"
+    severity_action: str
+    affected_dealers: int
+    ifs_missing: list[IfsMissingItem]
+    usp_missing: list[UspMissingItem]
+    ticket_body: str
 
 
 class PaymentVarianceRecord(BaseModel):

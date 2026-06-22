@@ -5,7 +5,14 @@
 //   * NO_INVOICE_RECORD    → blue left border, italicised note
 //   * WITHIN_ALLOCATION    → green left border
 //
-// Tooltip on the finding type badge describes what each label means.
+// CONFIRMED_MISMATCH and NO_INVOICE_RECORD rows have an inline Verify
+// expandable that cross-references the dealer's commission earned this
+// period — answering "are we paying commission on these unauthorised /
+// unrecorded units?". WITHIN_ALLOCATION rows don't need verification.
+
+import { useState } from 'react';
+import { formatNGN } from '../../lib/format.js';
+import useDealerVerification from '../../hooks/useDealerVerification.js';
 
 const BADGE_STYLE = {
   CONFIRMED_MISMATCH: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -53,8 +60,7 @@ function gapPctTone(v, finding) {
 }
 
 function FindingBadge({ type }) {
-  const style =
-    BADGE_STYLE[type] || 'bg-gray-100 text-gray-700 border-gray-200';
+  const style = BADGE_STYLE[type] || 'bg-gray-100 text-gray-700 border-gray-200';
   return (
     <span
       className={`inline-block px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border rounded-full ${style}`}
@@ -65,10 +71,135 @@ function FindingBadge({ type }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Verification panel
+// ---------------------------------------------------------------------------
+// Cross-references the inventory gap against the dealer's commission earned
+// this period. The headline question for finance: "Are we paying out on
+// unauthorised activations?" If commission was earned on the gap units, that's
+// a hard issue. If the gap units are exactly the zero-commission ones, the
+// system already withheld payment correctly (but the activations still ran).
+
+function Metric({ label, value, tone = 'text-gray-900' }) {
+  return (
+    <div>
+      <div className="text-[10px] uppercase tracking-wide text-gray-500">{label}</div>
+      <div className={`text-sm font-semibold tabular-nums ${tone}`}>{value}</div>
+    </div>
+  );
+}
+
+function VerificationPanel({ row, activation, dealer, onAsk, period }) {
+  const isNoInvoice = row.finding_type === 'NO_INVOICE_RECORD';
+  const gap         = Number(row.inventory_gap || 0);
+  const gapPct      = row.gap_pct === null || row.gap_pct === undefined
+    ? null : Number(row.gap_pct);
+
+  const totalActs   = Number(activation?.activation_count || 0);
+  const qualified   = Number(activation?.qualified_activation_count || 0);
+  const qualRate    = Number(activation?.qualification_rate_pct || 0);
+  const earned      = Number(activation?.activation_commission_amount || 0);
+  const zeroCount   = Number(dealer?.zero_commission_count || 0);
+
+  // Verdict heuristic — based on what data we have at the dealer level,
+  // not per-product (per-product commission isn't exposed as an endpoint).
+  let verdict, verdictTone;
+  if (isNoInvoice) {
+    verdict =
+      'ℹ Caveat: no IFS invoice record found in the 6-month window. ' +
+      'This is a data-coverage gap, not a confirmed mismatch. Verify ' +
+      'whether the dealer purchased these units in a prior period before flagging.';
+    verdictTone = 'text-blue-800 bg-blue-50 border-blue-200';
+  } else if (zeroCount > 0 && gap > 0) {
+    verdict =
+      `✓ ${zeroCount} zero-commission record${zeroCount === 1 ? '' : 's'} present — ` +
+      `system already withheld commission on at least some unauthorised activations. ` +
+      `Confirm the gap units overlap with the zero-commission set.`;
+    verdictTone = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+  } else if (gap > 0 && earned > 0 && zeroCount === 0) {
+    verdict =
+      `✗ Dealer earned ${formatNGN(earned)} this period and there are no zero-commission ` +
+      `records to offset the gap. Likely paying commission on unauthorised activations — ` +
+      `investigate before next settlement.`;
+    verdictTone = 'text-red-700 bg-red-50 border-red-200';
+  } else {
+    verdict =
+      `⚠ Gap of ${Math.abs(gap)} units. Cross-reference dealer's zero-commission records ` +
+      `to confirm exposure.`;
+    verdictTone = 'text-amber-800 bg-amber-50 border-amber-200';
+  }
+
+  return (
+    <div className="bg-gray-50 border border-gray-200 rounded-md px-4 py-3 m-2">
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">
+        Inventory verification · {row.dealer_name} · {row.product_code}
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+        <Metric label="Purchased units" value={fmtUnits(row.total_units_purchased)} />
+        <Metric label="Activated units" value={fmtUnits(row.activation_count)} />
+        <Metric
+          label="Inventory gap"
+          value={fmtGap(gap)}
+          tone={gap > 0 ? 'text-red-700' : 'text-gray-700'}
+        />
+        <Metric
+          label="Gap %"
+          value={gapPct === null ? '—' : `${gapPct.toFixed(1)}%`}
+          tone={gapPct >= 100 ? 'text-red-700' : gapPct >= 50 ? 'text-amber-700' : 'text-gray-700'}
+        />
+        <Metric label="Dealer total activations" value={totalActs.toLocaleString()} />
+        <Metric
+          label="Dealer qualified"
+          value={qualified.toLocaleString()}
+          tone="text-emerald-700"
+        />
+        <Metric
+          label="Dealer commission earned"
+          value={formatNGN(earned)}
+        />
+        <Metric
+          label="Zero-commission records"
+          value={zeroCount.toLocaleString()}
+          tone={zeroCount > 0 ? 'text-amber-700' : 'text-gray-500'}
+        />
+      </div>
+
+      <div className={`mt-3 text-xs font-semibold border rounded px-3 py-2 ${verdictTone}`}>
+        {verdict}
+      </div>
+
+      {onAsk && (
+        <div className="mt-2 flex justify-end">
+          <button
+            onClick={() => onAsk(
+              isNoInvoice
+                ? `Investigate ${row.dealer_name}'s ${row.product_code} activations in ${period}. There are ${row.activation_count} activations but no IFS invoice record in the 6-month window. Could these units have been purchased outside the data window? What's the dealer's commission for this period?`
+                : `Investigate ${row.dealer_name}'s ${row.product_code} inventory in ${period}. They activated ${row.activation_count} units but only purchased ${fmtUnits(row.total_units_purchased)} — a gap of ${Math.abs(gap)} units. Are these unauthorised activations earning commission? Cross-reference against zero-commission records (${zeroCount} for this dealer this period) and classify by KB root cause.`
+            )}
+            className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-2 py-1 hover:bg-yellow-50 hover:border-mtn-yellow transition"
+          >
+            Ask Claude →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main table
+// ---------------------------------------------------------------------------
+
 export default function InventoryComparisonTable({
   rows = [],
   loading = false,
+  period = null,
+  onAsk = null,
 }) {
+  const { activationByDealer, dealerByCode } = useDealerVerification(period);
+  const [expanded, setExpanded] = useState({}); // { `${dealer}-${product}-${i}`: bool }
+
   if (loading) {
     return (
       <div className="p-4 text-sm text-gray-500 italic">
@@ -77,62 +208,50 @@ export default function InventoryComparisonTable({
     );
   }
   if (!rows.length) {
-    return (
-      <div className="p-4 text-sm text-gray-500 italic">No data.</div>
-    );
+    return <div className="p-4 text-sm text-gray-500 italic">No data.</div>;
   }
+
+  const toggle = (key) => setExpanded((e) => ({ ...e, [key]: !e[key] }));
 
   return (
     <div className="overflow-auto h-full">
       <table className="w-full text-xs border-collapse">
         <thead className="sticky top-0 bg-gray-50 z-10">
           <tr className="text-gray-600">
-            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">
-              Dealer
-            </th>
-            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">
-              Product
-            </th>
-            <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
-              Purchased
-            </th>
-            <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
-              Activations
-            </th>
-            <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
-              Gap
-            </th>
-            <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
-              Gap %
-            </th>
-            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">
-              Finding
-            </th>
-            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">
-              Note
-            </th>
+            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold w-6"></th>
+            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">Dealer</th>
+            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">Product</th>
+            <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">Purchased</th>
+            <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">Activations</th>
+            <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">Gap</th>
+            <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">Gap %</th>
+            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">Finding</th>
+            <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">Verify</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((r, i) => {
-            const isNoInvoice = r.finding_type === 'NO_INVOICE_RECORD';
-            return (
+            const key = `${r.dealer_id}-${r.product_code}-${i}`;
+            const isOpen = !!expanded[key];
+            const canVerify = r.finding_type !== 'WITHIN_ALLOCATION';
+            return [
               <tr
-                key={`${r.dealer_id}-${r.product_code}-${i}`}
-                className={`hover:bg-gray-50 border-b border-gray-100 last:border-b-0 ${
+                key={key}
+                className={`hover:bg-gray-50 border-b border-gray-100 align-top ${
                   BORDER_STYLE[r.finding_type] || ''
                 }`}
               >
                 <td
-                  className="px-2 py-1.5 text-gray-800 truncate max-w-[200px]"
-                  title={r.dealer_name}
+                  className={`px-2 py-1.5 select-none ${canVerify ? 'text-gray-400 cursor-pointer' : 'text-transparent'}`}
+                  onClick={canVerify ? () => toggle(key) : undefined}
+                  title={canVerify ? (isOpen ? 'Collapse' : 'Expand verification') : ''}
                 >
+                  {canVerify ? (isOpen ? '▼' : '▶') : ''}
+                </td>
+                <td className="px-2 py-1.5 text-gray-800 truncate max-w-[200px]" title={r.dealer_name}>
                   {r.dealer_name}
                 </td>
-                <td
-                  className="px-2 py-1.5 text-gray-600 truncate max-w-[120px]"
-                  title={r.product_name}
-                >
+                <td className="px-2 py-1.5 text-gray-600 truncate max-w-[120px]" title={r.product_name}>
                   {r.product_code}
                 </td>
                 <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
@@ -144,12 +263,7 @@ export default function InventoryComparisonTable({
                 <td className="px-2 py-1.5 text-right tabular-nums text-gray-700">
                   {fmtGap(r.inventory_gap)}
                 </td>
-                <td
-                  className={`px-2 py-1.5 text-right tabular-nums ${gapPctTone(
-                    r.gap_pct,
-                    r.finding_type,
-                  )}`}
-                >
+                <td className={`px-2 py-1.5 text-right tabular-nums ${gapPctTone(r.gap_pct, r.finding_type)}`}>
                   {r.gap_pct === null || r.gap_pct === undefined
                     ? '—'
                     : `${Number(r.gap_pct).toFixed(1)}%`}
@@ -157,16 +271,33 @@ export default function InventoryComparisonTable({
                 <td className="px-2 py-1.5">
                   <FindingBadge type={r.finding_type} />
                 </td>
-                <td
-                  className={`px-2 py-1.5 text-[11px] max-w-[260px] ${
-                    isNoInvoice ? 'italic text-blue-700' : 'text-gray-500'
-                  }`}
-                  title={r.data_coverage_note}
-                >
-                  {r.data_coverage_note}
+                <td className="px-2 py-1.5">
+                  {canVerify ? (
+                    <button
+                      onClick={() => toggle(key)}
+                      className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded px-2 py-0.5 hover:bg-yellow-50 hover:border-mtn-yellow transition"
+                    >
+                      {isOpen ? 'Hide' : 'Verify'}
+                    </button>
+                  ) : (
+                    <span className="text-[10px] text-gray-400 italic">n/a</span>
+                  )}
                 </td>
-              </tr>
-            );
+              </tr>,
+              canVerify && isOpen && (
+                <tr key={`${key}-detail`} className="bg-gray-50">
+                  <td colSpan={9} className="p-0">
+                    <VerificationPanel
+                      row={r}
+                      activation={activationByDealer[r.dealer_id]}
+                      dealer={dealerByCode[r.dealer_id]}
+                      onAsk={onAsk}
+                      period={period}
+                    />
+                  </td>
+                </tr>
+              ),
+            ];
           })}
         </tbody>
       </table>

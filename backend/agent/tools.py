@@ -561,6 +561,50 @@ GET_DEALER_FULL_CONTEXT: dict[str, Any] = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Data coverage ticket compiler
+# ---------------------------------------------------------------------------
+
+COMPILE_DATA_COVERAGE_TICKET: dict[str, Any] = {
+    "name": "compile_data_coverage_ticket",
+    "description": (
+        "Compile a ServiceNow-ready ticket draft for FBB data coverage "
+        "gaps that affect commission accuracy. Returns the list of "
+        "affected dealers plus a markdown ticket body the finance officer "
+        "can paste into ServiceNow.\n\n"
+        "Two gap classes are covered:\n"
+        "  * IFS missing — dealers with NO_INVOICE_RECORD inventory rows.\n"
+        "  * USP missing — dealers with NULL account_profile_class (one of "
+        "the four KB-documented root causes for zero-commission records).\n\n"
+        "Use this when:\n"
+        "  * The user asks to 'compile / draft / generate a ticket for data "
+        "coverage issues / data team / task team'.\n"
+        "  * After investigating a dealer dispute that bottoms out in "
+        "missing IFS or USP data — escalate by drafting a ticket.\n\n"
+        "Severity scales with the affected-dealer count: 1-3 = LOW, "
+        "4-10 = MEDIUM, 10+ = HIGH. Stage 1 only — this does NOT submit to "
+        "ServiceNow; the finance officer pastes the body manually."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "mon_period": _MON_PERIOD_SCHEMA,
+            "source": {
+                "type": "string",
+                "enum": ["ifs", "usp", "both"],
+                "description": (
+                    "Which gap class to include. Default 'both'. Use 'ifs' "
+                    "only for inventory data-window questions, 'usp' only "
+                    "for commission-classification questions."
+                ),
+                "default": "both",
+            },
+        },
+        "required": ["mon_period"],
+    },
+}
+
+
 TOOLS: list[dict[str, Any]] = [
     GET_DEALER_SUMMARY,
     GET_ZERO_COMMISSION_RECORDS,
@@ -580,6 +624,8 @@ TOOLS: list[dict[str, Any]] = [
     GET_KB_SECTION,
     # --- L1 composite — replaces 4+ tool calls for "tell me about Dealer X" ---
     GET_DEALER_FULL_CONTEXT,
+    # --- Operational: ServiceNow ticket draft (Stage 1 — compile only) ---
+    COMPILE_DATA_COVERAGE_TICKET,
 ]
 
 TOOL_NAMES: list[str] = [tool["name"] for tool in TOOLS]

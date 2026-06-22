@@ -132,8 +132,8 @@ function Shell() {
           />
         )}
         {view === 'activation' && <ActivationIntelligencePanel />}
-        {view === 'inventory' && <InventoryIntelligencePanel />}
-        {view === 'payment' && <PaymentIntelligencePanel />}
+        {view === 'inventory' && <InventoryIntelligencePanel onAsk={askClaude} />}
+        {view === 'payment' && <PaymentIntelligencePanel onAsk={askClaude} />}
       </div>
     </div>
   );

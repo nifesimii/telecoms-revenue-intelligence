@@ -9,6 +9,7 @@ import { getInventoryComparison } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatPeriod } from '../../lib/format.js';
 import InventoryComparisonTable from './InventoryComparisonTable.jsx';
+import DataCoverageTicketModal from './DataCoverageTicketModal.jsx';
 
 function SummaryCard({ label, count, sub, tone, accent }) {
   return (
@@ -21,12 +22,13 @@ function SummaryCard({ label, count, sub, tone, accent }) {
   );
 }
 
-export default function InventoryIntelligencePanel() {
+export default function InventoryIntelligencePanel({ onAsk } = {}) {
   const { period } = usePeriod();
   const [includeWithin, setIncludeWithin] = useState(false);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [ticketOpen, setTicketOpen] = useState(false);
 
   useEffect(() => {
     if (!period) return;
@@ -83,8 +85,22 @@ export default function InventoryIntelligencePanel() {
           Show WITHIN_ALLOCATION rows
         </label>
         <div className="flex-1" />
+        <button
+          onClick={() => setTicketOpen(true)}
+          disabled={!period}
+          className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-2 py-1 hover:bg-yellow-50 hover:border-mtn-yellow transition disabled:opacity-40"
+          title="Compile a ServiceNow ticket draft for dealers with IFS / USP data coverage gaps"
+        >
+          ⚠ Raise data coverage ticket
+        </button>
         <div className="text-[11px] text-gray-500">Activations vs IFS purchases</div>
       </div>
+
+      <DataCoverageTicketModal
+        period={period}
+        open={ticketOpen}
+        onClose={() => setTicketOpen(false)}
+      />
 
       {error && (
         <div className="mx-5 mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
@@ -130,7 +146,7 @@ export default function InventoryIntelligencePanel() {
             {rows.length.toLocaleString()} record{rows.length === 1 ? '' : 's'}
           </div>
           <div className="flex-1 min-h-0">
-            <InventoryComparisonTable rows={rows} loading={loading} />
+            <InventoryComparisonTable rows={rows} loading={loading} period={period} onAsk={onAsk} />
           </div>
         </div>
       </div>
