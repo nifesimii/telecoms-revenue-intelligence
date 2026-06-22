@@ -3,6 +3,7 @@
 // Rate % cell traffic-light: green (>=80), amber (50-79), red (<50).
 
 import { formatNGN } from '../../lib/format.js';
+import HelpIcon, { QUALIFICATION_HELP } from '../shared/HelpIcon.jsx';
 
 function rateTone(pct) {
   const v = Number(pct);
@@ -44,10 +45,16 @@ export default function ActivationSummaryTable({ rows = [], loading = false }) {
               Total
             </th>
             <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
-              Qualified
+              <span className="inline-flex items-center justify-end">
+                Qualified
+                <HelpIcon label="What is a qualified activation?">{QUALIFICATION_HELP}</HelpIcon>
+              </span>
             </th>
             <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
-              Non-Qual
+              <span className="inline-flex items-center justify-end">
+                Non-Qual
+                <HelpIcon label="What is an unqualified activation?">{QUALIFICATION_HELP}</HelpIcon>
+              </span>
             </th>
             <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold">
               Rate %

@@ -12,6 +12,10 @@
 import { useMemo, useState } from 'react';
 import { formatNGN } from '../../lib/format.js';
 import useDealerVerification from '../../hooks/useDealerVerification.js';
+import HelpIcon, {
+  LEAKAGE_HELP,
+  QUALIFICATION_HELP,
+} from '../shared/HelpIcon.jsx';
 
 const STATUS_TONE = {
   PARTIALLY_PAID: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -101,7 +105,9 @@ function VerificationPanel({ row, activation, dealer, onAsk, period }) {
   const rate       = Number(activation.qualification_rate_pct || 0);
   const earned     = Number(activation.activation_commission_amount || 0);
   const claimed    = Number(row.commission_owed || 0);
+  const paid       = Number(row.amount_paid || 0);
   const variance   = earned - claimed;
+  const overpay    = paid - earned;   // > 0 ⇒ paid on unqualified activations
   const zeroCount  = Number(dealer?.zero_commission_count || 0);
 
   let verdict, verdictTone;
@@ -116,6 +122,21 @@ function VerificationPanel({ row, activation, dealer, onAsk, period }) {
     verdictTone = 'text-red-700 bg-red-50 border-red-200';
   }
 
+  // Payment leakage check — did MTN pay commission for activations that
+  // didn't qualify? Distinct from the statement-vs-activations variance
+  // above. Compares actual paid amount against qualified-earned.
+  let leakageVerdict, leakageTone;
+  if (Math.abs(overpay) <= 1) {
+    leakageVerdict = `✓ Paid amount within qualified-commission limit — no payment detected on unqualified activations`;
+    leakageTone = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+  } else if (overpay > 1) {
+    leakageVerdict = `⚠ ${formatNGN(overpay)} paid beyond qualified activations — likely commission paid on unqualified records. Cross-reference ${zeroCount} zero-commission record${zeroCount === 1 ? '' : 's'} for this dealer.`;
+    leakageTone = 'text-red-700 bg-red-50 border-red-200';
+  } else {
+    leakageVerdict = `ℹ Paid amount is below the qualified commission — dealer is under-paid by ${formatNGN(Math.abs(overpay))}, not a leakage concern.`;
+    leakageTone = 'text-gray-700 bg-gray-50 border-gray-200';
+  }
+
   return (
     <div className="bg-gray-50 border border-gray-200 rounded-md px-4 py-3 m-2">
       <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">
@@ -125,16 +146,20 @@ function VerificationPanel({ row, activation, dealer, onAsk, period }) {
       {/* 4-column metric grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
         <Metric label="Total activations"   value={total.toLocaleString()} />
-        <Metric label="Qualified"           value={qualified.toLocaleString()} tone="text-emerald-700" />
-        <Metric label="Unqualified"         value={unqualified.toLocaleString()} tone="text-amber-700" />
+        <Metric
+          label={<>Qualified <HelpIcon label="What is a qualified activation?">{QUALIFICATION_HELP}</HelpIcon></>}
+          value={qualified.toLocaleString()}
+          tone="text-emerald-700"
+        />
+        <Metric
+          label={<>Unqualified <HelpIcon label="What is an unqualified activation?">{QUALIFICATION_HELP}</HelpIcon></>}
+          value={unqualified.toLocaleString()}
+          tone="text-amber-700"
+        />
         <Metric label="Qualification rate"  value={`${rate.toFixed(1)}%`} tone={rate >= 80 ? 'text-emerald-700' : rate >= 50 ? 'text-amber-700' : 'text-red-700'} />
         <Metric label="Earned from qualified" value={formatNGN(earned)} />
         <Metric label="Statement claims"      value={formatNGN(claimed)} />
-        <Metric
-          label="Variance (earned − claim)"
-          value={(variance > 0 ? '+' : variance < 0 ? '−' : '') + formatNGN(Math.abs(variance))}
-          tone={Math.abs(variance) <= 1 ? 'text-gray-700' : variance > 0 ? 'text-amber-700' : 'text-red-700'}
-        />
+        <Metric label="Amount paid"           value={formatNGN(paid)} tone="text-gray-700" />
         <Metric
           label="Zero-commission records"
           value={zeroCount.toLocaleString()}
@@ -142,9 +167,21 @@ function VerificationPanel({ row, activation, dealer, onAsk, period }) {
         />
       </div>
 
-      {/* Verdict */}
-      <div className={`mt-3 text-xs font-semibold border rounded px-3 py-2 ${verdictTone}`}>
+      {/* Verdict — does the statement match what the activations earned? */}
+      <div className={`mt-3 text-[10px] uppercase tracking-wide text-gray-500`}>
+        Statement vs activations
+      </div>
+      <div className={`mt-1 text-xs font-semibold border rounded px-3 py-2 ${verdictTone}`}>
         {verdict}
+      </div>
+
+      {/* Leakage verdict — did we pay commission on unqualified records? */}
+      <div className={`mt-2 text-[10px] uppercase tracking-wide text-gray-500 flex items-center`}>
+        Payment leakage check
+        <HelpIcon label="What is payment leakage?">{LEAKAGE_HELP}</HelpIcon>
+      </div>
+      <div className={`mt-1 text-xs font-semibold border rounded px-3 py-2 ${leakageTone}`}>
+        {leakageVerdict}
       </div>
 
       {/* Action */}

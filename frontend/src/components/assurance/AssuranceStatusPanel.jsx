@@ -18,6 +18,7 @@ import { getAssuranceStatus } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 import useDealerVerification from '../../hooks/useDealerVerification.js';
+import HelpIcon, { QUALIFICATION_HELP } from '../shared/HelpIcon.jsx';
 
 const STATUS_TONE = {
   PASS: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -272,8 +273,16 @@ function FindingVerificationPanel({ finding, activation, dealer, periodLabel }) 
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <FindingMetric label="Activations" value={totalActs.toLocaleString()} />
-        <FindingMetric label="Qualified" value={qualified.toLocaleString()} tone="text-emerald-700" />
-        <FindingMetric label="Unqualified" value={unqualif.toLocaleString()} tone="text-amber-700" />
+        <FindingMetric
+          label={<>Qualified <HelpIcon label="What is a qualified activation?">{QUALIFICATION_HELP}</HelpIcon></>}
+          value={qualified.toLocaleString()}
+          tone="text-emerald-700"
+        />
+        <FindingMetric
+          label={<>Unqualified <HelpIcon label="What is an unqualified activation?">{QUALIFICATION_HELP}</HelpIcon></>}
+          value={unqualif.toLocaleString()}
+          tone="text-amber-700"
+        />
         <FindingMetric
           label="Qual rate"
           value={`${qualRate.toFixed(1)}%`}

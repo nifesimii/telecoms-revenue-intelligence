@@ -13,6 +13,7 @@
 import { useState } from 'react';
 import { formatNGN } from '../../lib/format.js';
 import useDealerVerification from '../../hooks/useDealerVerification.js';
+import HelpIcon, { QUALIFICATION_HELP } from '../shared/HelpIcon.jsx';
 
 const BADGE_STYLE = {
   CONFIRMED_MISMATCH: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -150,7 +151,7 @@ function VerificationPanel({ row, activation, dealer, onAsk, period }) {
         />
         <Metric label="Dealer total activations" value={totalActs.toLocaleString()} />
         <Metric
-          label="Dealer qualified"
+          label={<>Dealer qualified <HelpIcon label="What is a qualified activation?">{QUALIFICATION_HELP}</HelpIcon></>}
           value={qualified.toLocaleString()}
           tone="text-emerald-700"
         />
