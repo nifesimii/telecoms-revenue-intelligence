@@ -100,3 +100,68 @@ def test_endpoint_source_ifs_only(client: TestClient) -> None:
     data = r.json()
     assert data["source"] == "ifs"
     assert data["usp_missing"] == []
+
+
+# ---------------------------------------------------------------------------
+# Agent tool — compile_data_coverage_ticket through tool_executor
+# ---------------------------------------------------------------------------
+
+import json  # noqa: E402
+
+from backend.agent.tool_executor import execute_tool  # noqa: E402
+
+
+def test_agent_tool_happy_path() -> None:
+    """The tool envelope returned to Claude carries the right shape."""
+    result = execute_tool({
+        "id": "toolu_test_001",
+        "name": "compile_data_coverage_ticket",
+        "input": {"mon_period": "202603", "source": "both"},
+    })
+    assert result["type"] == "tool_result"
+    assert result["tool_use_id"] == "toolu_test_001"
+    assert "is_error" not in result or not result["is_error"]
+
+    envelope = json.loads(result["content"])
+    assert envelope["tool"] == "compile_data_coverage_ticket"
+    assert envelope["parameters"] == {"mon_period": "202603", "source": "both"}
+    # The data_coverage helper's payload fields are spread into the envelope
+    for key in (
+        "mon_period", "source", "severity", "severity_action",
+        "affected_dealers", "ifs_missing", "usp_missing", "ticket_body",
+    ):
+        assert key in envelope, f"missing key in envelope: {key}"
+    assert envelope["drill_down_hint"]
+    # ticket_body should be markdown, not empty
+    assert envelope["ticket_body"].startswith("# FBB")
+
+
+def test_agent_tool_rejects_missing_period() -> None:
+    result = execute_tool({
+        "id": "toolu_test_002",
+        "name": "compile_data_coverage_ticket",
+        "input": {"source": "both"},
+    })
+    assert result.get("is_error") is True
+    assert "mon_period" in result["content"]
+
+
+def test_agent_tool_rejects_invalid_source() -> None:
+    result = execute_tool({
+        "id": "toolu_test_003",
+        "name": "compile_data_coverage_ticket",
+        "input": {"mon_period": "202603", "source": "email"},
+    })
+    assert result.get("is_error") is True
+    assert "invalid source" in result["content"].lower()
+
+
+def test_agent_tool_source_ifs_excludes_usp_section() -> None:
+    result = execute_tool({
+        "id": "toolu_test_004",
+        "name": "compile_data_coverage_ticket",
+        "input": {"mon_period": "202603", "source": "ifs"},
+    })
+    envelope = json.loads(result["content"])
+    assert envelope["source"] == "ifs"
+    assert envelope["usp_missing"] == []

@@ -1,0 +1,31 @@
+# FBB Revenue Intelligence — backend runtime + test dependencies.
+#
+# Install into a fresh venv:
+#
+#     python -m venv .venv
+#     .venv/bin/pip install -r backend/requirements.txt
+#
+# Pinned to the versions known to work together. Bump in lockstep.
+
+# --- Web framework ---
+fastapi==0.138.0
+uvicorn==0.49.0
+starlette==1.3.1
+
+# --- LLM ---
+anthropic==0.111.0
+
+# --- Data layer ---
+pandas==3.0.3
+# Required only when PAYMENT_SOURCE=apdp reads from APDP's Postgres.
+psycopg2-binary==2.9.12
+
+# --- HTTP + env loading ---
+httpx==0.28.1
+python-dotenv==1.2.2
+
+# --- Validation ---
+pydantic==2.13.4
+
+# --- Tests ---
+pytest==9.1.1

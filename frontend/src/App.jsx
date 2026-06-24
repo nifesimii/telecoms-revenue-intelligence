@@ -80,10 +80,31 @@ function GlobalPeriodSelect() {
   );
 }
 
+// Read ?view= from the URL, fall back to the landing view.
+function _readViewFromUrl() {
+  if (typeof window === 'undefined') return 'overview';
+  const v = new URLSearchParams(window.location.search).get('view');
+  const valid = VIEWS.some((x) => x.id === v);
+  return valid ? v : 'overview';
+}
+
+// Push ?view= into the URL without reloading.
+function _writeViewToUrl(view) {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  if (url.searchParams.get('view') === view) return;
+  url.searchParams.set('view', view);
+  window.history.replaceState({}, '', url.toString());
+}
+
 function Shell() {
   // Overview is the default landing view — see CLAUDE.md mission. The other
-  // four tabs are deep-dives the Overview points at.
-  const [view, setView] = useState('overview');
+  // four tabs are deep-dives the Overview points at. URL takes precedence so
+  // shared links open straight on the right tab.
+  const [view, setView] = useState(_readViewFromUrl);
+  useEffect(() => {
+    _writeViewToUrl(view);
+  }, [view]);
   // One-shot prompt slot. The Overview's "Ask Claude" buttons push a string
   // here and switch to Commission; ChatInterface consumes and clears it.
   const [pendingPrompt, setPendingPrompt] = useState('');

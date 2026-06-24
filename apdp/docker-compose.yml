@@ -216,9 +216,20 @@ services:
 
   # ── Flink Normalization Job ───────────────────────────────
   flink-normalizer:
+    # Apache Flink ships official Docker images for linux/amd64 only —
+    # there is no upstream arm64 build for the 1.18.x line. On Apple
+    # Silicon hosts Docker uses Rosetta to emulate; that works but spits
+    # out a noisy platform-mismatch warning on every `docker run`.
+    # Pinning the platform explicitly silences the warning AND documents
+    # the intentional choice. To run natively on arm64 you'd need to
+    # rebuild from a multi-arch JDK base (eclipse-temurin) and install
+    # Flink from the upstream tarball — left as future work.
+    platform: linux/amd64
     build:
       context: ./flink_jobs
       dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
     container_name: app_flink_normalizer
     depends_on:
       kafka:

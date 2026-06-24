@@ -1,0 +1,16 @@
+# Project-wide tooling config for the FBB Revenue Intelligence backend.
+# Runtime + test dependencies are pinned in backend/requirements.txt — this
+# file only configures the tools, not the install set.
+
+[tool.pytest.ini_options]
+# Filter out the noisy Starlette deprecation about httpx; it's surfaced by
+# FastAPI's TestClient and there's nothing actionable on our side until
+# Starlette + FastAPI ship a version that no longer triggers it.
+filterwarnings = [
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated:DeprecationWarning",
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
+# Sample-data mode: pytest runs without Presto / live LLM calls. The
+# opt-in eval suite (backend/tests/test_evals.py) gates itself on
+# RUN_EVALS=1.
+testpaths = ["backend/tests"]

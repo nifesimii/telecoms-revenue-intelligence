@@ -10,6 +10,7 @@ import {
 } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatPeriod } from '../../lib/format.js';
+import { exportCsv } from '../../lib/csv.js';
 import ActivationSummaryTable from './ActivationSummaryTable.jsx';
 import ActivationVarianceTable from './ActivationVarianceTable.jsx';
 import ActivationExceptionsTable from './ActivationExceptionsTable.jsx';
@@ -19,6 +20,40 @@ const TABS = [
   { id: 'variance', label: 'Variance' },
   { id: 'exceptions', label: 'Exceptions' },
 ];
+
+// Column descriptors per tab — keep these next to the table components so
+// the export matches what the user sees on screen.
+const CSV_COLUMNS = {
+  summary: [
+    { key: 'dealer_id',                       header: 'Dealer ID' },
+    { key: 'dealer_name',                     header: 'Dealer Name' },
+    { key: 'account_profile_class',           header: 'Profile Class' },
+    { key: 'activation_count',                header: 'Total Activations' },
+    { key: 'qualified_activation_count',      header: 'Qualified' },
+    { key: 'non_qualified_activation_count',  header: 'Unqualified' },
+    { key: 'qualification_rate_pct',          header: 'Qualification Rate %' },
+    { key: 'activation_commission_amount',    header: 'Commission (NGN)' },
+  ],
+  variance: [
+    { key: 'dealer_id',                  header: 'Dealer ID' },
+    { key: 'dealer_name',                header: 'Dealer Name' },
+    { key: 'activation_count_a',         header: 'Activations (period A)' },
+    { key: 'activation_count_b',         header: 'Activations (period B)' },
+    { key: 'delta_activations',          header: 'Δ Activations' },
+    { key: 'delta_commission_ngn',       header: 'Δ Commission (NGN)' },
+    { key: 'delta_qualification_rate',   header: 'Δ Qual Rate %' },
+  ],
+  exceptions: [
+    { key: 'dealer_id',                       header: 'Dealer ID' },
+    { key: 'dealer_name',                     header: 'Dealer Name' },
+    { key: 'account_profile_class',           header: 'Profile Class' },
+    { key: 'exception_type',                  header: 'Exception' },
+    { key: 'activation_count',                header: 'Total Activations' },
+    { key: 'qualified_activation_count',      header: 'Qualified' },
+    { key: 'qualification_rate_pct',          header: 'Qualification Rate %' },
+    { key: 'activation_commission_amount',    header: 'Commission (NGN)' },
+  ],
+};
 
 export default function ActivationIntelligencePanel() {
   const { periods, period, priorPeriod, setPriorPeriod } = usePeriod();
@@ -98,6 +133,26 @@ export default function ActivationIntelligencePanel() {
         )}
 
         <div className="flex-1" />
+
+        <button
+          onClick={() => {
+            const rows = activeTab === 'summary' ? summary
+              : activeTab === 'variance' ? variance
+              : exceptions;
+            if (!rows.length) return;
+            const filename = `activation_${activeTab}_${period || 'all'}.csv`;
+            exportCsv(CSV_COLUMNS[activeTab], rows, filename);
+          }}
+          disabled={
+            (activeTab === 'summary' && !summary.length) ||
+            (activeTab === 'variance' && !variance.length) ||
+            (activeTab === 'exceptions' && !exceptions.length)
+          }
+          className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-2 py-1 hover:bg-yellow-50 hover:border-mtn-yellow transition disabled:opacity-40 disabled:hover:bg-white disabled:hover:border-gray-200"
+          title="Download the current tab as CSV"
+        >
+          ⬇ Export CSV
+        </button>
 
         <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
           {TABS.map((t) => (
