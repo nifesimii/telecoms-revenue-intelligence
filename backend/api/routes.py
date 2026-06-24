@@ -32,6 +32,8 @@ from backend.api.schemas import (
     ChatResponse,
     DataCoverageTicketResponse,
     DealerSummary,
+    DisputeDraftRequest,
+    DisputeDraftResponse,
     InventoryComparisonRecord,
     PaymentCoverageResponse,
     PaymentSummaryRecord,
@@ -658,3 +660,31 @@ def list_payment_variance(
         {"period_a": period_a, "period_b": period_b},
     )
     return [PaymentVarianceRecord(**row) for row in df.to_dict(orient="records")]
+
+
+# ---------------------------------------------------------------------------
+# Dispute response generator
+# ---------------------------------------------------------------------------
+
+
+@router.post(
+    "/payments/disputes/draft",
+    response_model=DisputeDraftResponse,
+)
+def draft_dispute_response(req: DisputeDraftRequest) -> DisputeDraftResponse:
+    """Compose a finance-ready commission dispute response for one
+    (dealer, period). Pure-Python template — deterministic, no LLM call,
+    output fully grounded in the same query layer the rest of the platform
+    uses. See ``backend/agent/dispute_responder.py`` for the template logic.
+    """
+    from backend.agent.dispute_responder import compose_dispute_response
+    try:
+        payload = compose_dispute_response(
+            distributor_code = req.distributor_code,
+            mon_period       = req.mon_period,
+            dispute_text     = req.dispute_text,
+            amount_paid      = req.amount_paid,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return DisputeDraftResponse(**payload)

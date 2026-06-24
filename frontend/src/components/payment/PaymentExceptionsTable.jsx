@@ -16,6 +16,7 @@ import HelpIcon, {
   LEAKAGE_HELP,
   QUALIFICATION_HELP,
 } from '../shared/HelpIcon.jsx';
+import DisputeDraftModal from './DisputeDraftModal.jsx';
 
 const STATUS_TONE = {
   PARTIALLY_PAID: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -77,7 +78,7 @@ function FlagBadge({ flag }) {
 //   variance >  1    →  ⚠ Under-claimed (dealer earned more than claimed)
 //   variance < -1    →  ✗ Statement exceeds what activations support
 
-function VerificationPanel({ row, activation, dealer, onAsk, period }) {
+function VerificationPanel({ row, activation, dealer, onAsk, onDispute, period }) {
   // No activation record for this dealer in this period — that IS the verdict.
   if (!activation) {
     return (
@@ -90,11 +91,17 @@ function VerificationPanel({ row, activation, dealer, onAsk, period }) {
           has no matching activation data. This is a SALES_WITHOUT_STATEMENT-style
           discrepancy and needs investigation before settlement.
         </div>
-        {onAsk && (
-          <div className="mt-2">
-            <AskButton onAsk={onAsk} row={row} period={period} />
-          </div>
-        )}
+        <div className="mt-2 flex justify-end gap-2">
+          {onDispute && (
+            <button
+              onClick={() => onDispute(row)}
+              className="text-xs text-gray-900 font-semibold bg-mtn-yellow border border-mtn-yellow rounded-md px-2 py-1 hover:brightness-95"
+            >
+              Compose dispute response
+            </button>
+          )}
+          {onAsk && <AskButton onAsk={onAsk} row={row} period={period} />}
+        </div>
       </div>
     );
   }
@@ -184,12 +191,22 @@ function VerificationPanel({ row, activation, dealer, onAsk, period }) {
         {leakageVerdict}
       </div>
 
-      {/* Action */}
-      {onAsk && (
-        <div className="mt-2 flex justify-end">
+      {/* Action — primary action is "compose dispute response" since this
+          is, by definition, an exception row. Ask Claude remains for deeper
+          investigation. */}
+      <div className="mt-2 flex justify-end gap-2">
+        {onDispute && (
+          <button
+            onClick={() => onDispute(row)}
+            className="text-xs text-gray-900 font-semibold bg-mtn-yellow border border-mtn-yellow rounded-md px-2 py-1 hover:brightness-95"
+          >
+            Compose dispute response
+          </button>
+        )}
+        {onAsk && (
           <AskButton onAsk={onAsk} row={row} period={period} zeroCount={zeroCount} />
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -230,6 +247,7 @@ export default function PaymentExceptionsTable({
 }) {
   const { activationByDealer, dealerByCode } = useDealerVerification(period);
   const [expanded, setExpanded] = useState({}); // { distributor_code: bool }
+  const [disputeRow, setDisputeRow] = useState(null);
 
   if (loading) {
     return (
@@ -325,6 +343,7 @@ export default function PaymentExceptionsTable({
                       activation={activationByDealer[code]}
                       dealer={dealerByCode[code]}
                       onAsk={onAsk}
+                      onDispute={setDisputeRow}
                       period={period}
                     />
                   </td>
@@ -334,6 +353,13 @@ export default function PaymentExceptionsTable({
           })}
         </tbody>
       </table>
+
+      <DisputeDraftModal
+        open={!!disputeRow}
+        row={disputeRow}
+        period={period}
+        onClose={() => setDisputeRow(null)}
+      />
     </div>
   );
 }

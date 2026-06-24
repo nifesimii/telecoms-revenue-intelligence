@@ -313,6 +313,43 @@ class DataCoverageTicketResponse(BaseModel):
     ticket_body: str
 
 
+class DisputeDraftRequest(BaseModel):
+    """Body for ``POST /payments/disputes/draft``."""
+
+    distributor_code: str
+    mon_period: str
+    # Optional verbatim quote of the dealer's claim — included in the
+    # letter so the recipient sees exactly what we're responding to.
+    dispute_text: str | None = None
+    # If the caller already has the paid amount (e.g. from /payments/summary),
+    # pass it through so the recommended position reflects real settlement state.
+    amount_paid: float | None = None
+
+
+class DisputeDraftSummary(BaseModel):
+    reference: str
+    dealer_id: str
+    dealer_name: str
+    mon_period: str
+    total_activations: int
+    qualified_activations: int
+    unqualified_activations: int
+    qualification_rate_pct: float
+    qualified_commission_ngn: float
+    statement_claim_ngn: float
+    amount_paid_ngn: float
+    outstanding_ngn: float
+    root_cause_classifications: dict[str, int]
+    position_code: str
+
+
+class DisputeDraftResponse(BaseModel):
+    """Payload for ``POST /payments/disputes/draft``."""
+
+    markdown: str
+    summary: DisputeDraftSummary
+
+
 class PaymentVarianceRecord(BaseModel):
     """One dealer's payment delta between two periods, returned by
     ``GET /payments/variance``."""

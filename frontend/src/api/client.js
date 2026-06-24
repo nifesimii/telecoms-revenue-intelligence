@@ -152,6 +152,22 @@ export async function getDataCoverageIssues(mon_period = null, source = 'both') 
   return data;
 }
 
+/**
+ * POST /payments/disputes/draft
+ * Compose a finance-ready dispute response letter for one (dealer, period).
+ *
+ * @param {object} body
+ * @param {string} body.distributor_code
+ * @param {string} body.mon_period
+ * @param {string|null} [body.dispute_text]
+ * @param {number|null} [body.amount_paid]
+ * @returns {Promise<{markdown: string, summary: object}>}
+ */
+export async function draftDisputeResponse(body) {
+  const { data } = await api.post('/payments/disputes/draft', body);
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Phase 4 — Payment Intelligence
 // ---------------------------------------------------------------------------
