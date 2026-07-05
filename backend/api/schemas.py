@@ -350,6 +350,16 @@ class DisputeDraftResponse(BaseModel):
     summary: DisputeDraftSummary
 
 
+class AuditRunResponse(BaseModel):
+    """Result of POST /assurance/zero-commission/run — the run provenance."""
+
+    run_id: str
+    mon_period: str
+    payment_source: str
+    trail_count: int
+    started_at: str
+
+
 class PaymentVarianceRecord(BaseModel):
     """One dealer's payment delta between two periods, returned by
     ``GET /payments/variance``."""

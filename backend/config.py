@@ -48,6 +48,16 @@ APDP_PG_DB: str = os.getenv("APDP_PG_DB", "payment_platform")
 APDP_PG_USER: str = os.getenv("APDP_PG_USER", "platform_user")
 APDP_PG_PASSWORD: str = os.getenv("APDP_PG_PASSWORD", "platform_pass")
 
+# --- FBB audit Postgres (dedicated, separate from APDP) ---
+# Holds the zero-commission verification trails. See docker-compose.yml
+# (fbb-postgres) and infra/postgres/audit_init.sql. Host port defaults to
+# 5544 to avoid clashing with APDP's 5432 / a local Postgres.
+FBB_AUDIT_PG_HOST: str = os.getenv("FBB_AUDIT_PG_HOST", "localhost")
+FBB_AUDIT_PG_PORT: int = int(os.getenv("FBB_AUDIT_PG_PORT", "5544"))
+FBB_AUDIT_PG_DB: str = os.getenv("FBB_AUDIT_PG_DB", "fbb_audit")
+FBB_AUDIT_PG_USER: str = os.getenv("FBB_AUDIT_PG_USER", "fbb_audit")
+FBB_AUDIT_PG_PASSWORD: str = os.getenv("FBB_AUDIT_PG_PASSWORD", "fbb_audit_pass")
+
 # --- CORS ---
 CORS_ORIGINS: list[str] = [
     o.strip()

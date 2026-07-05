@@ -1,0 +1,3 @@
+# Backup dumps are local artifacts — never commit them.
+*.sql.gz
+*.sql.gz.tmp

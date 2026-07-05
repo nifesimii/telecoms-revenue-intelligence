@@ -1,0 +1,63 @@
+# FBB Revenue Intelligence — application infrastructure.
+#
+# Phase 1 scope: a dedicated Postgres for the audit trail (zero-commission
+# verification chains), separate from APDP's payment_platform DB. Kept in
+# its own compose file so FBB owns its own database lifecycle.
+#
+#   docker compose up -d
+#   docker compose ps
+#
+# The backend app itself still runs via uvicorn (sample-data mode) — this
+# compose provides the audit datastore + its backup, nothing else yet.
+
+services:
+  # ── Dedicated FBB audit Postgres ──────────────────────────────────────
+  # Persistent named volume → survives container recreation and
+  # `docker compose down`. NOT protected against `down -v` / volume rm —
+  # that's what the backup sidecar below is for.
+  fbb-postgres:
+    image: postgres:15-alpine
+    container_name: fbb_audit_postgres
+    environment:
+      POSTGRES_DB: fbb_audit
+      POSTGRES_USER: fbb_audit
+      POSTGRES_PASSWORD: fbb_audit_pass
+    ports:
+      - "5544:5432"   # host 5544 → avoid clashing with APDP's 5432 / local pg
+    volumes:
+      - fbb_audit_data:/var/lib/postgresql/data
+      - ./infra/postgres/audit_init.sql:/docker-entrypoint-initdb.d/audit_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fbb_audit -d fbb_audit"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ── Scheduled backup sidecar ──────────────────────────────────────────
+  # Loops pg_dump → ./backups on the host (outside any volume). This is the
+  # safety net for the audit data: a compressed snapshot the audit table can
+  # be restored from even if the volume is deleted.
+  fbb-postgres-backup:
+    image: postgres:15-alpine
+    container_name: fbb_audit_backup
+    depends_on:
+      fbb-postgres:
+        condition: service_healthy
+    environment:
+      PGHOST: fbb-postgres
+      PGPORT: "5432"
+      PGDATABASE: fbb_audit
+      PGUSER: fbb_audit
+      PGPASSWORD: fbb_audit_pass
+      BACKUP_DIR: /backups
+      BACKUP_INTERVAL_SECONDS: "86400"   # daily
+      BACKUP_RETENTION: "14"
+    volumes:
+      - ./infra/postgres/backup.sh:/backup.sh:ro
+      - ./backups:/backups            # host-mounted — survives volume loss
+    entrypoint: ["/bin/sh", "/backup.sh"]
+    restart: unless-stopped
+
+volumes:
+  fbb_audit_data:
