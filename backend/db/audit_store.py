@@ -204,10 +204,14 @@ def get_trails_with_caveat_step(step_name: str, mon_period: str | None = None) -
     e.g. ``get_trails_with_caveat_step('upstream_completeness')`` answers
     "show me all trails where step 6 raised a caveat".
     """
+    # Use the containment operator (@>) rather than `= ANY(...)` so the GIN
+    # index on caveat_steps is usable at scale. The two are logically
+    # equivalent, but only @> can drive a Bitmap Index Scan; = ANY() forces
+    # a seq scan. Verified against the running DB.
     sql = (
         "SELECT partner_code, partner_name, mon_period, conclusion, confidence, "
         "caveat_steps FROM audit.zero_commission_trail "
-        "WHERE %(step)s = ANY(caveat_steps)"
+        "WHERE caveat_steps @> ARRAY[%(step)s]"
     )
     params: dict[str, Any] = {"step": step_name}
     if mon_period:
