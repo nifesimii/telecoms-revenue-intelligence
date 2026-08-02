@@ -177,8 +177,9 @@ def test_replace_period_trails_row_mapping():
     from datetime import datetime, timezone
 
     t = build_trail(_inputs())
-    row = _trail_to_row(t, "run-123", datetime.now(timezone.utc))
+    row = _trail_to_row(t, "run-123", datetime.now(timezone.utc), "zero_commission")
     assert row["partner_code"] == "74050"
+    assert row["module"] == "zero_commission"
     assert row["conclusion"] == "NOT_PAID"
     assert row["caveat_steps"] == []
     assert row["step1_record_count"] == 100

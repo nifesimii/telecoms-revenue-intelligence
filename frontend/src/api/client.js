@@ -169,6 +169,43 @@ export async function draftDisputeResponse(body) {
 }
 
 // ---------------------------------------------------------------------------
+// Audit trails (generic, module-aware)
+// ---------------------------------------------------------------------------
+
+/** GET /assurance/audit/modules — registered audit modules for the dropdown. */
+export async function getAuditModules() {
+  const { data } = await api.get('/assurance/audit/modules');
+  return data;
+}
+
+/** POST /assurance/audit/run?module=&mon_period= — generate + persist trails. */
+export async function runAuditModule(module, mon_period) {
+  const { data } = await api.post('/assurance/audit/run', null, {
+    params: { module, mon_period },
+  });
+  return data;
+}
+
+/**
+ * GET /assurance/audit/trails?module=&mon_period=[&caveat_step=]
+ * @returns {Promise<Array<object>>} persisted trails
+ */
+export async function getAuditTrails(module, mon_period, caveat_step = null) {
+  const params = { module, mon_period };
+  if (caveat_step) params.caveat_step = caveat_step;
+  const { data } = await api.get('/assurance/audit/trails', { params });
+  return data;
+}
+
+/** GET /assurance/audit/breakdown?module=&mon_period= — conclusion/confidence counts. */
+export async function getAuditBreakdown(module, mon_period) {
+  const { data } = await api.get('/assurance/audit/breakdown', {
+    params: { module, mon_period },
+  });
+  return data;
+}
+
+// ---------------------------------------------------------------------------
 // Phase 4 — Payment Intelligence
 // ---------------------------------------------------------------------------
 

@@ -29,6 +29,9 @@ CREATE TABLE IF NOT EXISTS audit.zero_commission_trail (
     -- ── Run lifecycle ────────────────────────────────────────────────────
     run_id              UUID         NOT NULL,          -- groups one period run
     generated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    -- Which audit domain produced this trail. The table is generic across
+    -- audit modules (zero_commission today; inventory/payment later).
+    module              VARCHAR(50)  NOT NULL DEFAULT 'zero_commission',
     -- Which payment dataset the chain checked against. Recorded, not gated:
     -- 'simulated' trails are persisted alongside 'apdp' ones; the reader
     -- decides how much to trust each. See DATA SAFETY note in the task brief.
@@ -67,6 +70,7 @@ CREATE TABLE IF NOT EXISTS audit.zero_commission_trail (
 );
 
 -- ── Indexes ──────────────────────────────────────────────────────────────
+CREATE INDEX IF NOT EXISTS idx_zct_module        ON audit.zero_commission_trail(module);
 CREATE INDEX IF NOT EXISTS idx_zct_period        ON audit.zero_commission_trail(mon_period);
 CREATE INDEX IF NOT EXISTS idx_zct_partner_period ON audit.zero_commission_trail(partner_code, mon_period);
 CREATE INDEX IF NOT EXISTS idx_zct_run           ON audit.zero_commission_trail(run_id);

@@ -351,13 +351,14 @@ class DisputeDraftResponse(BaseModel):
 
 
 class AuditRunResponse(BaseModel):
-    """Result of POST /assurance/zero-commission/run — the run provenance."""
+    """Provenance returned by the audit run endpoints."""
 
     run_id: str
     mon_period: str
     payment_source: str
     trail_count: int
     started_at: str
+    module: str = "zero_commission"
 
 
 class PaymentVarianceRecord(BaseModel):

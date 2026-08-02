@@ -520,3 +520,32 @@ def _known_periods() -> list[str]:
         return [str(p) for p in queries.get_available_periods()]
     except Exception:
         return []
+
+
+# ---------------------------------------------------------------------------
+# Module registration (generic audit registry)
+# ---------------------------------------------------------------------------
+
+# Ordered step keys this module emits — mirrors build_trail's chain.
+STEP_NAMES = [
+    "qualifying_activity",
+    "applicable_rate",
+    "expected_commission",
+    "payment_record_search",
+    "near_match",
+    "upstream_completeness",
+]
+
+
+def _register() -> None:
+    from backend.audit.base import AuditModule, register
+    register(AuditModule(
+        name="zero_commission",
+        label="Zero-Commission",
+        claim="Partner X was not paid commission for period Y",
+        step_names=STEP_NAMES,
+        build=run_period,
+    ))
+
+
+_register()

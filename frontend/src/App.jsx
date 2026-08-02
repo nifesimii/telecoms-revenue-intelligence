@@ -13,6 +13,7 @@ import ActivationIntelligencePanel from './components/activation/ActivationIntel
 import AssuranceStatusPanel from './components/assurance/AssuranceStatusPanel.jsx';
 import InventoryIntelligencePanel from './components/inventory/InventoryIntelligencePanel.jsx';
 import PaymentIntelligencePanel from './components/payment/PaymentIntelligencePanel.jsx';
+import AuditTrailPanel from './components/audit/AuditTrailPanel.jsx';
 import { PeriodProvider, usePeriod } from './context/PeriodContext.jsx';
 import { getHealth } from './api/client.js';
 import { formatPeriod } from './lib/format.js';
@@ -23,6 +24,7 @@ const VIEWS = [
   { id: 'activation', label: 'Activation Intelligence' },
   { id: 'inventory', label: 'Inventory Intelligence' },
   { id: 'payment', label: 'Payment Intelligence' },
+  { id: 'audit', label: 'Audit Trails' },
 ];
 
 function DataModeBadge() {
@@ -155,6 +157,7 @@ function Shell() {
         {view === 'activation' && <ActivationIntelligencePanel />}
         {view === 'inventory' && <InventoryIntelligencePanel onAsk={askClaude} />}
         {view === 'payment' && <PaymentIntelligencePanel onAsk={askClaude} />}
+        {view === 'audit' && <AuditTrailPanel />}
       </div>
     </div>
   );

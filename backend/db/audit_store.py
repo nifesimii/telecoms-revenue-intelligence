@@ -53,9 +53,41 @@ def healthcheck() -> bool:
         return False
 
 
+_schema_ensured = False
+
+
+def ensure_schema() -> None:
+    """Idempotently ensure the generic `module` column + index exist.
+
+    Runs once per process before the first write. Lets a DB created by an
+    older init.sql (without the module column) work without a manual
+    migration — the generic audit layer stays self-healing.
+    """
+    global _schema_ensured
+    if _schema_ensured:
+        return
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "ALTER TABLE audit.zero_commission_trail "
+                "ADD COLUMN IF NOT EXISTS module VARCHAR(50) NOT NULL "
+                "DEFAULT 'zero_commission'"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_zct_module "
+                "ON audit.zero_commission_trail(module)"
+            )
+        conn.commit()
+        _schema_ensured = True
+    except Exception:
+        conn.rollback()
+        raise
+
+
 _INSERT_TRAIL = """
 INSERT INTO audit.zero_commission_trail (
-    partner_code, partner_name, mon_period,
+    module, partner_code, partner_name, mon_period,
     run_id, generated_at, payment_source, pipeline_version,
     conclusion, confidence, caveat_count, caveat_steps,
     step1_activity_ok, step1_record_count,
@@ -64,7 +96,7 @@ INSERT INTO audit.zero_commission_trail (
     step5_near_match_found, step6_upstream_complete,
     steps
 ) VALUES (
-    %(partner_code)s, %(partner_name)s, %(mon_period)s,
+    %(module)s, %(partner_code)s, %(partner_name)s, %(mon_period)s,
     %(run_id)s, %(generated_at)s, %(payment_source)s, %(pipeline_version)s,
     %(conclusion)s, %(confidence)s, %(caveat_count)s, %(caveat_steps)s,
     %(step1_activity_ok)s, %(step1_record_count)s,
@@ -76,7 +108,9 @@ INSERT INTO audit.zero_commission_trail (
 """
 
 
-def _trail_to_row(trail: VerificationTrail, run_id: str, generated_at: datetime) -> dict[str, Any]:
+def _trail_to_row(
+    trail: VerificationTrail, run_id: str, generated_at: datetime, module: str,
+) -> dict[str, Any]:
     s = {st.step: st for st in trail.steps}
 
     def _detail(n: int, key: str, default=None):
@@ -84,6 +118,7 @@ def _trail_to_row(trail: VerificationTrail, run_id: str, generated_at: datetime)
         return st.detail.get(key, default) if st else default
 
     return {
+        "module": module,
         "partner_code": trail.partner_code,
         "partner_name": trail.partner_name,
         "mon_period": trail.mon_period,
@@ -113,13 +148,15 @@ def replace_period_trails(
     payment_source: str,
     trails: list[VerificationTrail],
     *,
+    module: str = "zero_commission",
     triggered_by: str = "api",
 ) -> dict[str, Any]:
-    """Atomically replace all trails for a period with a fresh run.
+    """Atomically replace all trails for a (module, period) with a fresh run.
 
     Delete-then-insert in one transaction so a re-run leaves exactly the
-    latest run's rows. Returns run provenance (run_id, counts, timing).
+    latest run's rows for that module. Returns run provenance.
     """
+    ensure_schema()
     run_id = str(uuid.uuid4())
     started = datetime.now(timezone.utc)
     conn = _get_conn()
@@ -131,18 +168,20 @@ def replace_period_trails(
                 INSERT INTO audit.assurance_run
                     (run_id, module, mon_period, payment_source, trail_count,
                      started_at, triggered_by)
-                VALUES (%s, 'zero_commission', %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
-                (run_id, mon_period, payment_source, len(trails), started, triggered_by),
+                (run_id, module, mon_period, payment_source, len(trails),
+                 started, triggered_by),
             )
-            # Clear this period's previous trails.
+            # Clear this module's previous trails for the period.
             cur.execute(
-                "DELETE FROM audit.zero_commission_trail WHERE mon_period = %s",
-                (mon_period,),
+                "DELETE FROM audit.zero_commission_trail "
+                "WHERE mon_period = %s AND module = %s",
+                (mon_period, module),
             )
             # Insert the fresh run.
             for trail in trails:
-                cur.execute(_INSERT_TRAIL, _trail_to_row(trail, run_id, started))
+                cur.execute(_INSERT_TRAIL, _trail_to_row(trail, run_id, started, module))
             # Stamp completion.
             cur.execute(
                 "UPDATE audit.assurance_run SET completed_at = %s WHERE run_id = %s",
@@ -155,6 +194,7 @@ def replace_period_trails(
 
     return {
         "run_id": run_id,
+        "module": module,
         "mon_period": mon_period,
         "payment_source": payment_source,
         "trail_count": len(trails),
@@ -179,26 +219,31 @@ def _query(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
         raise
 
 
-def get_period_trails(mon_period: str) -> list[dict[str, Any]]:
-    """All trails for a period (latest run)."""
+def get_period_trails(mon_period: str, module: str = "zero_commission") -> list[dict[str, Any]]:
+    """All trails for a (module, period)."""
     return _query(
-        "SELECT * FROM audit.zero_commission_trail WHERE mon_period = %(p)s "
+        "SELECT * FROM audit.zero_commission_trail "
+        "WHERE mon_period = %(p)s AND module = %(m)s "
         "ORDER BY conclusion, partner_code",
-        {"p": mon_period},
+        {"p": mon_period, "m": module},
     )
 
 
-def get_partner_trail(partner_code: str, mon_period: str) -> dict[str, Any] | None:
+def get_partner_trail(
+    partner_code: str, mon_period: str, module: str = "zero_commission",
+) -> dict[str, Any] | None:
     rows = _query(
         "SELECT * FROM audit.zero_commission_trail "
-        "WHERE partner_code = %(pc)s AND mon_period = %(p)s "
+        "WHERE partner_code = %(pc)s AND mon_period = %(p)s AND module = %(m)s "
         "ORDER BY generated_at DESC LIMIT 1",
-        {"pc": partner_code, "p": mon_period},
+        {"pc": partner_code, "p": mon_period, "m": module},
     )
     return rows[0] if rows else None
 
 
-def get_trails_with_caveat_step(step_name: str, mon_period: str | None = None) -> list[dict[str, Any]]:
+def get_trails_with_caveat_step(
+    step_name: str, mon_period: str | None = None, module: str = "zero_commission",
+) -> list[dict[str, Any]]:
     """Evaluation query: every trail where a given step raised a caveat.
 
     e.g. ``get_trails_with_caveat_step('upstream_completeness')`` answers
@@ -211,9 +256,9 @@ def get_trails_with_caveat_step(step_name: str, mon_period: str | None = None) -
     sql = (
         "SELECT partner_code, partner_name, mon_period, conclusion, confidence, "
         "caveat_steps FROM audit.zero_commission_trail "
-        "WHERE caveat_steps @> ARRAY[%(step)s]"
+        "WHERE caveat_steps @> ARRAY[%(step)s] AND module = %(m)s"
     )
-    params: dict[str, Any] = {"step": step_name}
+    params: dict[str, Any] = {"step": step_name, "m": module}
     if mon_period:
         sql += " AND mon_period = %(p)s"
         params["p"] = mon_period
@@ -221,11 +266,14 @@ def get_trails_with_caveat_step(step_name: str, mon_period: str | None = None) -
     return _query(sql, params)
 
 
-def get_conclusion_breakdown(mon_period: str) -> list[dict[str, Any]]:
-    """Aggregate: trail counts by (conclusion, confidence) for a period."""
+def get_conclusion_breakdown(
+    mon_period: str, module: str = "zero_commission",
+) -> list[dict[str, Any]]:
+    """Aggregate: trail counts by (conclusion, confidence) for a module/period."""
     return _query(
         "SELECT conclusion, confidence, COUNT(*) AS n "
-        "FROM audit.zero_commission_trail WHERE mon_period = %(p)s "
+        "FROM audit.zero_commission_trail "
+        "WHERE mon_period = %(p)s AND module = %(m)s "
         "GROUP BY conclusion, confidence ORDER BY conclusion, confidence",
-        {"p": mon_period},
+        {"p": mon_period, "m": module},
     )

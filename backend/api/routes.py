@@ -787,3 +787,113 @@ def zero_commission_breakdown(
     except Exception as e:
         logger.exception("audit trail read failed")
         raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Generic audit layer (module-aware)
+# ---------------------------------------------------------------------------
+# The same verification-trail machinery across every audit domain. Modules
+# self-register (backend/audit/base.py); the frontend Audit Trails panel is
+# driven entirely off these endpoints. Zero-commission is the only module
+# today — inventory/payment drop in later with no changes here.
+
+
+def _resolve_module(module: str):
+    from backend.audit.base import get_module
+    m = get_module(module)
+    if m is None:
+        from backend.audit.base import list_modules
+        names = [x.name for x in list_modules()]
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown audit module '{module}'. Registered: {names}",
+        )
+    return m
+
+
+@router.get("/assurance/audit/modules")
+def list_audit_modules() -> list[dict[str, Any]]:
+    """Registered audit modules — populates the UI module dropdown."""
+    from backend.audit.base import list_modules
+    return [m.to_dict() for m in list_modules()]
+
+
+@router.post("/assurance/audit/run", response_model=AuditRunResponse)
+def run_audit_module(
+    module: str = Query(default="zero_commission", description="Audit module name."),
+    mon_period: str = Query(pattern=r"^\d{6}$", description="Reporting month (YYYYMM)."),
+) -> AuditRunResponse:
+    """Generate + persist trails for a module/period. Idempotent per
+    (module, period): re-running replaces that module's trails."""
+    from backend.db import audit_store
+
+    mod = _resolve_module(module)
+    trails = mod.build_trails(mon_period, config.PAYMENT_SOURCE)
+    try:
+        result = audit_store.replace_period_trails(
+            mon_period, config.PAYMENT_SOURCE, trails,
+            module=module, triggered_by="api",
+        )
+    except Exception as e:
+        logger.exception("audit trail persistence failed")
+        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+    return AuditRunResponse(**result)
+
+
+@router.get("/assurance/audit/trails")
+def list_audit_trails(
+    module: str = Query(default="zero_commission"),
+    mon_period: str = Query(pattern=r"^\d{6}$"),
+    caveat_step: str | None = Query(
+        default=None,
+        description="Only trails where this step raised a caveat (evaluation filter).",
+    ),
+) -> list[dict[str, Any]]:
+    """Trails for a module/period; optional caveat-step evaluation filter."""
+    from backend.db import audit_store
+    _resolve_module(module)
+    try:
+        if caveat_step:
+            return audit_store.get_trails_with_caveat_step(caveat_step, mon_period, module)
+        return audit_store.get_period_trails(mon_period, module)
+    except Exception as e:
+        logger.exception("audit trail read failed")
+        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+
+
+@router.get("/assurance/audit/breakdown")
+def audit_breakdown(
+    module: str = Query(default="zero_commission"),
+    mon_period: str = Query(pattern=r"^\d{6}$"),
+) -> list[dict[str, Any]]:
+    """Counts by (conclusion, confidence) for a module/period."""
+    from backend.db import audit_store
+    _resolve_module(module)
+    try:
+        return audit_store.get_conclusion_breakdown(mon_period, module)
+    except Exception as e:
+        logger.exception("audit trail read failed")
+        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+
+
+@router.get("/assurance/audit/trails/{partner_code}")
+def get_audit_trail(
+    partner_code: str,
+    module: str = Query(default="zero_commission"),
+    mon_period: str = Query(pattern=r"^\d{6}$"),
+) -> dict[str, Any]:
+    """Full verification chain for one subject/period — the auditor view."""
+    from backend.db import audit_store
+    _resolve_module(module)
+    try:
+        trail = audit_store.get_partner_trail(partner_code, mon_period, module)
+    except Exception as e:
+        logger.exception("audit trail read failed")
+        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+    if trail is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No {module} trail for {partner_code} in {mon_period}. "
+                   "Has the run job been executed?",
+        )
+    return trail
