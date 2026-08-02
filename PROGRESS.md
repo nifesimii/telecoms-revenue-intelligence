@@ -6,10 +6,68 @@ end of each work session. Newest session on top.
 ---
 
 ## Current phase
-**Audit trail — Phase 1 (zero-commission) complete + generalized.** The
-verification-trail pattern is now reusable across audit domains, with a
-browsable UI. Next natural step is validating the *judgment* on real trails
-before adding a second domain (inventory).
+**Preparing a GM preview / finance presentation.** The FBB app (5 intelligence
+views + Overview + Audit Trails) runs end-to-end on sample data. Dealer
+data-connector layer is built and proven in APDP. Immediate next step:
+**deploy for a shareable link (Option 2 — real hosting: frontend + backend +
+Postgres on a cloud host).** No deployment config written yet.
+
+Recent milestones behind this: audit trail (zero-commission) Phase 1 complete
+and generalized into a reusable module registry with a browsable UI; dealer
+connector abstraction + sandbox proof done.
+
+Docs: ARCHITECTURE.md (onboarding), CLAUDE.md (rules; both exist — root + apdp/),
+PROGRESS.md (this file). CLAUDE.md points at ARCHITECTURE.md.
+
+---
+
+## Session — 2026-08-02
+
+**Done**
+- Built the **dealer data-connector layer** in APDP (`apdp/ingestion/connectors/`)
+  so that when finance approves, connecting to dealers + pulling their MoMo/
+  account data is fast and model-proof. One `DealerDataConnector` interface;
+  swappable backends (simulated / momo / consent-Mono / [internal — later]).
+  Onboarding-as-config (`dealer_connections` table + JSON fallback), a runner
+  with per-dealer error isolation, and 11 tests (all pass, zero creds/infra).
+- Proved end-to-end: a connector envelope flows through the EXISTING normalizer
+  unchanged → canonical v1.3.0 event.
+- Wrote `apdp/docs/DEALER_CONNECTORS.md` — the access-model decision record
+  (3 models, proven-vs-pending, "day approval lands" activation checklist).
+
+**Key reality captured:** the MoMo *merchant* API can't read an arbitrary
+dealer's wallet. Real dealer-account access is consent-aggregation (Mono) or
+an internal MTN feed. The abstraction means whichever finance grants, it's one
+connector to activate — not a rebuild.
+
+**Next (immediate — where we're picking up)**
+- **Deploy for a GM preview link (Option 2: real hosting).** The app is 2 pieces
+  — frontend (Vite/React) + backend (FastAPI). A frontend-only host = dead shell
+  ("API unreachable"); need both up + optional Postgres for the Audit Trails tab.
+  All demo data is fictional sample data, so a public link leaks nothing real
+  (still password-gate it). To write when resumed: backend Dockerfile, hosting
+  blueprint (platform TBD — Render/Railway/Vercel+Render), CORS_ORIGINS + the
+  frontend's VITE_API_URL wiring, managed Postgres hookup. Frontend reads
+  VITE_API_URL (defaults to localhost:8000); CORS defaults to localhost:5173 —
+  both need the deployed URLs.
+
+**Next (later)**
+- Confirm with finance/MTN which dealer access model will be granted (targeting
+  consent-aggregation + staying model-agnostic).
+- When creds land: wire the production MoMo history endpoint and/or the Mono
+  consent-capture flow; load the real dealer roster into `dealer_connections`.
+- Validate audit-trail judgment (the PARTIALLY_PAID question); add inventory as
+  a second audit module.
+
+---
+
+## Session — 2026-07-28 (later)
+
+**Done**
+- Added **ARCHITECTURE.md** at the repo root — full onboarding doc (overview,
+  tech stack + rationale, directory tree, data flows, key abstractions,
+  conventions, known rough edges, setup & run). Referenced from CLAUDE.md so
+  future sessions read it. Keep it updated when architecture changes materially.
 
 ---
 

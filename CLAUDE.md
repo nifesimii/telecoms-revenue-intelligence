@@ -1,6 +1,9 @@
 # FBB Trade Partner Intelligence Platform
 ## Claude Code Instructions
 
+> See ARCHITECTURE.md for codebase structure and design decisions (onboarding
+> reference). See PROGRESS.md for current status and what's next.
+
 ### Mission
 Build a finance intelligence platform that explains, validates,
 and investigates FBB trade partner commissions — so Finance and
