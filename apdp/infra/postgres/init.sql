@@ -99,6 +99,28 @@ CREATE TABLE IF NOT EXISTS public.merchant_mono_accounts (
     is_active    BOOLEAN      NOT NULL DEFAULT TRUE
 );
 
+-- ── Dealer onboarding registry (data-access connectors) ─────────────────────
+-- The "add a dealer = a row, not code" registry behind the DealerDataConnector
+-- layer (ingestion/connectors/). Each row = one onboarded dealer + which access
+-- model pulls their account data. Generalizes merchant_mono_accounts across all
+-- connector types (momo | consent | internal | file | simulated).
+CREATE TABLE IF NOT EXISTS public.dealer_connections (
+    id              SERIAL PRIMARY KEY,
+    dealer_code     VARCHAR(50)  NOT NULL,           -- joins FBB distributor_code
+    connector_type  VARCHAR(20)  NOT NULL,           -- momo|consent|internal|file|simulated
+    account_ref     VARCHAR(255) NOT NULL,           -- MSISDN / Mono account_id / partner id / glob
+    credentials_ref VARCHAR(100),                    -- env/secret NAME, not the secret
+    consent_status  VARCHAR(20)  NOT NULL DEFAULT 'n/a', -- pending|granted|revoked|expired|n/a
+    is_active       BOOLEAN      NOT NULL DEFAULT TRUE,
+    display_name    VARCHAR(255),
+    metadata        JSONB        NOT NULL DEFAULT '{}',
+    last_synced_at  TIMESTAMPTZ,                      -- high-water mark for incremental pulls
+    created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    UNIQUE (dealer_code, connector_type)
+);
+CREATE INDEX IF NOT EXISTS idx_dealer_conn_active ON public.dealer_connections(is_active);
+CREATE INDEX IF NOT EXISTS idx_dealer_conn_type   ON public.dealer_connections(connector_type);
+
 -- Audit log written by mono_batch.py after each nightly sync.
 -- One row per account per run — used for monitoring and alerting.
 CREATE TABLE IF NOT EXISTS public.mono_sync_log (

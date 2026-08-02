@@ -1,0 +1,45 @@
+{
+  "_comment": "Sample dealer onboarding registry — the zero-infra source used when no dealer_connections Postgres table is available. In production this lives in public.dealer_connections. Adding a dealer = a new object here (or a DB row). credentials_ref names the env var holding the secret; the secret itself is never in this file.",
+  "dealers": [
+    {
+      "dealer_code": "FBB_D00001",
+      "display_name": "MTN Connect Solutions",
+      "connector_type": "simulated",
+      "account_ref": "2348031000001",
+      "credentials_ref": null,
+      "consent_status": "n/a",
+      "is_active": true,
+      "metadata": {"region": "Lagos", "tier": "gold"}
+    },
+    {
+      "dealer_code": "FBB_D00002",
+      "display_name": "Hynex Distribution Ltd",
+      "connector_type": "simulated",
+      "account_ref": "2348031000002",
+      "credentials_ref": null,
+      "consent_status": "n/a",
+      "is_active": true,
+      "metadata": {"region": "Abuja", "tier": "silver"}
+    },
+    {
+      "dealer_code": "FBB_D00003",
+      "display_name": "Kashmir Global Networks (Mono-consent, pending)",
+      "connector_type": "consent",
+      "account_ref": "MONO_ACCOUNT_ID_PLACEHOLDER",
+      "credentials_ref": "MONO_SECRET_KEY",
+      "consent_status": "pending",
+      "is_active": true,
+      "metadata": {"bank_code": "GTB", "region": "Kano"}
+    },
+    {
+      "dealer_code": "FBB_D00004",
+      "display_name": "Citicom Telecom (MoMo, sandbox)",
+      "connector_type": "momo",
+      "account_ref": "2348031000004",
+      "credentials_ref": "MTN_API_KEY",
+      "consent_status": "n/a",
+      "is_active": true,
+      "metadata": {"region": "Port Harcourt"}
+    }
+  ]
+}
