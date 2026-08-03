@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import psycopg2
@@ -22,6 +23,15 @@ import psycopg2.extras
 
 from backend import config
 from backend.audit.trail import VerificationTrail
+
+# Full schema DDL — the same script the local docker-compose Postgres runs at
+# init. Executed at first write against a managed DB (e.g. Render Postgres)
+# that doesn't run docker-entrypoint-initdb.d scripts. All statements are
+# CREATE ... IF NOT EXISTS, so re-runs are safe.
+_INIT_SQL_PATH = (
+    Path(__file__).resolve().parent.parent.parent
+    / "infra" / "postgres" / "audit_init.sql"
+)
 
 _conn: psycopg2.extensions.connection | None = None
 
@@ -57,11 +67,16 @@ _schema_ensured = False
 
 
 def ensure_schema() -> None:
-    """Idempotently ensure the generic `module` column + index exist.
+    """Idempotently bootstrap the full audit schema, then self-heal older DBs.
 
-    Runs once per process before the first write. Lets a DB created by an
-    older init.sql (without the module column) work without a manual
-    migration — the generic audit layer stays self-healing.
+    Runs once per process before the first write. Two responsibilities:
+
+    1. **Bootstrap on managed Postgres.** Executes ``audit_init.sql`` so a
+       DB that never ran the docker-entrypoint init script (e.g. Render
+       managed Postgres) still gets ``audit`` schema, tables, and indexes.
+       All statements are ``CREATE ... IF NOT EXISTS``, so re-runs are safe.
+    2. **Self-heal older local DBs** that were created before the generic
+       ``module`` column existed — the ALTERs below add it if missing.
     """
     global _schema_ensured
     if _schema_ensured:
@@ -69,6 +84,8 @@ def ensure_schema() -> None:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
+            if _INIT_SQL_PATH.is_file():
+                cur.execute(_INIT_SQL_PATH.read_text())
             cur.execute(
                 "ALTER TABLE audit.zero_commission_trail "
                 "ADD COLUMN IF NOT EXISTS module VARCHAR(50) NOT NULL "

@@ -1,0 +1,71 @@
+# Render Blueprint — FBB Trade Partner Intelligence GM preview.
+#
+# One web service (Docker: FastAPI + built SPA on one origin) plus a managed
+# Postgres for the Audit Trails feature. Everything runs on sample data —
+# ANTHROPIC_API_KEY and the two DEMO_* creds are the only secrets to set by
+# hand in the Render dashboard after the blueprint provisions the services.
+#
+# Deploy: push this file to the repo, then in Render → "New" → "Blueprint" →
+# point at the repo. See docs/DEPLOY.md for the full walkthrough.
+
+databases:
+  - name: fbb-audit-pg
+    databaseName: fbb_audit
+    user: fbb_audit
+    plan: basic-256mb   # cheapest paid tier; free tier expires after 90 days
+    region: frankfurt   # closest of Render's regions to Lagos
+
+services:
+  - type: web
+    name: fbb-preview
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: starter       # always-on ($7/mo). Change to `free` to accept cold starts.
+    region: frankfurt
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # ── Sample-data mode (no live Presto, no APDP) ────────────────────
+      - key: USE_SAMPLE_DATA
+        value: "true"
+      - key: PAYMENT_SOURCE
+        value: simulated
+
+      # ── Same-origin deploy: SPA and API share the host, so CORS is a
+      # no-op. Kept explicit so a future split-origin change is a one-line
+      # edit rather than a debugging session.
+      - key: CORS_ORIGINS
+        value: ""
+
+      # ── Anthropic (fill in Render dashboard after blueprint provisions) ─
+      - key: ANTHROPIC_API_KEY
+        sync: false
+
+      # ── Basic Auth gate (both required or the gate is disabled) ────────
+      - key: DEMO_USERNAME
+        sync: false
+      - key: DEMO_PASSWORD
+        sync: false
+
+      # ── Audit Postgres — wired from the managed DB above ───────────────
+      - key: FBB_AUDIT_PG_HOST
+        fromDatabase:
+          name: fbb-audit-pg
+          property: host
+      - key: FBB_AUDIT_PG_PORT
+        fromDatabase:
+          name: fbb-audit-pg
+          property: port
+      - key: FBB_AUDIT_PG_DB
+        fromDatabase:
+          name: fbb-audit-pg
+          property: database
+      - key: FBB_AUDIT_PG_USER
+        fromDatabase:
+          name: fbb-audit-pg
+          property: user
+      - key: FBB_AUDIT_PG_PASSWORD
+        fromDatabase:
+          name: fbb-audit-pg
+          property: password

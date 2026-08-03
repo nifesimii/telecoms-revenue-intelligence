@@ -1,0 +1,36 @@
+# Keep the deploy image small and reproducible. The build context is the
+# repo root; anything listed here is NOT sent to the Docker daemon.
+
+# Python
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+*.egg-info/
+
+# Node (frontend is rebuilt inside the image; local artifacts must not leak in)
+frontend/node_modules/
+frontend/dist/
+
+# APDP is not part of the FBB preview deploy — it's a separate stack.
+apdp/
+
+# Local audit-DB backups (host-mounted, not for the image).
+backups/
+
+# Env / secrets — never bake into the image.
+.env
+.env.local
+*.env
+
+# VCS + editor noise
+.git/
+.gitignore
+.vscode/
+.idea/
+.DS_Store
+
+# Docs are useful in the repo but not needed at runtime.
+docs/
+*.md
+!backend/knowledge_base/**/*.md

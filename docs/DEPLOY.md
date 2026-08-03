@@ -1,0 +1,99 @@
+# Deploy — GM Preview on Render
+
+Getting a shareable link for the FBB Trade Partner Intelligence Platform.
+Single Render web service (Docker) that serves both the FastAPI backend and
+the built React SPA on one origin, plus one managed Postgres for the Audit
+Trails feature. Everything runs on sample data — no MTN systems touched.
+
+**Cost:** ~$14/mo (Starter web $7 + Basic-256mb Postgres $7). Free tiers work
+too but the web service cold-starts after 15 min idle — not great for a demo.
+
+---
+
+## 1. Prereqs
+
+- Repo pushed to GitHub with these files:
+  - `render.yaml` (blueprint at repo root)
+  - `backend/Dockerfile` + `.dockerignore` at repo root
+  - `backend/middleware/basic_auth.py`
+- Render account (free to create). No card needed until you upgrade off free.
+- An Anthropic API key with budget for the demo window.
+
+## 2. Provision
+
+1. Render dashboard → **New** → **Blueprint**.
+2. Connect the GitHub repo. Render reads `render.yaml` and shows a plan:
+   - Web service `fbb-preview` (Docker, Frankfurt, Starter)
+   - Postgres `fbb-audit-pg` (Basic-256mb, Frankfurt)
+3. Click **Apply**. Postgres provisions first (~1 min); the web service
+   builds after (~4–6 min for the first Docker build).
+
+## 3. Set the three secrets
+
+The blueprint declares three env vars as `sync: false`, meaning Render leaves
+them blank for you to fill in the dashboard (never commit them to the repo).
+
+Go to the web service → **Environment** → set:
+
+| Key              | Value                                                   |
+|------------------|---------------------------------------------------------|
+| `ANTHROPIC_API_KEY` | Your Anthropic key                                   |
+| `DEMO_USERNAME`     | Chosen username (e.g. `mtn-gm`)                      |
+| `DEMO_PASSWORD`     | Strong random string — this gates the whole preview  |
+
+Save. Render redeploys automatically.
+
+**If either `DEMO_*` is blank the gate is disabled and the app is public.**
+Both must be set.
+
+## 4. Smoke test
+
+Once the deploy shows **Live**:
+
+```bash
+# Health probe — no auth required, confirms the process is up.
+curl -i https://fbb-preview.onrender.com/health
+# → 200 {"status":"ok","sample_data_mode":true,"payment_source":"simulated"}
+
+# Anything else — 401 without creds, 200 with them.
+curl -i https://fbb-preview.onrender.com/
+curl -i -u "mtn-gm:<password>" https://fbb-preview.onrender.com/periods
+```
+
+In a browser: open the site, browser prompts for the basic-auth credentials,
+enter them once, the SPA loads. Click **Audit Trails** → **Run** → confirm
+trails come back (proves the managed Postgres is wired end-to-end;
+`ensure_schema()` bootstraps the schema on first write).
+
+## 5. Share
+
+Grab the Render URL, share with the GM alongside the credentials **out of
+band** (WhatsApp, not the same email as the URL).
+
+## Operations
+
+**Rotate the password.** Dashboard → Environment → change `DEMO_PASSWORD` →
+Save. Render redeploys; browsers with the old creds cached get a 401 and
+re-prompt.
+
+**Redeploy after code changes.** Push to the tracked branch — `autoDeploy:
+true` in `render.yaml` picks it up. Or dashboard → **Manual Deploy**.
+
+**Reset the audit DB.** Dashboard → Postgres → **Reset**. Next time
+someone opens the Audit Trails tab, `ensure_schema()` recreates the tables
+from `infra/postgres/audit_init.sql`; running an audit repopulates them.
+
+**Downgrade to free.** Change `plan: starter` → `plan: free` in
+`render.yaml`. Accept ~30s cold starts on the first request after idle.
+
+## Known limits (deliberately not fixed)
+
+- **Sample data only.** `USE_SAMPLE_DATA=true`, `PAYMENT_SOURCE=simulated`.
+  Live Presto still `NotImplementedError`; APDP stack not deployed.
+- **One shared credential.** Basic Auth is a gate, not a user system. Anyone
+  with the URL + password gets full access to every endpoint.
+- **Frankfurt region.** Latency from Lagos is ~150–200 ms; acceptable for a
+  demo. If it feels sluggish, Fly.io in JNB is the next step (needs a
+  separate blueprint — not covered here).
+- **No HTTPS-only redirect config needed.** Render terminates TLS and always
+  serves the site over HTTPS.

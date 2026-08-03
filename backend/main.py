@@ -13,13 +13,16 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from backend import config
 from backend.agent import prompts
 from backend.api.routes import router as api_router
+from backend.middleware.basic_auth import install_if_configured as install_basic_auth
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +73,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Basic Auth gate for the GM preview deploy. No-op locally unless
+# DEMO_USERNAME + DEMO_PASSWORD are set — production sets both as secrets.
+if install_basic_auth(app):
+    logger.info("Basic Auth middleware installed (DEMO_USERNAME/PASSWORD set).")
+
 
 # ---------------------------------------------------------------------------
 # Health probe
@@ -91,3 +99,17 @@ def health() -> dict:
 # ---------------------------------------------------------------------------
 
 app.include_router(api_router)
+
+
+# ---------------------------------------------------------------------------
+# Static SPA — serve the built frontend under `/` (deployed single-service).
+# ---------------------------------------------------------------------------
+# In the deploy image the Vite build lands at ./frontend/dist. Mount LAST so
+# any real API route (registered above) wins over the SPA catch-all.
+# `html=True` makes /some/path fall back to /index.html for client-side routes.
+_spa_dir = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _spa_dir.is_dir():
+    app.mount("/", StaticFiles(directory=_spa_dir, html=True), name="spa")
+    logger.info("Serving SPA from %s", _spa_dir)
+else:
+    logger.info("No SPA build at %s — API-only mode.", _spa_dir)
