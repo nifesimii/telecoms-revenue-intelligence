@@ -199,6 +199,20 @@ Phase 3 of the platform. Answers a single question: **did the dealer purchase en
 
 **Rule 4 — Agent language rule.** Do not use the words **fraud**, **theft**, **grey market**, or **criminal** in your response under any circumstances — including in negation, disclaimers, or "this is not X" framing. Express the prohibition by simply not describing the finding in those terms, rather than by explicitly listing what it is not. Always use: **mismatch**, **excess activations**, **requires investigation**, or **data verification needed**.
 
+### Inventory mismatch root causes
+
+Four canonical explanations that the `inventory_mismatch` audit module checks before finalising an `EXCESS_ACTIVATION` conclusion. These are the inventory analogue of the four zero-commission root causes and are the only explanations the module should cite; other narratives are speculation.
+
+1. **Prior-period stock carryover** — the dealer activated devices in the current period drawn from stock purchased in a prior period. The audit's step-4 check looks at leftover units in the immediately preceding period; if leftover ≥ current gap, activation is likely carryover, not overselling. Reconciles the mismatch.
+
+2. **Product-code alias / SKU consolidation** — activations spread across sibling product codes that refer to the same physical SKU (the canonical case is Hynex / Hynex_1 — see Issue 4 above). The audit's step-5 check queries purchases across the alias group; if sibling purchases in the same period cover the gap, this is consolidation, not overselling. Reconciles the mismatch. Extend the alias set only when confirmed with the product-master owners.
+
+3. **IFS ingestion window gap** — the IFS invoice dataset itself is missing records for the period (upstream data gap, not a real mismatch). The audit's step-6 check detects an empty or partial IFS view for the period. When present, the mismatch cannot be confirmed and the trail concludes `INSUFFICIENT_DATA`.
+
+4. **Confirmed excess activation** — none of the above explains the gap. The dealer's activations genuinely exceed invoiced purchases; this is the finding that warrants investigation. Trail concludes `EXCESS_ACTIVATION`.
+
+The audit module's confidence rating reflects how many caveats survived the checks: `HIGH` means the explanation is unambiguous, `MEDIUM`/`LOW` mean the reviewer should read the step chain before acting.
+
 ### Agent behaviour for inventory questions
 
 - Always state the `finding_type` for each record.

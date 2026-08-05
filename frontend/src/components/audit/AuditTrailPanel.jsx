@@ -18,8 +18,13 @@ import {
 } from '../../api/client.js';
 
 const CONCLUSION_TONE = {
+  // zero_commission
   NOT_PAID: 'bg-red-100 text-red-800 border-red-200',
   PAID: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  // inventory_mismatch
+  EXCESS_ACTIVATION: 'bg-red-100 text-red-800 border-red-200',
+  RECONCILED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  // shared
   INSUFFICIENT_DATA: 'bg-gray-100 text-gray-700 border-gray-200',
 };
 const CONFIDENCE_TONE = {

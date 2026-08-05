@@ -88,3 +88,4 @@ def _ensure_loaded() -> None:
     _loaded = True
     # Importing the module runs its register(...) call at module scope.
     from backend.audit import zero_commission_audit  # noqa: F401
+    from backend.audit import inventory_mismatch_audit  # noqa: F401

@@ -43,7 +43,19 @@ def _json_safe(value: Any) -> Any:
 
 # Conclusion + confidence vocabularies — mirror the Postgres CHECK-style
 # expectations in infra/postgres/audit_init.sql.
-CONCLUSIONS = ("NOT_PAID", "PAID", "INSUFFICIENT_DATA")
+#
+# Vocabulary is shared across modules on purpose: the schema keeps one
+# `conclusion` column and the UI keeps one color map. New audit modules add
+# their conclusions here and update the UI tone map in lockstep — do not
+# fork per-module vocabularies.
+CONCLUSIONS = (
+    # zero_commission
+    "NOT_PAID", "PAID",
+    # inventory_mismatch
+    "RECONCILED", "EXCESS_ACTIVATION",
+    # shared
+    "INSUFFICIENT_DATA",
+)
 CONFIDENCES = ("HIGH", "MEDIUM", "LOW")
 
 
