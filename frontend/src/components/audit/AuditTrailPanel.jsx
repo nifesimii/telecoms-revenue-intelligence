@@ -128,6 +128,7 @@ export default function AuditTrailPanel() {
   const [modules, setModules] = useState([]);
   const [module, setModule] = useState('zero_commission');
   const [caveatFilter, setCaveatFilter] = useState('');
+  const [partnerQuery, setPartnerQuery] = useState('');
   const [trails, setTrails] = useState([]);
   const [breakdown, setBreakdown] = useState([]);
   const [expanded, setExpanded] = useState({});
@@ -187,7 +188,21 @@ export default function AuditTrailPanel() {
   };
 
   const stepOptions = activeModule?.step_names || [];
-  const total = trails.length;
+
+  // Client-side partner search — case-insensitive substring over
+  // partner_code + partner_name. Trails are already loaded, so this is
+  // a pure display filter (fast even with the 4000+ inventory trails).
+  const filteredTrails = useMemo(() => {
+    const q = partnerQuery.trim().toLowerCase();
+    if (!q) return trails;
+    return trails.filter((t) =>
+      String(t.partner_code || '').toLowerCase().includes(q)
+      || String(t.partner_name || '').toLowerCase().includes(q)
+    );
+  }, [trails, partnerQuery]);
+
+  const total = filteredTrails.length;
+  const totalUnfiltered = trails.length;
 
   return (
     <div className="h-full flex flex-col bg-gray-50 text-gray-800">
@@ -225,6 +240,17 @@ export default function AuditTrailPanel() {
           </select>
         </label>
 
+        <label className="flex flex-col gap-1">
+          <span className="text-[11px] uppercase tracking-wide text-gray-500">Partner search</span>
+          <input
+            type="search"
+            value={partnerQuery}
+            onChange={(e) => setPartnerQuery(e.target.value)}
+            placeholder="code or name…"
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow w-52"
+          />
+        </label>
+
         <div className="flex-1" />
 
         <button
@@ -245,7 +271,10 @@ export default function AuditTrailPanel() {
       {/* Breakdown band */}
       {breakdown.length > 0 && (
         <div className="px-5 py-2 bg-white border-b border-gray-100 flex flex-wrap items-center gap-4 text-xs">
-          <span className="text-gray-500">{total} trails</span>
+          <span className="text-gray-500">
+            {total} trail{total === 1 ? '' : 's'}
+            {partnerQuery && total !== totalUnfiltered && ` (of ${totalUnfiltered})`}
+          </span>
           {breakdown.map((b, i) => (
             <span key={i} className="inline-flex items-center gap-1.5">
               <Badge label={b.conclusion} tone={CONCLUSION_TONE[b.conclusion] || CONCLUSION_TONE.INSUFFICIENT_DATA} />
@@ -293,7 +322,7 @@ export default function AuditTrailPanel() {
                 </tr>
               </thead>
               <tbody>
-                {trails.map((t) => {
+                {filteredTrails.map((t) => {
                   const key = t.trail_id ?? `${t.partner_code}-${t.mon_period}`;
                   return (
                     <TrailRow
