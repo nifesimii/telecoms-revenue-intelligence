@@ -213,6 +213,24 @@ Four canonical explanations that the `inventory_mismatch` audit module checks be
 
 The audit module's confidence rating reflects how many caveats survived the checks: `HIGH` means the explanation is unambiguous, `MEDIUM`/`LOW` mean the reviewer should read the step chain before acting.
 
+### Payment reconciliation outcomes
+
+The `payment_reconciliation` audit module audits the general claim *"Partner X was paid the correct amount for period Y"* for every partner with activation activity — not only zero-commission-flagged ones. It coexists with the narrower `zero_commission` module: Finance triages zero-commission edge cases via `zero_commission` and reviews everyone else via `payment_reconciliation`.
+
+Five conclusions, per step 4's amount classification:
+
+1. **PAID_IN_FULL** — paid amount matches expected within ±1 NGN. The clean case. Also applies when expected = 0 and paid = 0 (nothing owed, nothing paid).
+
+2. **DISPUTED_ROUNDING** — paid amount differs from expected by less than 100 NGN in absolute terms *or* less than 1% relative to expected. The bucket for small systematic deltas (rounding, FX conversion, minor fee/tax deductions) that are not real disputes. Present as "close, but reconciliation warranted", not as underpayment.
+
+3. **UNDERPAID** — paid < expected by more than both rounding tolerances. This is the bucket the zero-commission module previously conflated into `NOT_PAID / LOW` for partial payments; here it becomes a first-class conclusion with the exact delta stored in step-4 detail.
+
+4. **OVERPAID** — paid > expected by more than both tolerances. Includes the special case where expected = 0 (all activations were zero-commission, but a payment landed). Treat as revenue leakage.
+
+5. **INSUFFICIENT_DATA** — either the partner had no activation activity (step 1) or the payment dataset itself is missing coverage for the period (step 6). Do not read as a payment finding; it's a data-quality flag.
+
+Confidence rules match the other audit modules: `HIGH` on a clean chain, `MEDIUM` on one non-comparison caveat, `LOW` on two or more (or on any `INSUFFICIENT_DATA` conclusion).
+
 ### Agent behaviour for inventory questions
 
 - Always state the `finding_type` for each record.

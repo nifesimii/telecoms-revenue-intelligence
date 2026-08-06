@@ -53,6 +53,8 @@ CONCLUSIONS = (
     "NOT_PAID", "PAID",
     # inventory_mismatch
     "RECONCILED", "EXCESS_ACTIVATION",
+    # payment_reconciliation
+    "PAID_IN_FULL", "UNDERPAID", "OVERPAID", "DISPUTED_ROUNDING",
     # shared
     "INSUFFICIENT_DATA",
 )
