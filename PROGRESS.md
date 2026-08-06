@@ -6,18 +6,97 @@ end of each work session. Newest session on top.
 ---
 
 ## Current phase
-**Preparing a GM preview / finance presentation.** The FBB app (5 intelligence
-views + Overview + Audit Trails) runs end-to-end on sample data. Dealer
-data-connector layer is built and proven in APDP. Immediate next step:
-**deploy for a shareable link (Option 2 — real hosting: frontend + backend +
-Postgres on a cloud host).** No deployment config written yet.
-
-Recent milestones behind this: audit trail (zero-commission) Phase 1 complete
-and generalized into a reusable module registry with a browsable UI; dealer
-connector abstraction + sandbox proof done.
+**GM preview is LIVE at https://fbb-preview.onrender.com** (Basic-Auth gated,
+sample data). Three audit modules registered — `zero_commission`,
+`inventory_mismatch`, `payment_reconciliation` — with the `payment_reconciliation`
+module resolving the long-open `PARTIALLY_PAID` design question by promoting
+partial payments to first-class `UNDERPAID` verdicts. Immediate next: **smoke-test
+the deployed URL end-to-end, then collect GM feedback** before deciding whether
+to add a fourth audit module or wire real dealer data.
 
 Docs: ARCHITECTURE.md (onboarding), CLAUDE.md (rules; both exist — root + apdp/),
-PROGRESS.md (this file). CLAUDE.md points at ARCHITECTURE.md.
+PROGRESS.md (this file), docs/DEPLOY.md, docs/AUDIT_INVENTORY_MISMATCH_DESIGN.md.
+
+---
+
+## Session — 2026-08-03
+
+**Done**
+- **Render deploy shipped.** Blueprint (`render.yaml`), multi-stage Dockerfile
+  (Node builds SPA → Python serves both on one origin), Basic-Auth middleware
+  gated by `DEMO_USERNAME` / `DEMO_PASSWORD`, and `audit_store.ensure_schema()`
+  now executes `audit_init.sql` on first write so Render-managed Postgres
+  bootstraps without an init hook. Live at
+  https://fbb-preview.onrender.com — `/health` green, Audit Trails tab works
+  end-to-end on the managed DB.
+- **Second audit module — inventory_mismatch.** Mirrors zero_commission's
+  shape via the generic `AuditModule` registry; one trail per (dealer,
+  product) with composite `partner_code` (`{dealer}:{product}`) so per-product
+  granularity holds without a schema migration. 6-step chain: mismatch_signal
+  → purchase_record_lookup → allocation_calculation → prior_period_stock →
+  product_alias_reconciliation → upstream_completeness. Extended trail
+  vocabulary with `RECONCILED` / `EXCESS_ACTIVATION`. New `product_aliases.py`
+  is the shared source-of-truth for Hynex/Hynex_1-style groups. KB gains
+  "Inventory mismatch root causes" section. 17 tests.
+- **Third audit module — payment_reconciliation.** Coexists with
+  zero_commission (no behaviour change to that module — they answer different
+  questions). Audits the general "paid the correct amount for period Y"
+  claim for every partner with commission activity. Five conclusions via an
+  amount-comparison bucket: `PAID_IN_FULL` / `DISPUTED_ROUNDING` (rounding /
+  FX / fees inside ±100 NGN or <1%) / `UNDERPAID` / `OVERPAID` /
+  `INSUFFICIENT_DATA`. Confidence rule excludes the step-4 non-full-match
+  caveat so a clean UNDERPAID reads HIGH. 27 tests.
+- **Signal quality on sample data (202602):**
+  zero_commission → 487 trails, ALL LOW confidence (unhelpful demo signal).
+  payment_reconciliation → 939 trails: 912 UNDERPAID, 27 PAID_IN_FULL;
+  confidence spread 777 MEDIUM / 148 HIGH / 14 LOW. Dramatically better
+  demo signal — this alone justifies keeping the two modules side by side.
+- **Partner search filter** on the Audit Trails UI — client-side substring
+  over `partner_code` + `partner_name`, useful with the 4000+ inventory
+  trails.
+
+**Where we are on the PARTIALLY_PAID design question**
+Resolved. Under payment_reconciliation, a partial payment is `UNDERPAID`
+(HIGH confidence when the payment record itself is clean). No need to add
+a `PARTIALLY_PAID` conclusion to zero_commission — the audit that cares
+about "how much" is now its own module, and the audit that cares about
+"was the specific zero-commission root cause valid" stays scoped to that.
+
+**Next (immediate — where we pick up)**
+1. Smoke-test the deployed URL: log in, run all three audit modules on
+   Feb 2026, exercise the new partner filter, confirm nothing broke that
+   didn't break locally.
+2. Send the GM the URL + creds (out of band). Collect feedback on
+   whether payment_reconciliation's UNDERPAID/OVERPAID buckets are the
+   right vocabulary for Finance (they may want a different label like
+   "SHORTFALL" / "OVERPAYMENT").
+3. Only after that: pick the next audit module. Candidates on the shortlist
+   (see AUDIT_INVENTORY_MISMATCH_DESIGN.md for the pattern):
+   - **ORSC payment** — parallel to payment_reconciliation for the other
+     revenue stream.
+   - **Duplicate payment** — narrow, high fraud/error signal.
+   - **Eligibility window compliance** — per-IMEI policy audit.
+
+**Next (later)**
+- Confirm with finance/MTN which dealer access model will be granted
+  (targeting consent-aggregation + staying model-agnostic).
+- When creds land: wire the production MoMo history endpoint and/or the
+  Mono consent-capture flow; load the real dealer roster into
+  `dealer_connections`.
+- Address the pre-existing live-LLM flake in
+  `test_kb_inventory_rules_grounded` — model occasionally emits "fraud"
+  in a negation, which the KB Rule 4 forbids. Not a regression; noted
+  since it now fires against a KB the model has clearly read.
+
+**Open issues**
+- Audit table is still named `audit.zero_commission_trail` even though it
+  now carries three modules' worth of trails via the `module` column.
+  Rename deferred until the abstraction has a fourth module — the migration
+  is cheaper once (rename + drop the old CHECK-implicit constraint) than
+  every time.
+- payment_reconciliation and zero_commission share payment-data helpers via
+  a leaky import; natural refactor when a fourth payment-aware module lands
+  is to lift them into `backend/audit/payment_data.py`.
 
 ---
 
