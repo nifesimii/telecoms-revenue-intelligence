@@ -32,6 +32,7 @@ from typing import Any
 import pandas as pd
 
 from backend import config
+from backend.audit.payment_data import known_periods as _known_periods
 from backend.audit.product_aliases import alias_group, siblings_of
 from backend.audit.trail import TrailStep, VerificationTrail
 from backend.db.connection import execute_query
@@ -498,14 +499,6 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
         )
         trails.append(build_trail(inp))
     return trails
-
-
-def _known_periods() -> list[str]:
-    try:
-        from backend.db import queries
-        return [str(p) for p in queries.get_available_periods()]
-    except Exception:
-        return []
 
 
 def _ifs_covers_period(mon_period: str) -> bool:

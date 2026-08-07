@@ -26,11 +26,16 @@ from typing import Any
 import pandas as pd
 
 from backend import config
+from backend.audit.payment_data import (
+    PAY_TOLERANCE as _PAY_TOLERANCE,
+    adjacent_period_payments as _adjacent_period_payments,
+    extract_payment as _extract_payment,
+    known_periods as _known_periods,
+    payment_lookup as _payment_lookup,
+    payment_source_covers_period as _payment_source_covers_period,
+)
 from backend.audit.trail import TrailStep, VerificationTrail
 from backend.db.connection import execute_query
-
-# Tolerance for "paid in full" comparisons, in NGN.
-_PAY_TOLERANCE = 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -341,17 +346,6 @@ def _zero_comm_product_codes(partner_code: str, mon_period: str) -> list[str]:
     return []
 
 
-def _payment_lookup(period: str, source: str) -> pd.DataFrame:
-    """Per-dealer payment rows for the period, from the active payment source."""
-    if source == "apdp":
-        # partner_settlements exposes total_settled_ngn per dealer/period.
-        from backend.db import apdp as apdp_db
-        rows = apdp_db.get_partner_settlements(period)
-        return pd.DataFrame(rows)
-    # Simulated path.
-    return execute_query("get_payment_summary", {"mon_period": period})
-
-
 def gather_inputs(
     partner_code: str,
     mon_period: str,
@@ -418,64 +412,6 @@ def gather_inputs(
     )
 
 
-def _extract_payment(
-    payment_df: pd.DataFrame, partner_code: str, source: str
-) -> tuple[float, bool, str | None]:
-    if payment_df is None or payment_df.empty:
-        return 0.0, False, None
-    code_col = "dealer_id" if source == "apdp" else "distributor_code"
-    paid_col = "total_settled_ngn" if source == "apdp" else "amount_paid"
-    status_col = "reconciliation_status" if source == "apdp" else "payment_status"
-    if code_col not in payment_df.columns:
-        return 0.0, False, None
-    match = payment_df[payment_df[code_col].astype(str) == str(partner_code)]
-    if match.empty:
-        return 0.0, False, None
-    row = match.iloc[0]
-    paid = float(row.get(paid_col) or 0.0)
-    status = str(row.get(status_col)) if status_col in match.columns else None
-    return paid, True, status
-
-
-def _adjacent_period_payments(
-    partner_code: str, period: str, source: str, all_periods: list[str] | None
-) -> list[dict[str, Any]]:
-    """Payments to this partner in the immediately adjacent periods."""
-    if not all_periods:
-        return []
-    try:
-        idx = sorted(all_periods).index(str(period))
-    except ValueError:
-        return []
-    neighbours = []
-    ordered = sorted(all_periods)
-    for j in (idx - 1, idx + 1):
-        if 0 <= j < len(ordered):
-            neighbours.append(ordered[j])
-
-    out: list[dict[str, Any]] = []
-    for p in neighbours:
-        df = _payment_lookup(p, source)
-        paid, found, status = _extract_payment(df, partner_code, source)
-        if found and paid > _PAY_TOLERANCE:
-            out.append({"period": p, "amount_paid_ngn": paid, "status": status})
-    return out
-
-
-def _payment_source_covers_period(
-    payment_df: pd.DataFrame, period: str, source: str
-) -> bool:
-    """True if the payment dataset has any rows for this period."""
-    if payment_df is None or payment_df.empty:
-        return False
-    # Simulated path carries report_month; apdp carries settlement_period.
-    for col in ("report_month", "settlement_period"):
-        if col in payment_df.columns:
-            return (payment_df[col].astype(str) == str(period)).any()
-    # If the frame is already period-scoped (no period column), non-empty = covered.
-    return not payment_df.empty
-
-
 # ---------------------------------------------------------------------------
 # Orchestrator — run the whole period.
 # ---------------------------------------------------------------------------
@@ -512,14 +448,6 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
         )
         trails.append(build_trail(inp))
     return trails
-
-
-def _known_periods() -> list[str]:
-    try:
-        from backend.db import queries
-        return [str(p) for p in queries.get_available_periods()]
-    except Exception:
-        return []
 
 
 # ---------------------------------------------------------------------------

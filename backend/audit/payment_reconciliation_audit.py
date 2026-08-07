@@ -19,12 +19,11 @@ The two modules coexist by design: Finance triages zero-commission
 records via the narrow module and reviews everyone else via this one.
 No behaviour change to zero_commission.
 
-Shared payment-data helpers. This module reuses the payment lookup,
-adjacent-period, and dataset-coverage helpers already in
-``zero_commission_audit`` (imported with leading-underscore names). They
-are conceptually shared payment-plumbing, not zero-commission-specific;
-the natural refactor when a fourth payment-aware module lands is to
-lift them into a ``backend/audit/payment_data.py`` shared module.
+Shared payment-data helpers live in :mod:`backend.audit.payment_data`
+so this module and ``zero_commission_audit`` (and any future
+payment-aware audit module) call the same lookup / extraction /
+adjacency / coverage code. Both classify the same partner consistently
+at the equality boundary because they share :data:`PAY_TOLERANCE`.
 """
 from __future__ import annotations
 
@@ -34,20 +33,16 @@ from typing import Any
 import pandas as pd
 
 from backend import config
-from backend.audit.trail import TrailStep, VerificationTrail
-from backend.audit.zero_commission_audit import (
-    _adjacent_period_payments,
-    _extract_payment,
-    _known_periods,
-    _payment_lookup,
-    _payment_source_covers_period,
+from backend.audit.payment_data import (
+    PAY_TOLERANCE as _PAY_TOLERANCE,
+    adjacent_period_payments as _adjacent_period_payments,
+    extract_payment as _extract_payment,
+    known_periods as _known_periods,
+    payment_lookup as _payment_lookup,
+    payment_source_covers_period as _payment_source_covers_period,
 )
+from backend.audit.trail import TrailStep, VerificationTrail
 from backend.db.connection import execute_query
-
-# Tolerance for "paid in full" comparisons, in NGN. Matches the tolerance
-# used by zero_commission so the two modules classify the same partner
-# consistently at the equality boundary.
-_PAY_TOLERANCE = 1.0
 
 # Absolute-NGN tolerance for the DISPUTED_ROUNDING bucket — payments that
 # are close-but-not-equal to expected. The intent is to isolate small
