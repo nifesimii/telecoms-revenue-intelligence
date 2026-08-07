@@ -231,6 +231,22 @@ Five conclusions, per step 4's amount classification:
 
 Confidence rules match the other audit modules: `HIGH` on a clean chain, `MEDIUM` on one non-comparison caveat, `LOW` on two or more (or on any `INSUFFICIENT_DATA` conclusion).
 
+### Eligibility window outcomes
+
+The `eligibility_window` audit module verifies the KB's most-cited zero-commission root cause per record: the 6-month invoice→activation eligibility rule (Section 2 / Issue 2). For every partner with zero-commission activation records in the period, it computes the invoice→activation gap per IMEI and checks whether the zero rate is genuinely explained by the window rule.
+
+Four conclusions:
+
+1. **POLICY_MET** — every zero-commission record for the partner is legitimately outside the 180-day window. The 6-month rule is doing its job.
+
+2. **POLICY_VIOLATED** — one or more records sit inside the window with no other documented root cause (NULL `account_profile_class`, USP snapshot miss, or known alias split like Hynex / Hynex_1). The partner may be owed commission on these records; the specific IMEIs are listed in step 5's detail.
+
+3. **MIXED_ATTRIBUTION** — records inside the window exist, but every one of them is attributable to another documented root cause. The 6-month rule wasn't the actual driver of the zero — the label is imprecise, not the underlying calculation.
+
+4. **INSUFFICIENT_DATA** — the partner had no zero-commission records, or the activation dataset itself has significant date-field gaps for the period.
+
+Confidence follows the standard caveat-count rule; the expected step-4 caveat (any inside-window records) is excluded from the count so it doesn't double-hit trails that step 5 has already reasoned about.
+
 ### Agent behaviour for inventory questions
 
 - Always state the `finding_type` for each record.

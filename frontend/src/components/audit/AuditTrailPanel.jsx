@@ -29,6 +29,10 @@ const CONCLUSION_TONE = {
   UNDERPAID: 'bg-red-100 text-red-800 border-red-200',
   OVERPAID: 'bg-amber-100 text-amber-800 border-amber-200',
   DISPUTED_ROUNDING: 'bg-amber-100 text-amber-800 border-amber-200',
+  // eligibility_window
+  POLICY_MET: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  POLICY_VIOLATED: 'bg-red-100 text-red-800 border-red-200',
+  MIXED_ATTRIBUTION: 'bg-amber-100 text-amber-800 border-amber-200',
   // shared
   INSUFFICIENT_DATA: 'bg-gray-100 text-gray-700 border-gray-200',
 };

@@ -55,6 +55,8 @@ CONCLUSIONS = (
     "RECONCILED", "EXCESS_ACTIVATION",
     # payment_reconciliation
     "PAID_IN_FULL", "UNDERPAID", "OVERPAID", "DISPUTED_ROUNDING",
+    # eligibility_window
+    "POLICY_MET", "POLICY_VIOLATED", "MIXED_ATTRIBUTION",
     # shared
     "INSUFFICIENT_DATA",
 )

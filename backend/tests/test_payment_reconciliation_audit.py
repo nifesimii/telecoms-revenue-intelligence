@@ -247,7 +247,7 @@ def test_module_is_registered_and_discoverable():
     assert module.step_names[3] == "amount_comparison"
 
 
-def test_all_three_modules_registered_together():
-    """None of the three modules should displace the others."""
+def test_payment_reconciliation_coexists_with_other_modules():
+    """payment_reconciliation must not displace any other registered module."""
     names = {m.name for m in audit_base.list_modules()}
-    assert names == {"zero_commission", "inventory_mismatch", "payment_reconciliation"}
+    assert {"zero_commission", "inventory_mismatch", "payment_reconciliation"}.issubset(names)
