@@ -30,6 +30,20 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
   const [error, setError] = useState(null);
   const [ticketOpen, setTicketOpen] = useState(false);
 
+  // Client-side substring filter — searches dealer AND product fields
+  // (both are meaningful here; e.g. "hynex" to isolate the alias split).
+  const [query, setQuery] = useState('');
+  const filteredRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rows;
+    return rows.filter((r) =>
+      String(r.dealer_id || '').toLowerCase().includes(q)
+      || String(r.dealer_name || '').toLowerCase().includes(q)
+      || String(r.product_code || '').toLowerCase().includes(q)
+      || String(r.product_name || '').toLowerCase().includes(q)
+    );
+  }, [rows, query]);
+
   useEffect(() => {
     if (!period) return;
     let cancelled = false;
@@ -46,6 +60,8 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
     };
   }, [period, includeWithin]);
 
+  // Summary cards reflect the filtered view — "confirmed mismatches on
+  // Hynex products" is a natural drill-down to want cards for.
   const counts = useMemo(() => {
     const c = {
       CONFIRMED_MISMATCH: 0,
@@ -53,7 +69,7 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
       WITHIN_ALLOCATION: 0,
       total_gap_units: 0,
     };
-    for (const r of rows) {
+    for (const r of filteredRows) {
       c[r.finding_type] = (c[r.finding_type] || 0) + 1;
       if (
         r.finding_type === 'CONFIRMED_MISMATCH' &&
@@ -64,7 +80,7 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
       }
     }
     return c;
-  }, [rows]);
+  }, [filteredRows]);
 
   return (
     <div className="h-full flex flex-col bg-gray-50 text-gray-800">
@@ -84,6 +100,18 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
           />
           Show WITHIN_ALLOCATION rows
         </label>
+        <div>
+          <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">
+            Search
+          </label>
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="dealer or product…"
+            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow focus:border-mtn-yellow w-52"
+          />
+        </div>
         <div className="flex-1" />
         <button
           onClick={() => setTicketOpen(true)}
@@ -143,10 +171,11 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
 
         <div className="flex-1 min-h-[360px] bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
           <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500 shrink-0">
-            {rows.length.toLocaleString()} record{rows.length === 1 ? '' : 's'}
+            {filteredRows.length.toLocaleString()} record{filteredRows.length === 1 ? '' : 's'}
+            {query && filteredRows.length !== rows.length && ` (of ${rows.length.toLocaleString()})`}
           </div>
           <div className="flex-1 min-h-0">
-            <InventoryComparisonTable rows={rows} loading={loading} period={period} onAsk={onAsk} />
+            <InventoryComparisonTable rows={filteredRows} loading={loading} period={period} onAsk={onAsk} />
           </div>
         </div>
       </div>
