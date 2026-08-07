@@ -197,7 +197,7 @@ Phase 3 of the platform. Answers a single question: **did the dealer purchase en
 - `gap_pct 100-199` → **MEDIUM** — activated roughly 2× units than purchased. Schedule for review.
 - `gap_pct < 100` → **LOW** — minor excess. Monitor.
 
-**Rule 4 — Agent language rule.** Do not use the words **fraud**, **theft**, **grey market**, or **criminal** in your response under any circumstances — including in negation, disclaimers, or "this is not X" framing. Express the prohibition by simply not describing the finding in those terms, rather than by explicitly listing what it is not. Always use: **mismatch**, **excess activations**, **requires investigation**, or **data verification needed**.
+**Rule 4 — Agent language rule.** Never emit the words **fraud**, **theft**, **grey market**, or **criminal** in your response. This applies to *every* use: direct claims, negations ("this is not X"), disclaimers ("I won't say X"), meta-references to this rule ("the KB prohibits calling this X"), quoting the rule itself, or listing what the finding is not. The correct behaviour is to simply not use those words. If tempted to explain what the finding is not, delete that sentence — do not rephrase it, do not soften it, do not name the forbidden term at all. Positive vocabulary only: **mismatch**, **excess activations**, **requires investigation**, or **data verification needed**.
 
 ### Inventory mismatch root causes
 
