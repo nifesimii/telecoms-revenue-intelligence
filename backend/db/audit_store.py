@@ -1,8 +1,10 @@
-"""Persistence for zero-commission verification trails.
+"""Persistence for module-generic verification trails.
 
 Writes/reads against the dedicated FBB audit Postgres (separate from
 APDP's payment_platform). Config: ``config.FBB_AUDIT_PG_*``. Schema:
-``infra/postgres/audit_init.sql`` (schema ``audit``).
+``infra/postgres/audit_init.sql`` (schema ``audit``, table
+``verification_trail`` — renamed from the phase-1 name
+``zero_commission_trail``; ``ensure_schema`` self-migrates a legacy DB).
 
 The trail is an audit artifact: it must remain queryable months later,
 so this is a real persisted table — not a log file. Writes are grouped
@@ -69,13 +71,19 @@ _schema_ensured = False
 def ensure_schema() -> None:
     """Idempotently bootstrap the full audit schema, then self-heal older DBs.
 
-    Runs once per process before the first write. Two responsibilities:
+    Runs once per process before the first write. Three responsibilities:
 
-    1. **Bootstrap on managed Postgres.** Executes ``audit_init.sql`` so a
+    1. **Rename legacy table.** If a pre-existing DB has the old
+       ``audit.zero_commission_trail`` table (the phase-1 name; the layer
+       is now generic across modules), rename it — and its indexes — to
+       ``audit.verification_trail``. Guarded so it only runs when the old
+       table exists AND the new one does not, so it is safe on a fresh DB
+       and on an already-migrated DB.
+    2. **Bootstrap on managed Postgres.** Executes ``audit_init.sql`` so a
        DB that never ran the docker-entrypoint init script (e.g. Render
-       managed Postgres) still gets ``audit`` schema, tables, and indexes.
-       All statements are ``CREATE ... IF NOT EXISTS``, so re-runs are safe.
-    2. **Self-heal older local DBs** that were created before the generic
+       managed Postgres) still gets the schema, table, and indexes. All
+       statements are ``CREATE ... IF NOT EXISTS``, safe on re-run.
+    3. **Self-heal the module column** on any DB created before the generic
        ``module`` column existed — the ALTERs below add it if missing.
     """
     global _schema_ensured
@@ -84,16 +92,53 @@ def ensure_schema() -> None:
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
+            # 1. Legacy rename — must happen BEFORE audit_init.sql runs,
+            # so the CREATE TABLE IF NOT EXISTS in the init script sees
+            # the (now-renamed) table and no-ops instead of creating a
+            # duplicate empty table alongside the legacy one.
+            cur.execute(
+                "SELECT to_regclass('audit.zero_commission_trail') IS NOT NULL, "
+                "       to_regclass('audit.verification_trail') IS NOT NULL"
+            )
+            legacy_exists, new_exists = cur.fetchone()
+            if legacy_exists and not new_exists:
+                cur.execute(
+                    "ALTER TABLE audit.zero_commission_trail "
+                    "RENAME TO verification_trail"
+                )
+                # Rename indexes too — CREATE INDEX IF NOT EXISTS in the
+                # init script matches on NAME only, so leaving the old
+                # idx_zct_* names in place would let the script create
+                # duplicate idx_vt_* indexes on the same columns.
+                for old, new in (
+                    ("idx_zct_module",         "idx_vt_module"),
+                    ("idx_zct_period",         "idx_vt_period"),
+                    ("idx_zct_partner_period", "idx_vt_partner_period"),
+                    ("idx_zct_run",            "idx_vt_run"),
+                    ("idx_zct_conclusion",     "idx_vt_conclusion"),
+                    ("idx_zct_confidence",     "idx_vt_confidence"),
+                    ("idx_zct_caveat_steps",   "idx_vt_caveat_steps"),
+                    ("idx_zct_steps",          "idx_vt_steps"),
+                ):
+                    cur.execute(
+                        f"ALTER INDEX IF EXISTS audit.{old} RENAME TO {new}"
+                    )
+
+            # 2. Bootstrap — creates audit schema + verification_trail +
+            # assurance_run + indexes on a fresh DB; no-op on a live one.
             if _INIT_SQL_PATH.is_file():
                 cur.execute(_INIT_SQL_PATH.read_text())
+
+            # 3. Self-heal the module column on legacy DBs where the
+            # init.sql pre-dates the generic module registry.
             cur.execute(
-                "ALTER TABLE audit.zero_commission_trail "
+                "ALTER TABLE audit.verification_trail "
                 "ADD COLUMN IF NOT EXISTS module VARCHAR(50) NOT NULL "
                 "DEFAULT 'zero_commission'"
             )
             cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_zct_module "
-                "ON audit.zero_commission_trail(module)"
+                "CREATE INDEX IF NOT EXISTS idx_vt_module "
+                "ON audit.verification_trail(module)"
             )
         conn.commit()
         _schema_ensured = True
@@ -103,7 +148,7 @@ def ensure_schema() -> None:
 
 
 _INSERT_TRAIL = """
-INSERT INTO audit.zero_commission_trail (
+INSERT INTO audit.verification_trail (
     module, partner_code, partner_name, mon_period,
     run_id, generated_at, payment_source, pipeline_version,
     conclusion, confidence, caveat_count, caveat_steps,
@@ -192,7 +237,7 @@ def replace_period_trails(
             )
             # Clear this module's previous trails for the period.
             cur.execute(
-                "DELETE FROM audit.zero_commission_trail "
+                "DELETE FROM audit.verification_trail "
                 "WHERE mon_period = %s AND module = %s",
                 (mon_period, module),
             )
@@ -239,7 +284,7 @@ def _query(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
 def get_period_trails(mon_period: str, module: str = "zero_commission") -> list[dict[str, Any]]:
     """All trails for a (module, period)."""
     return _query(
-        "SELECT * FROM audit.zero_commission_trail "
+        "SELECT * FROM audit.verification_trail "
         "WHERE mon_period = %(p)s AND module = %(m)s "
         "ORDER BY conclusion, partner_code",
         {"p": mon_period, "m": module},
@@ -250,7 +295,7 @@ def get_partner_trail(
     partner_code: str, mon_period: str, module: str = "zero_commission",
 ) -> dict[str, Any] | None:
     rows = _query(
-        "SELECT * FROM audit.zero_commission_trail "
+        "SELECT * FROM audit.verification_trail "
         "WHERE partner_code = %(pc)s AND mon_period = %(p)s AND module = %(m)s "
         "ORDER BY generated_at DESC LIMIT 1",
         {"pc": partner_code, "p": mon_period, "m": module},
@@ -272,7 +317,7 @@ def get_trails_with_caveat_step(
     # a seq scan. Verified against the running DB.
     sql = (
         "SELECT partner_code, partner_name, mon_period, conclusion, confidence, "
-        "caveat_steps FROM audit.zero_commission_trail "
+        "caveat_steps FROM audit.verification_trail "
         "WHERE caveat_steps @> ARRAY[%(step)s] AND module = %(m)s"
     )
     params: dict[str, Any] = {"step": step_name, "m": module}
@@ -289,7 +334,7 @@ def get_conclusion_breakdown(
     """Aggregate: trail counts by (conclusion, confidence) for a module/period."""
     return _query(
         "SELECT conclusion, confidence, COUNT(*) AS n "
-        "FROM audit.zero_commission_trail "
+        "FROM audit.verification_trail "
         "WHERE mon_period = %(p)s AND module = %(m)s "
         "GROUP BY conclusion, confidence ORDER BY conclusion, confidence",
         {"p": mon_period, "m": module},
