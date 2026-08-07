@@ -14,11 +14,36 @@
 // chat question.
 
 import { useEffect, useMemo, useState } from 'react';
-import { getAssuranceStatus } from '../../api/client.js';
+import {
+  getAssuranceStatus,
+  getAuditBreakdown,
+  getAuditModules,
+} from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 import useDealerVerification from '../../hooks/useDealerVerification.js';
 import HelpIcon, { QUALIFICATION_HELP } from '../shared/HelpIcon.jsx';
+
+// Green / red / gray buckets so the audit-coverage strip mirrors the
+// Audit Trails tab's conclusion colouring without needing the full tone map.
+const AUDIT_CONCLUSION_TONE = {
+  // green — clean / reconciled
+  PAID: 'text-emerald-700',
+  PAID_IN_FULL: 'text-emerald-700',
+  RECONCILED: 'text-emerald-700',
+  POLICY_MET: 'text-emerald-700',
+  // red — issue
+  NOT_PAID: 'text-red-700',
+  UNDERPAID: 'text-red-700',
+  EXCESS_ACTIVATION: 'text-red-700',
+  POLICY_VIOLATED: 'text-red-700',
+  // amber — needs review
+  OVERPAID: 'text-amber-700',
+  DISPUTED_ROUNDING: 'text-amber-700',
+  MIXED_ATTRIBUTION: 'text-amber-700',
+  // gray — data gap
+  INSUFFICIENT_DATA: 'text-gray-600',
+};
 
 const STATUS_TONE = {
   PASS: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -226,6 +251,139 @@ function CrossModuleRollup({ rows, periodLabel, onAsk }) {
           </li>
         ))}
       </ul>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Audit coverage — trail counts per audit module for the current period
+// ---------------------------------------------------------------------------
+
+function AuditModuleTile({ module, breakdown, onOpen }) {
+  const total = breakdown.reduce((n, b) => n + (b.n || 0), 0);
+  // Sort by count desc, show top 2 buckets — enough to convey the shape
+  // ("mostly UNDERPAID" or "MIXED_ATTRIBUTION dominant") at a glance.
+  const top = [...breakdown]
+    .sort((a, b) => (b.n || 0) - (a.n || 0))
+    .slice(0, 2);
+  return (
+    <button
+      onClick={onOpen}
+      className="text-left bg-white border border-gray-200 rounded-lg shadow-sm px-3 py-2 hover:border-mtn-yellow hover:bg-yellow-50 transition"
+      title={`Open ${module.label} in the Audit Trails tab`}
+    >
+      <div className="text-[11px] font-semibold text-gray-900 truncate">
+        {module.label}
+      </div>
+      {total === 0 ? (
+        <div className="text-[10px] text-gray-400 italic mt-0.5">
+          Not run this period
+        </div>
+      ) : (
+        <>
+          <div className="text-sm font-bold tabular-nums text-gray-900 mt-0.5">
+            {total.toLocaleString()}{' '}
+            <span className="text-[10px] font-normal text-gray-500">
+              trail{total === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+            {top.map((b, i) => (
+              <span key={i} className="inline-flex items-center gap-0.5">
+                <span
+                  className={`font-semibold ${
+                    AUDIT_CONCLUSION_TONE[b.conclusion] || 'text-gray-700'
+                  }`}
+                >
+                  {b.conclusion}
+                </span>
+                <span className="tabular-nums text-gray-500">{b.n}</span>
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+    </button>
+  );
+}
+
+function AuditCoverageBand({ period, onNavigate }) {
+  const [modules, setModules] = useState([]);
+  const [breakdowns, setBreakdowns] = useState({}); // { moduleName: [{conclusion, n}, ...] }
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAuditModules()
+      .then((ms) => !cancelled && setModules(Array.isArray(ms) ? ms : []))
+      .catch(() => !cancelled && setModules([]));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!period || modules.length === 0) return;
+    let cancelled = false;
+    setLoading(true);
+    // Best-effort fetch per module — a missing Postgres shouldn't blank the
+    // whole Overview, and a 503 on one module shouldn't blank the others.
+    Promise.all(
+      modules.map((m) =>
+        getAuditBreakdown(m.name, period)
+          .then((rows) => ({ name: m.name, rows: Array.isArray(rows) ? rows : [] }))
+          .catch(() => ({ name: m.name, rows: [] })),
+      ),
+    )
+      .then((results) => {
+        if (cancelled) return;
+        const next = {};
+        for (const r of results) next[r.name] = r.rows;
+        setBreakdowns(next);
+      })
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [period, modules]);
+
+  if (modules.length === 0) return null;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+      <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+            Audit coverage
+          </h3>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            {modules.length} verification-chain module{modules.length === 1 ? '' : 's'} · click a tile to open the Audit Trails tab.
+          </p>
+        </div>
+        {onNavigate && (
+          <button
+            onClick={() => onNavigate('audit')}
+            className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-2 py-1 hover:bg-yellow-50 hover:border-mtn-yellow transition"
+          >
+            Open Audit Trails →
+          </button>
+        )}
+      </div>
+      <div className="p-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {modules.map((m) => (
+          <AuditModuleTile
+            key={m.name}
+            module={m}
+            breakdown={breakdowns[m.name] || []}
+            onOpen={() => onNavigate && onNavigate('audit')}
+          />
+        ))}
+      </div>
+      {loading && (
+        <div className="px-4 py-1 text-[10px] text-gray-400 italic border-t border-gray-100">
+          Loading breakdowns…
+        </div>
+      )}
     </div>
   );
 }
@@ -733,6 +891,8 @@ export default function AssuranceStatusPanel({ onNavigate, onAsk }) {
                 priorPeriod={priorPayload ? priorPeriod : null}
               />
             )}
+
+            <AuditCoverageBand period={period} onNavigate={onNavigate} />
 
             {allPass ? (
               <AllClearState
