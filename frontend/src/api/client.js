@@ -10,7 +10,10 @@ const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
 const api = axios.create({
   baseURL,
-  timeout: 60_000, // /chat can take ~30s when Claude runs tools
+  // /chat can push past 60s on multi-tool answers, especially on Render's
+  // Starter tier after quiet time. Client timeout is defensive only — the
+  // real request-length ceiling is the server's own agent loop cap.
+  timeout: 120_000,
   headers: { 'Content-Type': 'application/json' },
 });
 
