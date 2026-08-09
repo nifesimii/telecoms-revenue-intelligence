@@ -40,6 +40,7 @@ from backend.audit.payment_data import (
     known_periods as _known_periods,
     payment_lookup as _payment_lookup,
     payment_source_covers_period as _payment_source_covers_period,
+    prefetch_adjacent_frames as _prefetch_adjacent_frames,
 )
 from backend.audit.trail import TrailStep, VerificationTrail
 from backend.db.connection import execute_query
@@ -320,6 +321,7 @@ def gather_inputs(
     summary_row: dict[str, Any] | None = None,
     payment_df: pd.DataFrame | None = None,
     all_periods: list[str] | None = None,
+    adjacent_frames: dict[str, pd.DataFrame] | None = None,
 ) -> PaymentReconciliationInputs:
     """Assemble a :class:`PaymentReconciliationInputs` for one partner."""
     if summary_row is None:
@@ -340,6 +342,7 @@ def gather_inputs(
 
     adjacent = _adjacent_period_payments(
         partner_code, mon_period, payment_source, all_periods,
+        adjacent_frames=adjacent_frames,
     )
 
     period_present = _payment_source_covers_period(payment_df, mon_period, payment_source)
@@ -381,9 +384,12 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
     if active.empty:
         return []
 
-    # Shared lookups fetched once.
+    # Shared lookups fetched ONCE. Adjacent payment frames pre-fetched
+    # here (two reads total) rather than inside every partner's
+    # gather_inputs (would be 2N reads).
     payment_df = _payment_lookup(mon_period, source)
     all_periods = _known_periods()
+    adjacent_frames = _prefetch_adjacent_frames(mon_period, source, all_periods)
 
     trails: list[VerificationTrail] = []
     for _, row in active.iterrows():
@@ -394,6 +400,7 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
             summary_row=row.to_dict(),
             payment_df=payment_df,
             all_periods=all_periods,
+            adjacent_frames=adjacent_frames,
         )
         trails.append(build_trail(inp))
     return trails

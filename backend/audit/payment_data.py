@@ -81,11 +81,31 @@ def extract_payment(
     return paid, True, status
 
 
+def adjacent_periods_for(period: str, all_periods: list[str] | None) -> list[str]:
+    """Return the periods immediately before and after ``period`` in the
+    sorted ``all_periods`` list. Empty when the period is unknown or the
+    list is empty.
+
+    Split out so an orchestrator can pre-fetch adjacent payment frames
+    once per run instead of every helper re-computing the neighbour set.
+    """
+    if not all_periods:
+        return []
+    ordered = sorted(str(p) for p in all_periods)
+    try:
+        idx = ordered.index(str(period))
+    except ValueError:
+        return []
+    return [ordered[j] for j in (idx - 1, idx + 1) if 0 <= j < len(ordered)]
+
+
 def adjacent_period_payments(
     partner_code: str,
     period: str,
     source: str,
     all_periods: list[str] | None,
+    *,
+    adjacent_frames: dict[str, pd.DataFrame] | None = None,
 ) -> list[dict[str, Any]]:
     """Payments to this partner in the immediately adjacent periods.
 
@@ -93,28 +113,41 @@ def adjacent_period_payments(
     about — see :func:`known_periods`. Missing / empty ``all_periods``
     returns ``[]`` (adjacency is undefined without context).
 
+    ``adjacent_frames`` is an optional pre-fetched ``{period: payment_df}``
+    cache. When supplied, the helper avoids per-partner ``payment_lookup``
+    round-trips — an orchestrator processing N partners can pre-fetch two
+    adjacent periods once and pay 2 lookups total instead of 2·N. When
+    absent, the helper falls back to fetching on demand (kept so
+    single-partner callers and tests don't need to wire the cache).
+
     Only payments strictly above :data:`PAY_TOLERANCE` are returned —
     below that they're indistinguishable from noise.
     """
-    if not all_periods:
+    neighbours = adjacent_periods_for(period, all_periods)
+    if not neighbours:
         return []
-    try:
-        idx = sorted(all_periods).index(str(period))
-    except ValueError:
-        return []
-    ordered = sorted(all_periods)
-    neighbours: list[str] = []
-    for j in (idx - 1, idx + 1):
-        if 0 <= j < len(ordered):
-            neighbours.append(ordered[j])
 
     out: list[dict[str, Any]] = []
     for p in neighbours:
-        df = payment_lookup(p, source)
+        if adjacent_frames is not None and p in adjacent_frames:
+            df = adjacent_frames[p]
+        else:
+            df = payment_lookup(p, source)
         paid, found, status = extract_payment(df, partner_code, source)
         if found and paid > PAY_TOLERANCE:
             out.append({"period": p, "amount_paid_ngn": paid, "status": status})
     return out
+
+
+def prefetch_adjacent_frames(
+    period: str, source: str, all_periods: list[str] | None,
+) -> dict[str, pd.DataFrame]:
+    """Pre-fetch payment frames for every period adjacent to ``period``.
+
+    Convenience for run_period orchestrators: one call, one dict, then
+    thread it into every :func:`adjacent_period_payments` call.
+    """
+    return {p: payment_lookup(p, source) for p in adjacent_periods_for(period, all_periods)}
 
 
 def payment_source_covers_period(

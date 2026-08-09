@@ -29,6 +29,7 @@ from backend import config
 from backend.audit.payment_data import (
     PAY_TOLERANCE as _PAY_TOLERANCE,
     adjacent_period_payments as _adjacent_period_payments,
+    prefetch_adjacent_frames as _prefetch_adjacent_frames,
     extract_payment as _extract_payment,
     known_periods as _known_periods,
     payment_lookup as _payment_lookup,
@@ -355,6 +356,7 @@ def gather_inputs(
     usp_items: set[str] | None = None,
     payment_df: pd.DataFrame | None = None,
     all_periods: list[str] | None = None,
+    adjacent_frames: dict[str, pd.DataFrame] | None = None,
 ) -> ZeroCommissionInputs:
     """Assemble a :class:`ZeroCommissionInputs` for one partner.
 
@@ -384,8 +386,11 @@ def gather_inputs(
     paid, found, status = _extract_payment(payment_df, partner_code, payment_source)
 
     # Step 5 — adjacent-period payments (period ± 1 within known periods).
+    # ``adjacent_frames`` is a pre-fetched cache from the orchestrator so
+    # this doesn't re-read the payment CSVs once per partner.
     adjacent = _adjacent_period_payments(
         partner_code, mon_period, payment_source, all_periods,
+        adjacent_frames=adjacent_frames,
     )
 
     # Step 6 — does the payment dataset cover this period at all?
@@ -430,10 +435,14 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
     if flagged.empty:
         return []
 
-    # Shared lookups — fetched once, reused across partners.
+    # Shared lookups — fetched ONCE, reused across every partner. The
+    # adjacent_frames pre-fetch is the load-bearing piece: without it,
+    # ``_adjacent_period_payments`` re-reads the payment CSV twice per
+    # partner (~2N reads); with it, it's exactly two reads total.
     usp_items = _load_usp_items()
     payment_df = _payment_lookup(mon_period, source)
     all_periods = _known_periods()
+    adjacent_frames = _prefetch_adjacent_frames(mon_period, source, all_periods)
 
     trails: list[VerificationTrail] = []
     for _, row in flagged.iterrows():
@@ -445,6 +454,7 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
             usp_items=usp_items,
             payment_df=payment_df,
             all_periods=all_periods,
+            adjacent_frames=adjacent_frames,
         )
         trails.append(build_trail(inp))
     return trails

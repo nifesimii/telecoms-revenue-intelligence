@@ -43,8 +43,23 @@ def _read_one(path: Path, label: str) -> pd.DataFrame:
     return pd.read_csv(path)
 
 
+# In-process CSV cache. Sample CSVs are bundled into the image and never
+# change at runtime, so we can safely keep the parsed frames in memory
+# once the first request has warmed them up. Before this cache, an audit
+# run doing ~500 per-partner queries meant ~1500 re-reads of the same
+# CSVs — a 120s+ HOTFIX-level slowdown on Render's shared-CPU tier.
+# Callers get a defensive .copy() so they can filter/mutate without
+# corrupting the cache.
+_CSV_CACHE: dict[tuple[str, str | None], pd.DataFrame] = {}
+
+
+def _clear_csv_cache() -> None:
+    """Test/debug hook — drop the in-process CSV cache."""
+    _CSV_CACHE.clear()
+
+
 def _load_csv(name: str, period: str | None = None) -> pd.DataFrame:
-    """Read sample CSV(s) by logical name.
+    """Read sample CSV(s) by logical name, cached in-process.
 
     ``config.SAMPLE_DATA_PATHS[name]`` may be either:
       * a single ``Path`` — ``period`` is ignored; the file is returned as-is.
@@ -53,28 +68,41 @@ def _load_csv(name: str, period: str | None = None) -> pd.DataFrame:
 
     Concatenating across periods is what enables month-on-month queries to
     pull the whole window in one go.
+
+    Cache keyed on ``(name, period)``. Callers receive a copy — safe to
+    filter or mutate. Bundled CSVs don't change at runtime, so cache
+    entries never expire; call :func:`_clear_csv_cache` in tests that
+    need a clean read.
     """
+    cache_key = (name, period)
+    cached = _CSV_CACHE.get(cache_key)
+    if cached is not None:
+        return cached.copy()
+
     entry = config.SAMPLE_DATA_PATHS[name]
 
     if isinstance(entry, Path):
-        return _read_one(entry, name)
-
-    if isinstance(entry, dict):
+        df = _read_one(entry, name)
+    elif isinstance(entry, dict):
         if period is not None and period in entry:
-            return _read_one(entry[period], f"{name}[{period}]")
-        frames = []
-        for p, path in entry.items():
-            if path.exists():
-                frames.append(_read_one(path, f"{name}[{p}]"))
-        if not frames:
-            raise FileNotFoundError(
-                f"No CSVs found under SAMPLE_DATA_PATHS[{name!r}]: {entry}"
-            )
-        return pd.concat(frames, ignore_index=True)
+            df = _read_one(entry[period], f"{name}[{period}]")
+        else:
+            frames = []
+            for p, path in entry.items():
+                if path.exists():
+                    frames.append(_read_one(path, f"{name}[{p}]"))
+            if not frames:
+                raise FileNotFoundError(
+                    f"No CSVs found under SAMPLE_DATA_PATHS[{name!r}]: {entry}"
+                )
+            df = pd.concat(frames, ignore_index=True)
+    else:
+        raise TypeError(
+            f"Unsupported SAMPLE_DATA_PATHS entry for {name!r}: {type(entry).__name__}"
+        )
 
-    raise TypeError(
-        f"Unsupported SAMPLE_DATA_PATHS entry for {name!r}: {type(entry).__name__}"
-    )
+    _CSV_CACHE[cache_key] = df
+    return df.copy()
 
 
 def _norm_str(value: Any) -> str:
