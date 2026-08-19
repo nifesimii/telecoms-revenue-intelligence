@@ -75,8 +75,8 @@ def test_dealers_returns_list_of_dealer_summary(client: TestClient) -> None:
     assert len(body) > 0
 
     required_fields = {
-        "distributor_code",
-        "distributor_name",
+        "dealer_id",
+        "dealer_name",
         "account_profile_class",
         "total_activations",
         "total_commission_ngn",
@@ -84,7 +84,7 @@ def test_dealers_returns_list_of_dealer_summary(client: TestClient) -> None:
     }
     first = body[0]
     assert required_fields.issubset(set(first.keys()))
-    assert isinstance(first["distributor_code"], str)
+    assert isinstance(first["dealer_id"], str)
     assert isinstance(first["total_activations"], int)
     assert isinstance(first["total_commission_ngn"], float)
 

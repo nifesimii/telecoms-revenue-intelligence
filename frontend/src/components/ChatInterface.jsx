@@ -131,7 +131,7 @@ export default function ChatInterface({ pendingPrompt = '', onPromptConsumed } =
   );
 
   const periodLabel = formatPeriod(period);
-  const topDealer = dealers[0]?.distributor_name;
+  const topDealer = dealers[0]?.dealer_name;
   const emptyThread = messages.length === 0;
 
   return (
@@ -183,7 +183,7 @@ export default function ChatInterface({ pendingPrompt = '', onPromptConsumed } =
               loading={dealersLoading}
               onDealerClick={(d) =>
                 setInputText(
-                  `Why did ${d.distributor_name}'s commission change vs last month?`,
+                  `Why did ${d.dealer_name}'s commission change vs last month?`,
                 )
               }
             />

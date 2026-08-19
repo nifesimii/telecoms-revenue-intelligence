@@ -84,7 +84,7 @@ function VerificationPanel({ row, activation, dealer, onAsk, onDispute, period }
     return (
       <div className="bg-amber-50 border border-amber-200 rounded-md px-4 py-3 m-2 text-xs">
         <div className="font-semibold text-amber-900">
-          ⚠ No activation record found for {row.distributor_name} in this period
+          ⚠ No activation record found for {row.dealer_name} in this period
         </div>
         <div className="mt-1 text-amber-800">
           A commission claim of <strong>{formatNGN(row.commission_owed)}</strong>{' '}
@@ -147,7 +147,7 @@ function VerificationPanel({ row, activation, dealer, onAsk, onDispute, period }
   return (
     <div className="bg-gray-50 border border-gray-200 rounded-md px-4 py-3 m-2">
       <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-2">
-        Activation verification · {row.distributor_name}
+        Activation verification · {row.dealer_name}
       </div>
 
       {/* 4-column metric grid */}
@@ -222,8 +222,8 @@ function Metric({ label, value, tone = 'text-gray-900' }) {
 
 function AskButton({ onAsk, row, period, zeroCount = 0 }) {
   const text = zeroCount > 0
-    ? `Verify the activations for ${row.distributor_name} in ${period}. How many activations, qualified vs unqualified, and what's the expected commission? There are ${zeroCount} zero-commission records — classify each by KB root cause (USP snapshot miss, outside 6-month window, NULL account_profile_class, or Hynex/Hynex_1 split).`
-    : `Verify the activations for ${row.distributor_name} in ${period}. How many activations qualified, what's the expected commission, and does it match the statement claim of ${formatNGN(row.commission_owed)}?`;
+    ? `Verify the activations for ${row.dealer_name} in ${period}. How many activations, qualified vs unqualified, and what's the expected commission? There are ${zeroCount} zero-commission records — classify each by KB root cause (USP snapshot miss, outside 6-month window, NULL account_profile_class, or Hynex/Hynex_1 split).`
+    : `Verify the activations for ${row.dealer_name} in ${period}. How many activations qualified, what's the expected commission, and does it match the statement claim of ${formatNGN(row.commission_owed)}?`;
 
   return (
     <button
@@ -246,7 +246,7 @@ export default function PaymentExceptionsTable({
   onAsk = null,
 }) {
   const { activationByDealer, dealerByCode } = useDealerVerification(period);
-  const [expanded, setExpanded] = useState({}); // { distributor_code: bool }
+  const [expanded, setExpanded] = useState({}); // { dealer_id: bool }
   const [disputeRow, setDisputeRow] = useState(null);
 
   if (loading) {
@@ -295,7 +295,7 @@ export default function PaymentExceptionsTable({
         </thead>
         <tbody>
           {rows.map((r, i) => {
-            const code     = r.distributor_code;
+            const code     = r.dealer_id;
             const isOpen   = !!expanded[code];
             const arrow    = isOpen ? '▼' : '▶';
             return [
@@ -310,9 +310,9 @@ export default function PaymentExceptionsTable({
                 </td>
                 <td
                   className="px-2 py-1.5 text-gray-800 truncate max-w-[180px]"
-                  title={r.distributor_name}
+                  title={r.dealer_name}
                 >
-                  {r.distributor_name}
+                  {r.dealer_name}
                 </td>
                 <td className="px-2 py-1.5">
                   <StatusBadge status={r.payment_status} />

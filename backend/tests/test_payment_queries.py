@@ -42,6 +42,9 @@ def test_payment_simulation_file_exists() -> None:
     assert path.exists(), f"payment_simulation.csv not found at {path}"
 
     df = pd.read_csv(path)
+    # RAW CSV column names — these follow the source schema (Presto /
+    # Hive), NOT the API-facing dealer_id/dealer_name convention. The
+    # rename happens at the handler return boundary. See ARCHITECTURE.md.
     required = {
         "distributor_code",
         "distributor_name",

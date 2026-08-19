@@ -92,7 +92,7 @@ export default function DealerSummaryTable({ dealers = [], loading = false, onDe
         <tbody>
           {sorted.map((d, i) => (
             <tr
-              key={d.distributor_code || i}
+              key={d.dealer_id || i}
               onClick={onDealerClick ? () => onDealerClick(d) : undefined}
               className={`border-b border-gray-100 last:border-b-0 align-top ${
                 onDealerClick
@@ -103,8 +103,8 @@ export default function DealerSummaryTable({ dealers = [], loading = false, onDe
             >
               <td className="px-2 py-1.5 text-gray-400 tabular-nums">{i + 1}</td>
               <td className="px-2 py-1.5">
-                <div className="text-gray-800" title={d.distributor_name}>
-                  {d.distributor_name}
+                <div className="text-gray-800" title={d.dealer_name}>
+                  {d.dealer_name}
                 </div>
                 <div
                   className="text-[10px] uppercase tracking-wide text-gray-400"

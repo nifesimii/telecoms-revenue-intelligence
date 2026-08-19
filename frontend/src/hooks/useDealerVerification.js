@@ -29,7 +29,7 @@ export default function useDealerVerification(period) {
         }
         const dMap = {};
         for (const d of Array.isArray(dealers) ? dealers : []) {
-          if (d.distributor_code) dMap[d.distributor_code] = d;
+          if (d.dealer_id) dMap[d.dealer_id] = d;
         }
         setActivationByDealer(aMap);
         setDealerByCode(dMap);

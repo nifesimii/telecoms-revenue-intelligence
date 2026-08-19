@@ -83,8 +83,9 @@ It does not contain hardcoded business rules — those live in the KB.
 
 **Tool 1: get_dealer_summary**
 - Input: mon_period (string, YYYYMM), distributor_code
-  (string, optional)
-- Returns: distributor_name, account_profile_class,
+  (string, optional) — input parameter naming follows the raw
+  SQL column (see ARCHITECTURE.md "Naming conventions")
+- Returns: dealer_id, dealer_name, account_profile_class,
   total_activations, total_commission_ngn,
   zero_commission_count, commission_by_denomination
 - SQL target: development.fbb_comm_dev_act
@@ -116,7 +117,7 @@ It does not contain hardcoded business rules — those live in the KB.
 **Tool 4: get_orsc_summary**
 - Input: mon_period (string, YYYYMM),
   distributor_code (string, optional)
-- Returns: distributor_name, account_profile_class,
+- Returns: dealer_id, dealer_name, account_profile_class,
   device_count, total_subscription_amount_ngn,
   zero_amount_count
 - SQL target: development.fbb_comm_orsc

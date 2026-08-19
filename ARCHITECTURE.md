@@ -356,6 +356,25 @@ synced to the URL, so all panels stay on the same period and links are shareable
 - **Naming.** Query names, tool names, and audit step names are stable string
   keys (e.g. `get_dealer_summary`, `upstream_completeness`) and are persisted /
   allow-listed — treat renames as migrations, not refactors.
+- **Naming conventions — dealer identifier.** The FBB source data uses one word
+  for "dealer" and the platform uses another; keeping them separate is deliberate,
+  not sloppy. The rule is layer-by-layer:
+
+  | Layer | Column / field | Why |
+  |---|---|---|
+  | **Raw SQL / CSV** (`fbb_comm_dev_act`, `fbb_comm_orsc`, `payment_simulation.csv`, `usp_dimension`) | `distributor_code` / `distributor_name` | Matches the Presto/Hive schema. Cannot be changed — we don't own the source system. |
+  | **Query-layer INPUT parameters** (`execute_query("get_dealer_summary", {"distributor_code": ...})`) | `distributor_code` | The parameter maps to the raw column being filtered on. Keeping the name aligned makes the SQL trivial to read. |
+  | **Agent tool INPUT parameters** (`get_dealer_summary`, `get_zero_commission_records`, etc.) | `distributor_code` | Documented in CLAUDE.md and grounded into the KB. Renaming would invalidate the model's tool schema. |
+  | **API response fields** (`GET /dealers`, `GET /payments/summary`, everything the frontend consumes) | `dealer_id` / `dealer_name` | User-facing vocabulary — Finance/RA talk about "dealers", not "distributors". Uniform across every endpoint. |
+  | **Audit-trail subject** (`audit.verification_trail.partner_code`) | `partner_code` / `partner_name` | Generic — supports composite keys like `"{dealer}:{product}"` for the `inventory_mismatch` module. |
+
+  **How to remember this in code.**
+  - If you're writing SQL or reading from a raw DataFrame → `distributor_code`.
+  - If you're building an API response dict → `dealer_id` / `dealer_name`. Alias at the return boundary (`df.rename(columns={"distributor_code": "dealer_id"})`).
+  - If you're calling a tool or endpoint that takes a dealer parameter → `distributor_code` (input side keeps the SQL name).
+  - If you're touching the audit layer → `partner_code`.
+
+  The most common bug this convention prevents: a frontend filter reading `row.distributor_code` from what is now a `dealer_id` payload, silently returning zero matches. The Payment tab search shipped with exactly this bug — fixed by standardising every handler to alias at the return boundary. See [PROGRESS.md](PROGRESS.md) for the retro.
 - **Frontend API access** is centralised in `frontend/src/api/client.js`; add
   new endpoints there, not inline in components.
 - **No enforced linter/formatter** is wired in CI today (see rough edges). Match

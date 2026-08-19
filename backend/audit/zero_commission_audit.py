@@ -398,7 +398,7 @@ def gather_inputs(
 
     return ZeroCommissionInputs(
         partner_code=str(partner_code),
-        partner_name=str(summary_row.get("distributor_name") or partner_code),
+        partner_name=str(summary_row.get("dealer_name") or partner_code),
         mon_period=str(mon_period),
         payment_source=payment_source,
         total_activations=int(summary_row.get("total_activations") or 0),
@@ -447,7 +447,7 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
     trails: list[VerificationTrail] = []
     for _, row in flagged.iterrows():
         inp = gather_inputs(
-            str(row["distributor_code"]),
+            str(row["dealer_id"]),
             mon_period,
             source,
             summary_row=row.to_dict(),

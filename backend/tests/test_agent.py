@@ -215,8 +215,8 @@ def test_tool_routing_calls_dealer_summary(monkeypatch: pytest.MonkeyPatch) -> N
                 "row_count": 1,
                 "rows": [
                     {
-                        "distributor_code": "100",
-                        "distributor_name": "Test Dealer Ltd",
+                        "dealer_id": "100",
+                        "dealer_name": "Test Dealer Ltd",
                         "total_commission_ngn": 12345.67,
                     }
                 ],

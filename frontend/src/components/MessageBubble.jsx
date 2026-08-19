@@ -127,15 +127,15 @@ function MiniDealerTable({ rows, valueKey, valueHeader, countKey, countHeader, p
         </thead>
         <tbody>
           {top.map((r, i) => (
-            <tr key={r.distributor_code || i} className="hover:bg-gray-50">
+            <tr key={r.dealer_id || i} className="hover:bg-gray-50">
               <td className="border border-gray-200 px-2 py-1 text-gray-500">
                 {i + 1}
               </td>
               <td
                 className="border border-gray-200 px-2 py-1 truncate max-w-[200px]"
-                title={r.distributor_name}
+                title={r.dealer_name}
               >
-                {r.distributor_name}
+                {r.dealer_name}
               </td>
               <td className="border border-gray-200 px-2 py-1 text-right tabular-nums">
                 {r[countKey] ?? 0}

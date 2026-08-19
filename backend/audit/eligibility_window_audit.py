@@ -451,8 +451,8 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
     trails: list[VerificationTrail] = []
     for _, row in flagged.iterrows():
         inp = gather_inputs(
-            str(row["distributor_code"]),
-            str(row.get("distributor_name") or row["distributor_code"]),
+            str(row["dealer_id"]),
+            str(row.get("dealer_name") or row["dealer_id"]),
             row.get("account_profile_class") or None,
             mon_period,
             usp_items=usp_items,

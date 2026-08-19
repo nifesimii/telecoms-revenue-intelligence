@@ -118,7 +118,7 @@ export default function PaymentSummaryTable({ rows = [], loading = false }) {
                   : 'text-red-700';
             return (
               <tr
-                key={`${r.distributor_code}-${i}`}
+                key={`${r.dealer_id}-${i}`}
                 className="hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
               >
                 <td

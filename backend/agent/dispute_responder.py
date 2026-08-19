@@ -172,7 +172,7 @@ def compose_dispute_response(
             f"No commission data for dealer {dealer} in period {period}."
         )
     s = summary_df.iloc[0]
-    dealer_name = s.get("distributor_name") or dealer
+    dealer_name = s.get("dealer_name") or dealer
     profile_class = s.get("account_profile_class") or "—"
     total_acts = int(s.get("total_activations") or 0)
     qualified_earned = float(s.get("total_commission_ngn") or 0)

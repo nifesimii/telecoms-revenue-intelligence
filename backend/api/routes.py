@@ -147,8 +147,8 @@ def list_dealers(
 
     return [
         DealerSummary(
-            distributor_code=str(row.get("distributor_code", "")),
-            distributor_name=str(row.get("distributor_name", "")),
+            dealer_id=str(row.get("dealer_id", "")),
+            dealer_name=str(row.get("dealer_name", "")),
             account_profile_class=str(row.get("account_profile_class", "")),
             total_activations=int(row.get("total_activations", 0) or 0),
             total_commission_ngn=float(row.get("total_commission_ngn", 0.0) or 0.0),
@@ -455,8 +455,8 @@ def _apdp_row_to_payment_record(row: dict[str, Any]) -> PaymentSummaryRecord:
     recon  = row.get("reconciliation_status") or "RECONCILED"
     dealer = row.get("dealer_id") or ""
     return PaymentSummaryRecord(
-        distributor_code      = dealer,
-        distributor_name      = dealer,  # APDP view doesn't carry the name
+        dealer_id             = dealer,
+        dealer_name           = dealer,  # APDP view doesn't carry the name
         account_profile_class = "",
         report_month          = row.get("settlement_period") or "",
         commission_owed       = round(owed, 2),

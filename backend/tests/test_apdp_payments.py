@@ -193,7 +193,7 @@ def test_summary_returns_apdp_source_and_mapped_records(client: TestClient) -> N
     assert data["disputed_count"] == 1
     assert data["pending_count"] == 1
     # Records carry the v1.3.0 enrichment fields
-    by_dealer = {r["distributor_code"]: r for r in data["records"]}
+    by_dealer = {r["dealer_id"]: r for r in data["records"]}
     assert by_dealer["FBB_D00001"]["reconciliation_status"] == "RECONCILED"
     assert by_dealer["FBB_D00001"]["data_source"] == "APDP"
     assert by_dealer["FBB_D00002"]["payment_variance_ngn"] == pytest.approx(-26_300.0)
@@ -205,7 +205,7 @@ def test_summary_returns_apdp_source_and_mapped_records(client: TestClient) -> N
 
 def test_summary_reconciled_row_has_no_exception_flag(client: TestClient) -> None:
     r = client.get("/payments/summary?mon_period=202410")
-    rec = next(x for x in r.json()["records"] if x["distributor_code"] == "FBB_D00001")
+    rec = next(x for x in r.json()["records"] if x["dealer_id"] == "FBB_D00001")
     assert rec["exception_flag"] is None
 
 
