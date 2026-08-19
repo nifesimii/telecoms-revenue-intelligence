@@ -111,12 +111,22 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
   // Client-side dealer filter — persists across all three sub-tabs so
   // tracking one dealer's payment story (exception → summary row →
   // MoM change) doesn't need re-typing the query.
+  //
+  // Payment rows use distributor_code / distributor_name (simulated CSV
+  // schema), while activation / inventory rows use dealer_id / dealer_name.
+  // Match against both so a rename in one place doesn't silently break the
+  // filter here.
   const [dealerQuery, setDealerQuery] = useState('');
   const matchesDealer = (row) => {
     const q = dealerQuery.trim().toLowerCase();
     if (!q) return true;
-    return String(row.dealer_id || '').toLowerCase().includes(q)
-      || String(row.dealer_name || '').toLowerCase().includes(q);
+    const haystacks = [
+      row.dealer_id,
+      row.dealer_name,
+      row.distributor_code,
+      row.distributor_name,
+    ];
+    return haystacks.some((v) => String(v || '').toLowerCase().includes(q));
   };
   const filteredAll        = useMemo(() => allRows.filter(matchesDealer),    [allRows, dealerQuery]);
   const filteredExceptions = useMemo(() => exceptions.filter(matchesDealer), [exceptions, dealerQuery]);
