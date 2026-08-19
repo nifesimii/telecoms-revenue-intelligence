@@ -90,8 +90,8 @@ def _collect_usp_missing(mon_period: str) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for _, r in df.iterrows():
         rows.append({
-            "dealer_id":             str(r.get("distributor_code") or ""),
-            "dealer_name":           str(r.get("distributor_name") or r.get("distributor_code") or ""),
+            "dealer_id":             str(r.get("dealer_id") or ""),
+            "dealer_name":           str(r.get("dealer_name") or r.get("dealer_id") or ""),
             "total_activations":     int(pd.to_numeric(r.get("total_activations"), errors="coerce") or 0),
             "zero_commission_count": int(pd.to_numeric(r.get("zero_commission_count"), errors="coerce") or 0),
             "commission_ngn":        float(pd.to_numeric(r.get("total_commission_ngn"), errors="coerce") or 0),

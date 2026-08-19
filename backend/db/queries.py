@@ -586,8 +586,12 @@ def _sample_get_dealer_summary(params: dict) -> pd.DataFrame:
 
         rows.append(
             {
-                "distributor_code": _norm_str(dist_code),
-                "distributor_name": str(group["distributor_name"].iloc[0]),
+                # API convention: dealer_id / dealer_name in the response.
+                # Raw column in fbb_comm_dev_act is distributor_code — we
+                # keep that name inside the DataFrame and rename at the
+                # return boundary. See ARCHITECTURE.md "Naming conventions".
+                "dealer_id": _norm_str(dist_code),
+                "dealer_name": str(group["distributor_name"].iloc[0]),
                 "account_profile_class": str(group["account_profile_class"].iloc[0]),
                 "total_activations": int(len(group)),
                 "total_commission_ngn": float(group["commission_rate"].sum()),
@@ -599,8 +603,8 @@ def _sample_get_dealer_summary(params: dict) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(
             columns=[
-                "distributor_code",
-                "distributor_name",
+                "dealer_id",
+                "dealer_name",
                 "account_profile_class",
                 "total_activations",
                 "total_commission_ngn",
@@ -735,8 +739,8 @@ def _sample_get_orsc_summary(params: dict) -> pd.DataFrame:
     for dist_code, group in df.groupby("distributor_code", sort=False):
         rows.append(
             {
-                "distributor_code": _norm_str(dist_code),
-                "distributor_name": str(group["distributor_name"].iloc[0]),
+                "dealer_id": _norm_str(dist_code),
+                "dealer_name": str(group["distributor_name"].iloc[0]),
                 "account_profile_class": str(group["account_profile_class"].iloc[0]),
                 "device_count": int(len(group)),
                 "total_subscription_amount_ngn": float(
@@ -751,8 +755,8 @@ def _sample_get_orsc_summary(params: dict) -> pd.DataFrame:
     if not rows:
         return pd.DataFrame(
             columns=[
-                "distributor_code",
-                "distributor_name",
+                "dealer_id",
+                "dealer_name",
                 "account_profile_class",
                 "device_count",
                 "total_subscription_amount_ngn",
@@ -1181,11 +1185,23 @@ def _load_payment_simulation_for(period: str) -> pd.DataFrame:
 
 
 def _sample_get_payment_summary(params: dict) -> pd.DataFrame:
-    """Phase 4 — per-dealer payment record, sorted by amount_unpaid desc."""
-    df = _load_payment_simulation_for(params["mon_period"])
+    """Phase 4 — per-dealer payment record, sorted by amount_unpaid desc.
+
+    Rename note: the simulated CSV carries raw ``distributor_code`` /
+    ``distributor_name`` columns, but the platform-wide API convention is
+    ``dealer_id`` / ``dealer_name`` (see ARCHITECTURE.md "Naming
+    conventions"). The rename happens at this return boundary — internal
+    handlers below (variance, exceptions) reuse the renamed frame.
+    """
+    df = _load_payment_simulation_for(params["mon_period"]).rename(
+        columns={
+            "distributor_code": "dealer_id",
+            "distributor_name": "dealer_name",
+        }
+    )
     cols = [
-        "distributor_code",
-        "distributor_name",
+        "dealer_id",
+        "dealer_name",
         "account_profile_class",
         "report_month",
         "commission_owed",
@@ -1243,7 +1259,7 @@ def _sample_get_payment_variance(params: dict) -> pd.DataFrame:
 
     merged = df_a.merge(
         df_b,
-        on="distributor_code",
+        on="dealer_id",
         how="inner",
         suffixes=("_a", "_b"),
     )
@@ -1253,8 +1269,8 @@ def _sample_get_payment_variance(params: dict) -> pd.DataFrame:
         delta = float(r["amount_paid_b"]) - float(r["amount_paid_a"])
         rows.append(
             {
-                "dealer_id": str(r["distributor_code"]),
-                "dealer_name": str(r["distributor_name_b"] or r["distributor_name_a"]),
+                "dealer_id": str(r["dealer_id"]),
+                "dealer_name": str(r["dealer_name_b"] or r["dealer_name_a"]),
                 "period_a": pa,
                 "period_b": pb,
                 "commission_owed_a": float(r["commission_owed_a"]),

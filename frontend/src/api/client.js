@@ -52,7 +52,7 @@ export async function getHealth() {
 /**
  * GET /dealers?mon_period=YYYYMM
  * @param {string|null} mon_period Optional reporting period; backend uses most recent if omitted.
- * @returns {Promise<Array<{distributor_code: string, distributor_name: string, account_profile_class: string, total_activations: number, total_commission_ngn: number, zero_commission_count: number}>>}
+ * @returns {Promise<Array<{dealer_id: string, dealer_name: string, account_profile_class: string, total_activations: number, total_commission_ngn: number, zero_commission_count: number}>>}
  */
 export async function getDealers(mon_period = null) {
   const params = mon_period ? { mon_period } : {};

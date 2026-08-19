@@ -56,7 +56,7 @@ class PaymentAssuranceService(BaseAssuranceService):
         )
         if dealer_id is not None and dealer_id != "":
             exc_df = exc_df[
-                exc_df["distributor_code"].astype(str) == str(dealer_id)
+                exc_df["dealer_id"].astype(str) == str(dealer_id)
             ]
 
         # Full summary → totals + coverage metadata.
@@ -65,7 +65,7 @@ class PaymentAssuranceService(BaseAssuranceService):
         )
         if dealer_id is not None and dealer_id != "":
             sum_df = sum_df[
-                sum_df["distributor_code"].astype(str) == str(dealer_id)
+                sum_df["dealer_id"].astype(str) == str(dealer_id)
             ]
 
         total_owed = float(sum_df["commission_owed"].astype(float).sum())
@@ -80,7 +80,7 @@ class PaymentAssuranceService(BaseAssuranceService):
             status = str(row["payment_status"])
             severity = _SEVERITY_BY_STATUS.get(status, "MEDIUM")
             finding_type = _FINDING_TYPE_BY_STATUS.get(status, "PAYMENT_EXCEPTION")
-            dealer_name = str(row["distributor_name"])
+            dealer_name = str(row["dealer_name"])
             amount_unpaid = float(row["amount_unpaid"])
             exception_flag = (
                 None
@@ -120,7 +120,7 @@ class PaymentAssuranceService(BaseAssuranceService):
                 {
                     "type": finding_type,
                     "severity": severity,
-                    "dealer_id": str(row["distributor_code"]),
+                    "dealer_id": str(row["dealer_id"]),
                     "dealer_name": dealer_name,
                     "description": description,
                     "recommended_action": action,

@@ -77,7 +77,7 @@ def _triage_get_dealer_summary(
     zero_dealers = df[df["zero_commission_count"].astype(int) > 0]
     top_row = df.sort_values("total_commission_ngn", ascending=False).iloc[0]
     top_str = (
-        f"{top_row['distributor_name']} · {_ngn(top_row['total_commission_ngn'])}"
+        f"{top_row['dealer_name']} · {_ngn(top_row['total_commission_ngn'])}"
     )
 
     headline = {
@@ -90,8 +90,8 @@ def _triage_get_dealer_summary(
 
     # Leakage candidates ranked by zero count desc, then activation volume.
     must_cols = [
-        "distributor_code",
-        "distributor_name",
+        "dealer_id",
+        "dealer_name",
         "account_profile_class",
         "total_activations",
         "total_commission_ngn",
@@ -353,7 +353,7 @@ def _triage_get_payment_summary(
         top = disputed.sort_values("amount_unpaid", ascending=False).iloc[0]
         flag = top.get("exception_flag") or "?"
         top_str = (
-            f"{top['distributor_name']} · {_ngn(top['amount_unpaid'])} unpaid "
+            f"{top['dealer_name']} · {_ngn(top['amount_unpaid'])} unpaid "
             f"({flag})"
         )
 
@@ -369,8 +369,8 @@ def _triage_get_payment_summary(
     }
 
     cols = [
-        "distributor_code",
-        "distributor_name",
+        "dealer_id",
+        "dealer_name",
         "account_profile_class",
         "commission_owed",
         "amount_paid",
@@ -422,7 +422,7 @@ def _triage_get_payment_exceptions(
         top = disputed.sort_values("amount_unpaid", ascending=False).iloc[0]
         flag = top.get("exception_flag") or "?"
         top_str = (
-            f"{top['distributor_name']} · {_ngn(top['amount_unpaid'])} unpaid "
+            f"{top['dealer_name']} · {_ngn(top['amount_unpaid'])} unpaid "
             f"({flag})"
         )
 
@@ -438,8 +438,8 @@ def _triage_get_payment_exceptions(
     }
 
     cols = [
-        "distributor_code",
-        "distributor_name",
+        "dealer_id",
+        "dealer_name",
         "account_profile_class",
         "commission_owed",
         "amount_paid",

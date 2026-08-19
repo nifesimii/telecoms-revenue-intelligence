@@ -110,7 +110,9 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
 
   // Client-side dealer filter — persists across all three sub-tabs so
   // tracking one dealer's payment story (exception → summary row →
-  // MoM change) doesn't need re-typing the query.
+  // MoM change) doesn't need re-typing the query. Uses the platform
+  // API convention: dealer_id / dealer_name on the response side
+  // (see ARCHITECTURE.md "Naming conventions").
   const [dealerQuery, setDealerQuery] = useState('');
   const matchesDealer = (row) => {
     const q = dealerQuery.trim().toLowerCase();

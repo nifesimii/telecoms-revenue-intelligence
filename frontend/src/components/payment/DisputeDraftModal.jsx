@@ -44,15 +44,19 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
     setDisputeText('');
     setCopyOk(false);
     setComposed(false);
-  }, [open, row?.distributor_code]);
+  }, [open, row?.dealer_id]);
 
   function compose() {
     if (!row || !period) return;
     setLoading(true);
     setError(null);
     setCopyOk(false);
-    draftDisputeResponse({
-      distributor_code: row.distributor_code,
+    // Request body keeps distributor_code (input-parameter convention —
+      // matches CLAUDE.md agent tools + the raw SQL column). Response fields
+      // use dealer_id / dealer_name (API-response convention). See
+      // ARCHITECTURE.md "Naming conventions".
+      draftDisputeResponse({
+      distributor_code: row.dealer_id,
       mon_period: period,
       dispute_text: disputeText.trim() || null,
       amount_paid: row.amount_paid != null ? Number(row.amount_paid) : null,
@@ -105,7 +109,7 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
         <div className="px-5 py-3 border-b border-gray-200 flex items-center justify-between">
           <div>
             <h2 className="text-sm font-semibold text-gray-900">
-              Compose dispute response — {row?.distributor_name || row?.distributor_code}
+              Compose dispute response — {row?.dealer_name || row?.dealer_id}
             </h2>
             <div className="text-[11px] text-gray-500 mt-0.5">
               Period {formatPeriod(period)} · Statement {formatNGN(row?.commission_owed)} · Outstanding {formatNGN(row?.amount_unpaid)}

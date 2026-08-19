@@ -54,8 +54,8 @@ class CommissionAssuranceService(BaseAssuranceService):
                 {
                     "type": "ZERO_COMMISSION_ACTIVATION",
                     "severity": "MEDIUM",
-                    "dealer_id": str(row["distributor_code"]),
-                    "dealer_name": str(row["distributor_name"]),
+                    "dealer_id": str(row["dealer_id"]),
+                    "dealer_name": str(row["dealer_name"]),
                     "description": (
                         f"{int(row['zero_commission_count'])} zero-commission "
                         f"activations of {int(row['total_activations'])} total"

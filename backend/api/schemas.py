@@ -77,10 +77,15 @@ class ChatResponse(BaseModel):
 
 
 class DealerSummary(BaseModel):
-    """One row of the dealer summary table — what ``GET /dealers`` returns."""
+    """One row of the dealer summary table — what ``GET /dealers`` returns.
 
-    distributor_code: str
-    distributor_name: str
+    Uses the platform-wide API convention: ``dealer_id`` / ``dealer_name`` on
+    the response side, even though the underlying SQL/CSV column is
+    ``distributor_code``. See ARCHITECTURE.md "Naming conventions".
+    """
+
+    dealer_id: str
+    dealer_name: str
     account_profile_class: str
     total_activations: int
     total_commission_ngn: float
@@ -236,8 +241,8 @@ class PaymentSummaryRecord(BaseModel):
     reconciliation state (sales captured vs commissions earned vs paid).
     """
 
-    distributor_code: str
-    distributor_name: str
+    dealer_id: str
+    dealer_name: str
     account_profile_class: str = ""
     report_month: str
     commission_owed: float

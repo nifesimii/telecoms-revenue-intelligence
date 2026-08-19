@@ -5,6 +5,65 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-08-10
+
+**Done**
+- **Standardised the dealer-identifier naming across the whole codebase.**
+  The FBB code had drifted into two competing names for the same thing —
+  `distributor_code` (Phase 1: dealer_summary, orsc, payment endpoints)
+  vs `dealer_id` (Phase 2+: activation, inventory, payment variance).
+  The mismatch shipped a live bug: the Payment tab search returned zero
+  matches because the search filter looked for `dealer_id` but the payment
+  response returned `distributor_code`. Manager caught it during review.
+- **The convention, now documented in ARCHITECTURE.md § 6:**
+  - Raw SQL/CSV columns keep `distributor_code` (matches Presto — we don't
+    own the source).
+  - Every API response field is `dealer_id` / `dealer_name` (uniform,
+    user-facing vocabulary).
+  - INPUT parameters (tool params, endpoint request bodies, query dispatch
+    args) keep `distributor_code` — matches CLAUDE.md tool schema and the
+    SQL column.
+  - Audit-trail subject stays `partner_code` (generic, supports composite
+    keys like `dealer:product` in inventory_mismatch).
+- **What changed to enforce it:**
+  - 4 handlers in `backend/db/queries.py` now rename at the return boundary
+    (`get_dealer_summary`, `get_orsc_summary`, `get_payment_summary`,
+    `get_payment_exceptions`).
+  - Every downstream consumer updated: `backend/assurance/*.py`,
+    `backend/agent/dispute_responder.py`, `backend/db/composite.py`,
+    `backend/db/data_coverage.py`, `backend/db/triage.py`,
+    `backend/audit/*_audit.py` (3 files' `run_period` + `gather_inputs`),
+    `backend/api/schemas.py` (`DealerSummary`, `PaymentSummaryRecord`),
+    `backend/api/routes.py`.
+  - 6 frontend components migrated: `DealerSummaryTable`, `MessageBubble`,
+    `ChatInterface`, `PaymentSummaryTable`, `PaymentExceptionsTable`,
+    `DisputeDraftModal` + `useDealerVerification` hook. Dropped the
+    defensive dual-field-check that the earlier hotfix added — now moot.
+  - Tests updated: `test_queries.py`, `test_api.py`, `test_payment_queries.py`,
+    `test_agent.py`, `test_apdp_payments.py`.
+  - CLAUDE.md tool return docs updated for Tool 1 + Tool 4.
+- **Result:** Payment tab search works with a single-field filter (no more
+  defensive fallback). Every intelligence tab now reads the same field
+  names. New team members have one rule to remember, not two.
+
+**Learning to keep**
+This bug happened because two people (or the same person on two different
+days) chose different names for the same thing at different layers, and
+the frontend filter that came later trusted the newer name. The naming
+convention in ARCHITECTURE.md § 6 is the guardrail for the future — any
+new API handler that returns a dealer-scoped record has to alias at the
+return boundary.
+
+**Next**
+- Ship the docs to the team on WhatsApp (deck + onboarding note ready
+  since last session; new team members are joining soon).
+- APDP end-to-end run with fixture data — still on deck.
+- Address the pre-existing live-LLM flake in
+  `test_kb_inventory_rules_grounded` — unchanged from the last two
+  sessions; low priority.
+
+---
+
 ## Current phase
 **GM preview is LIVE at https://fbb-preview.onrender.com** (Basic-Auth
 gated, sample data). Audit-module coverage complete for the demo scope —

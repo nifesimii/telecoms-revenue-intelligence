@@ -59,8 +59,8 @@ class TestDealerSummary:
     def test_returns_expected_columns(self) -> None:
         result = execute_query("get_dealer_summary", {"mon_period": DEV_ACT_PERIOD})
         expected = {
-            "distributor_code",
-            "distributor_name",
+            "dealer_id",
+            "dealer_name",
             "account_profile_class",
             "total_activations",
             "total_commission_ngn",
@@ -114,7 +114,7 @@ class TestDealerSummary:
             {"mon_period": DEV_ACT_PERIOD, "distributor_code": sample_dist},
         )
         assert len(result) == 1
-        assert str(result["distributor_code"].iloc[0]) == sample_dist
+        assert str(result["dealer_id"].iloc[0]) == sample_dist
 
     def test_commission_by_denomination_is_dict(self) -> None:
         result = execute_query("get_dealer_summary", {"mon_period": DEV_ACT_PERIOD})
@@ -316,8 +316,8 @@ class TestOrscSummary:
     def test_returns_expected_columns(self) -> None:
         result = execute_query("get_orsc_summary", {"mon_period": ORSC_PERIOD})
         expected = {
-            "distributor_code",
-            "distributor_name",
+            "dealer_id",
+            "dealer_name",
             "account_profile_class",
             "device_count",
             "total_subscription_amount_ngn",
@@ -365,7 +365,7 @@ class TestOrscSummary:
             {"mon_period": ORSC_PERIOD, "distributor_code": sample_dist},
         )
         assert len(result) == 1
-        assert str(result["distributor_code"].iloc[0]) == sample_dist
+        assert str(result["dealer_id"].iloc[0]) == sample_dist
 
     def test_sorted_descending_by_subscription_total(self) -> None:
         result = execute_query("get_orsc_summary", {"mon_period": ORSC_PERIOD})
@@ -428,7 +428,7 @@ def test_month_on_month_variance_has_two_periods() -> None:
     """Variance must return rows for both 202602 and 202603 for the top March dealer."""
     march = execute_query("get_dealer_summary", {"mon_period": "202603"})
     top = march.sort_values("total_commission_ngn", ascending=False).iloc[0]
-    top_code = str(top["distributor_code"])
+    top_code = str(top["dealer_id"])
 
     var = execute_query(
         "get_month_on_month_variance",

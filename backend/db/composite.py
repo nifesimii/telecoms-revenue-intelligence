@@ -153,7 +153,7 @@ def assemble_dealer_full_context(
     # --- Phase 4: payment status for this dealer -------------------------
     pay_df = execute_query("get_payment_summary", {"mon_period": mon_period})
     pay_match = pay_df[
-        pay_df["distributor_code"].astype(str) == distributor_code
+        pay_df["dealer_id"].astype(str) == distributor_code
     ]
     payment_info: dict[str, Any] = {}
     if not pay_match.empty:
@@ -189,8 +189,8 @@ def assemble_dealer_full_context(
     return {
         "found": True,
         "dealer": {
-            "distributor_code": str(row["distributor_code"]),
-            "distributor_name": str(row["distributor_name"]),
+            "dealer_id": str(row["dealer_id"]),
+            "dealer_name": str(row["dealer_name"]),
             "account_profile_class": str(row["account_profile_class"]),
             "period": mon_period,
         },
