@@ -3,8 +3,8 @@
 #
 # DATA SAFETY: the audit trail is an audit artifact that must survive
 # container recreation. The named volume protects against `docker compose
-# down` / container restarts, but NOT against `docker volume rm` /
-# `down -v` / disk loss. This dump writes a compressed snapshot to a
+# down` / container restarts, but NOT against docker volume rm /
+# down -v / disk loss. This dump writes a compressed snapshot to a
 # HOST-mounted directory (./backups, outside the container) so a wiped
 # volume can be restored.
 #

@@ -115,8 +115,9 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
   const matchesDealer = (row) => {
     const q = dealerQuery.trim().toLowerCase();
     if (!q) return true;
-    return String(row.dealer_id || '').toLowerCase().includes(q)
-      || String(row.dealer_name || '').toLowerCase().includes(q);
+    // Check both naming schemes (Payment vs Variance records)
+    return String(row.distributor_code || row.dealer_id || '').toLowerCase().includes(q)
+      || String(row.distributor_name || row.dealer_name || '').toLowerCase().includes(q);
   };
   const filteredAll        = useMemo(() => allRows.filter(matchesDealer),    [allRows, dealerQuery]);
   const filteredExceptions = useMemo(() => exceptions.filter(matchesDealer), [exceptions, dealerQuery]);
