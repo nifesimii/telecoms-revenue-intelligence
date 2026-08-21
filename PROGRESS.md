@@ -232,17 +232,33 @@ boundary.
 
 ## Current phase
 **GM preview is LIVE at https://fbb-preview.onrender.com** (Basic-Auth
-gated, sample data). Audit-module coverage complete for the demo scope —
-FOUR modules registered: `zero_commission`, `inventory_mismatch`,
-`payment_reconciliation`, `eligibility_window`. Overview landing page now
-surfaces per-module trail counts + top conclusions in an "Audit coverage"
-band. Audit table renamed from `zero_commission_trail` → `verification_trail`
-(self-migrating). Every intelligence tab has a search filter. Immediate
-next: **send the GM the URL + creds and collect feedback** — the demo has
-no known missing pieces at this scope.
+gated). The demo now runs on **live APDP payment data**, not simulated —
+`PAYMENT_SOURCE=apdp` is the default on Render, `normalized.partner_settlements`
+is populated with 939 dealer-settlement rows for Feb 2026 and 922 for
+Mar 2026, all keyed to real FBB dealer IDs so the same partner joins
+across both sides of the reconciliation.
 
-Docs: ARCHITECTURE.md (onboarding), CLAUDE.md (rules; both exist — root + apdp/),
-PROGRESS.md (this file), docs/DEPLOY.md, docs/AUDIT_INVENTORY_MISMATCH_DESIGN.md.
+Four audit modules registered (`zero_commission`, `inventory_mismatch`,
+`payment_reconciliation`, `eligibility_window`) and the payment audit
+now produces a realistic multi-bucket spread (UNDERPAID / OVERPAID /
+DISPUTED_ROUNDING / PAID_IN_FULL) against APDP data.
+
+Two new user-facing surfaces landed this session:
+1. **Dealer Statement** modal — per-period Finance/RA internal view
+   composing commission entitlement + payment settlement + linked
+   audit trails, launched from a "Statement" button on each Payment
+   Intelligence dealer row. Copy-as-markdown + download-as-`.md`.
+2. **Current Position** card on Overview — platform-wide reconciliation
+   headline (Owed / Settled / Outstanding / Exceptions) with a
+   Live·APDP or Simulated data-source badge.
+
+Immediate next: **watch the Render redeploy land (~3 min), verify
+Live·APDP end-to-end, send the URL + creds to the GM.** No blocking
+known issues.
+
+Docs: ARCHITECTURE.md (onboarding + design rules), CLAUDE.md (rules;
+both exist — root + apdp/), PROGRESS.md (this file), docs/DEPLOY.md,
+docs/GM_DEMO.md (GM read-along), docs/AUDIT_INVENTORY_MISMATCH_DESIGN.md.
 
 ---
 

@@ -27,12 +27,35 @@ commission do we owe dealer X for this month", "why did their payout change",
 prove, step by step, that a partner was or wasn't paid". Its users are Finance,
 Revenue Assurance, and FBB Operations.
 
-**APDP — African Payment Data Platform** (`apdp/`) is the payment-data pipeline
-that will feed FBB real settlement data (Kafka → Flink → Postgres). Today FBB
-runs primarily on sample CSVs; APDP is the path to live data. The two layers
-meet at a single seam: APDP normalises payment/settlement events into a Postgres
-view (`normalized.partner_settlements`), and FBB reads that view when the
-`PAYMENT_SOURCE=apdp` flag is set.
+**APDP — African Payment Data Platform** (`apdp/`) is the payment-data
+pipeline. The full production path is Kafka → Flink → Postgres, but
+because the Flink Docker build is broken and the Kafka→Postgres sink was
+never wired (see `apdp/CLAUDE.md`), the demo takes a shortcut: fixture
+CSVs → pure-Python `normalizer_core` → direct psycopg2 INSERT into
+`normalized.transactions`. Everything downstream of the normaliser
+(the `normalized.partner_settlements` view, and FBB reading from it)
+works exactly the same as the eventual live path.
+
+The two layers meet at one seam: `normalized.partner_settlements`. FBB
+reads that view when `PAYMENT_SOURCE=apdp` is set. **This is the
+default on Render today** — every intelligence tab, every audit module,
+the Current Position card on Overview, and the Dealer Statement all
+run against APDP-normalised data. Flip to `simulated` for the CSV
+fallback.
+
+The APDP fixture generator now samples from the FBB dealer roster
+(`data/samples/fbb_comm_dev_act_<period>.csv`) rather than 5 hardcoded
+synthetic codes, so the same dealer IDs appear on both sides of the
+reconciliation. Without that patch, the same partner could never
+appear in both commission (FBB) and settlement (APDP) data, and the
+statement + audit modules had nothing to join.
+
+For the Render deploy specifically, APDP data is packaged as a
+`pg_dump` at `infra/postgres/apdp_seed.sql` (~23 MB, ~23k transaction
+rows across two periods) that the FBB backend applies on startup via
+its lifespan hook — idempotent (COUNT-and-skip on subsequent boots),
+non-fatal (a seed failure logs and lets the app boot with an empty
+Payment tab rather than a 500).
 
 ---
 
@@ -128,6 +151,10 @@ backend/
 │   ├── composite.py         assemble_dealer_full_context(): bundles commission +
 │   │                        activation + inventory + payment for one dealer into a
 │   │                        single call (saves the agent 4 round-trips).
+│   ├── dealer_statement.py  Per-period Finance/RA internal statement composer.
+│   │                        Joins commission + ORSC + payment (respects
+│   │                        PAYMENT_SOURCE) + linked audit trails into one dict —
+│   │                        powers GET /dealers/{id}/statement.
 │   ├── triage.py            TRIAGE_HANDLERS: shape/trim query results for the agent.
 │   ├── data_coverage.py     Compiles the IFS/USP data-gap ServiceNow ticket.
 │   ├── apdp.py              Reads APDP's partner_settlements view (PAYMENT_SOURCE=apdp).
@@ -144,11 +171,26 @@ backend/
 │
 ├── audit/                 ── INTELLIGENCE: the "prover" (audit trails) ──
 │   ├── trail.py            TrailStep + VerificationTrail dataclasses + JSON sanitiser.
-│   ├── zero_commission_audit.py   The 6-step verification chain for "was partner X
-│   │                        paid?" (activity → rate → expected → payment search →
-│   │                        near-match → upstream completeness → verdict).
-│   └── base.py             Generic AuditModule + registry — lets new audit domains
-│                            (inventory, payment) plug in later with one file each.
+│   ├── base.py             Generic AuditModule + registry — new audit domains plug
+│                            in with one file + one register(...) call.
+│   ├── payment_data.py     Shared payment lookup / adjacency / coverage helpers
+│                            (extracted from zero_commission so multiple modules
+│                            can consume without a leaky import chain).
+│   ├── product_aliases.py  Known SKU-alias groups (Hynex / Hynex_1). One source
+│                            of truth for both zero_commission and inventory_mismatch.
+│   ├── zero_commission_audit.py     "Was partner X paid for zero-comm records?"
+│                            6-step chain, PAID / NOT_PAID / INSUFFICIENT_DATA.
+│   ├── inventory_mismatch_audit.py  "Do activations exceed invoiced purchases?"
+│                            Per (dealer, product) — composite partner_code.
+│                            RECONCILED / EXCESS_ACTIVATION / INSUFFICIENT_DATA.
+│   ├── payment_reconciliation_audit.py  "Was partner X paid the correct amount?"
+│                            Broader net than zero_commission — every partner with
+│                            activation activity. PAID_IN_FULL / DISPUTED_ROUNDING /
+│                            UNDERPAID / OVERPAID / INSUFFICIENT_DATA.
+│   └── eligibility_window_audit.py  "Are zero-comm records genuinely outside the
+│                            6-month invoice→activation window?" Per-partner
+│                            rollup, per-IMEI evidence in step details.
+│                            POLICY_MET / POLICY_VIOLATED / MIXED_ATTRIBUTION.
 │
 ├── agent/                 ── AGENT LAYER (Claude chat) ──
 │   ├── agent.py            The conversation loop. run_agent(): sends messages to
@@ -277,7 +319,7 @@ Later, GET /assurance/audit/trails[/{partner}] and /breakdown read them back for
 inspection and evaluation (e.g. "all trails where step 6 raised a caveat").
 ```
 
-### Flow D — APDP ingestion (how live data will reach FBB)
+### Flow D — APDP ingestion, production path (Kafka → Flink → Postgres)
 ```
 Dealer CSV drop → ingestion/pollers/telecom_batch.py → Kafka raw topic
   → flink_jobs/normalizer (Flink) → canonical event → Kafka normalized topic
@@ -285,6 +327,57 @@ Dealer CSV drop → ingestion/pollers/telecom_batch.py → Kafka raw topic
       → migrate_v1_3_0.sql's partner_settlements view
         → FBB db/apdp.py reads it when PAYMENT_SOURCE=apdp
 ```
+**Status:** the normaliser logic is complete + tested, but the Flink
+Docker build is broken (`apache-flink==1.18.1` pip timeout) and the
+Kafka→Postgres sink was never wired. This is the eventual production
+path; not what runs today.
+
+### Flow D′ — APDP demo path (bypass Kafka + Flink)
+```
+apdp/tools/generate_telecom_fixtures.py         (samples FBB dealer IDs)
+  → dealer_sales.csv + commission_statements.csv + settlement_records.csv
+    → apdp/tools/ingest_fixtures_to_postgres.py (uses normalizer_core directly)
+      → Postgres normalized.transactions
+        → normalized.partner_settlements view
+          → FBB db/apdp.py reads it when PAYMENT_SOURCE=apdp
+```
+This is what actually runs in the demo. Same normaliser code as Flow D
+(pure-Python `normalizer_core.py` is the shared brain), just skipping
+the streaming plumbing. On Render, the seeded Postgres state is
+packaged as `infra/postgres/apdp_seed.sql` and applied on backend boot
+by `main.py`'s lifespan hook — see the "APDP seed loading" abstraction
+in §5.
+
+### Flow E — a Dealer Statement (per-period, Finance-internal)
+```
+Statement button in Payment Intelligence dealer row
+  → api/client.js GET /dealers/{dealer_id}/statement?mon_period=YYYYMM
+    → routes.py → db/dealer_statement.compose_dealer_statement()
+      → execute_query("get_dealer_summary", ...)         (commission side)
+      → execute_query("get_orsc_summary", ...)           (informational)
+      → payment_data.payment_lookup(period, source)      (settlement side,
+                                                          respects PAYMENT_SOURCE)
+      → audit_store.get_partner_trail(...) per module    (linked evidence)
+    ← DealerStatementResponse (Position headline + all four sections)
+← DealerStatementModal renders. Copy-as-markdown / download-as-.md.
+```
+This is a formatter, not a new data source — every underlying number
+comes from an existing query or audit trail. The Position headline
+(PAID_IN_FULL / UNDERPAID / OVERPAID) is computed from the same
+tolerance rules as the payment_reconciliation audit module, so the
+statement and the audit trail never contradict each other on the same
+(dealer, period).
+
+### Flow F — Current Position card on Overview
+```
+Overview panel → api/client.js GET /payments/summary?mon_period=…
+  → returns PaymentCoverageResponse with owed/paid/unpaid/coverage
+    + disputed/partial/pending counts + data_source ("APDP" | "SIMULATED")
+← CurrentPositionBand renders 4 tiles + a Live·APDP or Simulated badge.
+```
+Same endpoint that powers Payment Intelligence's coverage card, wired
+into a compact 4-tile summary on the landing page. The Exceptions tile
+is clickable → deep-links into the Payment tab.
 
 ---
 
@@ -334,6 +427,28 @@ mislabel a data gap as not-paid?"), which a text blob can't support.
 
 **`PeriodContext` (frontend).** The selected reporting month is global app state,
 synced to the URL, so all panels stay on the same period and links are shareable.
+
+**APDP seed loading (`backend/main.py::_seed_apdp_if_empty` +
+`infra/postgres/apdp_seed.sql`).** On backend startup, when
+`PAYMENT_SOURCE=apdp` and `normalized.transactions` is empty (or the
+table is missing entirely), the FBB backend applies the packaged seed
+via psycopg2. Idempotent (COUNT-and-skip on subsequent boots), non-fatal
+(a failure logs and lets the app boot — Payment tab shows an empty
+state with the Live·APDP badge rather than a 500). *Why:* Render's
+managed Postgres has no way to inject fixture data at provision time;
+this hook is how the demo gets ~23k transaction rows into the DB on
+first boot without an operator running `psql` by hand. First boot pays
+~30-60s for the load; every boot after is ~50ms.
+
+**Dealer-statement composer (`backend/db/dealer_statement.py`).** A
+formatter, not a new data source. Reads commission-side (`get_dealer_summary`)
++ ORSC + payment-side (`payment_data.payment_lookup` — respects
+`PAYMENT_SOURCE`) + linked audit trails (`audit_store.get_partner_trail`
+per registered module) and shapes them into one per-period statement
+dict. The Position headline (PAID_IN_FULL / UNDERPAID / OVERPAID) uses
+the same tolerance rules as `payment_reconciliation_audit`, so a
+dealer's Statement and their audit trail never contradict each other
+on the same (dealer, period).
 
 ---
 
@@ -394,38 +509,58 @@ Things that are deliberately incomplete, temporary, or non-obvious — don't
   `NotImplementedError`. `USE_SAMPLE_DATA=true` is the permanent mode until a
   Presto service account is provisioned. The SQL strings in `queries.py` exist
   for that future path but are not executed today — the pandas handlers are.
-- **Payment data is simulated by default.** `payment_simulation.csv` is generated
-  from real commission/exception data (`data/generate_payment_simulation.py`).
-  `PAYMENT_SOURCE=apdp` switches to live APDP data, but that requires the APDP
-  stack running and its telecom feed populated.
-- **APDP is partially deployed.** The normaliser logic, sink, and schema exist and
-  are tested, but the end-to-end pipeline is not continuously running; it's
-  brought up on demand. See `apdp/CLAUDE.md` / `PROGRESS.md` for current state.
-- **Audit trail confidence reads LOW on sample data.** Every zero-commission
-  trail comes back LOW confidence because the sample USP product codes don't
-  overlap the activation product codes (trips step 2) and sample payments have
-  adjacent-period partials (trips step 5). This is the system being honest about
-  ambiguous sample data, not a bug. An open design question (in `PROGRESS.md`):
-  should a partial payment be its own conclusion (`PARTIALLY_PAID`) rather than
-  `NOT_PAID`/LOW? Validate on real trails before trusting confidence at face value.
-- **Audit table name vs generality.** The audit table is still called
-  `audit.zero_commission_trail` even though the layer is now generic (it has a
-  `module` column). Renaming it is a migration deferred until a second module lands.
-- **`ensure_schema()` self-heal.** `audit_store.py` runs an idempotent ALTER on
-  first write to add the `module` column to older audit DBs. It's a convenience so
-  a pre-existing DB doesn't need a manual migration — intentional, not a leak.
-- **No auth.** Any caller can hit any endpoint and query any dealer. Fine for the
-  current demo/pilot stage; a real deployment needs authn/authz (flagged in
-  `docs/PRODUCTION_READINESS_LEARNING_PLAN.md`).
+- **APDP demo path bypasses Kafka + Flink.** Production would ingest via
+  Kafka topics → Flink normaliser → Postgres sink. Today the Flink Docker
+  build fails on the `apache-flink==1.18.1` pip timeout and the Kafka→Postgres
+  sink was never wired (see `apdp/CLAUDE.md`). We work around it: fixture
+  CSVs → `apdp/tools/ingest_fixtures_to_postgres.py` runs the same
+  `normalizer_core.py` code directly + INSERTs via psycopg2. The
+  view (`normalized.partner_settlements`) and everything downstream is
+  identical to the eventual live path — the shortcut is only at ingestion.
+- **APDP + audit share one Postgres.** Locally and on Render, the FBB
+  `audit` schema and the APDP `raw` + `normalized` schemas live in the
+  same managed Postgres (`fbb-audit-pg`). One connection, one bill, one
+  place to reason about. Production would put APDP behind its own DB
+  and network boundary; the demo doesn't need that separation.
+- **APDP data on Render is seeded from `infra/postgres/apdp_seed.sql`.**
+  ~23 MB SQL file baked into the Docker image, applied on backend
+  startup via `main.py`'s lifespan hook when
+  `PAYMENT_SOURCE=apdp` AND `normalized.transactions` is empty.
+  Idempotent — skips instantly on subsequent boots.
+- **Fixture-generator dealer roster** in `apdp/tools/generate_telecom_fixtures.py`
+  loads dealer IDs from `data/samples/fbb_comm_dev_act_<period>.csv` so
+  the same partner appears on both sides of the reconciliation. Falls
+  back to a legacy 5-dealer hardcoded list if the FBB CSVs aren't
+  reachable (isolated APDP checkouts, testing).
+- **Audit trail confidence on the `zero_commission` module reads LOW
+  everywhere on sample data.** This is the module being honest about
+  ambiguous data: sample USP codes don't overlap activation codes
+  (trips step 2), simulated payments carry adjacent-period partials
+  (trips step 5). Use `payment_reconciliation` for the broader signal
+  — on APDP data it produces a rich UNDERPAID / OVERPAID /
+  DISPUTED_ROUNDING / PAID_IN_FULL spread.
+- **`ensure_schema()` self-heal.** `audit_store.py` runs idempotent
+  ALTERs on first write to add the `module` column and rename the
+  legacy `zero_commission_trail` table to `verification_trail` on
+  older audit DBs. Intentional convenience so a pre-existing DB
+  doesn't need an operator migration.
+- **No auth.** Any caller can hit any endpoint and query any dealer.
+  Fine for the pilot; a real deployment needs authn/authz (flagged in
+  `docs/PRODUCTION_READINESS_LEARNING_PLAN.md`). The GM preview is
+  gated by HTTP Basic Auth at the FastAPI layer — not a real user
+  system.
 - **No CI linter; one known-flaky test.**
-  `test_inventory_agent.py::test_kb_inventory_rules_grounded` is a live-LLM test
-  and can flake. GitHub Actions runs the non-eval suite only.
-- **`uv.lock` vs `requirements.txt`.** Both exist at the root/backend. The pinned
-  `backend/requirements.txt` is the source of truth for installs; `uv.lock` is not
-  currently the managed lockfile.
-- **Two separate docker-compose files.** Root `docker-compose.yml` is *only* the
-  FBB audit Postgres + backup. APDP's full stack is `apdp/docker-compose.yml`.
-  They are independent; don't expect one to bring up the other.
+  `test_inventory_agent.py::test_kb_inventory_rules_grounded` is a
+  live-LLM test that occasionally emits "fraud" in a KB-forbidden
+  negation. GitHub Actions runs the non-eval suite only.
+- **`uv.lock` vs `requirements.txt`.** Both exist at the root/backend.
+  The pinned `backend/requirements.txt` is the source of truth for
+  installs; `uv.lock` is not currently the managed lockfile.
+- **Two separate docker-compose files.** Root `docker-compose.yml` is
+  *only* the FBB audit Postgres + backup. APDP's full stack is
+  `apdp/docker-compose.yml`. They are independent; don't expect one
+  to bring up the other. Because the demo bypasses Kafka/Flink, you
+  only need the root compose to run locally.
 
 ---
 
@@ -456,8 +591,20 @@ cd frontend && npm install && npm run dev
 # 5. Tests (sample mode, no external services)
 .venv/bin/python -m pytest backend/tests -q
 RUN_EVALS=1 .venv/bin/python -m pytest backend/tests/test_evals.py -q   # opt-in, billable
+
+# 6. (Optional) APDP live-data path — generate + load fixtures into the
+#     same Postgres from step 2, then flip PAYMENT_SOURCE=apdp on the backend.
+python apdp/tools/generate_telecom_fixtures.py --period 202602 --out /tmp/apdp-fixtures
+python apdp/tools/generate_telecom_fixtures.py --period 202603 --out /tmp/apdp-fixtures
+PGPASSWORD=fbb_audit_pass psql -h localhost -p 5544 -U fbb_audit -d fbb_audit \
+  -f apdp/infra/postgres/init.sql -f apdp/migrate_v1_3_0.sql       # apply APDP schemas
+.venv/bin/python apdp/tools/ingest_fixtures_to_postgres.py --fixtures /tmp/apdp-fixtures --period 202602
+.venv/bin/python apdp/tools/ingest_fixtures_to_postgres.py --fixtures /tmp/apdp-fixtures --period 202603
+# Now re-run step 3 with PAYMENT_SOURCE=apdp APDP_PG_HOST=localhost APDP_PG_PORT=5544
+#   APDP_PG_DB=fbb_audit APDP_PG_USER=fbb_audit APDP_PG_PASSWORD=fbb_audit_pass
 ```
 
 The app runs fully on sample data without Docker or Presto — only the Audit
-Trails tab and `PAYMENT_SOURCE=apdp` need Postgres. APDP has its own setup; see
-`apdp/README.md` and `apdp/CLAUDE.md`.
+Trails tab and `PAYMENT_SOURCE=apdp` need Postgres. Step 6 is what the Render
+deploy does automatically via the packaged `infra/postgres/apdp_seed.sql`. APDP
+has its own setup; see `apdp/README.md` and `apdp/CLAUDE.md`.

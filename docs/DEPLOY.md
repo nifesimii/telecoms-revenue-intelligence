@@ -53,7 +53,9 @@ Once the deploy shows **Live**:
 ```bash
 # Health probe — no auth required, confirms the process is up.
 curl -i https://fbb-preview.onrender.com/health
-# → 200 {"status":"ok","sample_data_mode":true,"payment_source":"simulated"}
+# → 200 {"status":"ok","sample_data_mode":true,"payment_source":"apdp"}
+# (payment_source is "apdp" per render.yaml. Flip to "simulated" to demo
+#  the CSV fallback instead — but note the reconciliation signal degrades.)
 
 # Anything else — 401 without creds, 200 with them.
 curl -i https://fbb-preview.onrender.com/
@@ -82,14 +84,34 @@ true` in `render.yaml` picks it up. Or dashboard → **Manual Deploy**.
 **Reset the audit DB.** Dashboard → Postgres → **Reset**. Next time
 someone opens the Audit Trails tab, `ensure_schema()` recreates the tables
 from `infra/postgres/audit_init.sql`; running an audit repopulates them.
+Note: this also empties `normalized.transactions`. The next backend boot
+will re-apply `infra/postgres/apdp_seed.sql` automatically (~60s) so the
+Live · APDP data comes back on its own.
+
+**Reload the APDP seed manually.** Delete the rows and restart the
+backend service, e.g. from a psql shell:
+```sql
+TRUNCATE normalized.transactions;
+```
+Render → **Manual Deploy** on the web service — the lifespan hook
+notices the empty table and re-applies the seed. Useful if you've been
+poking at data and want a fresh known-good state.
 
 **Downgrade to free.** Change `plan: starter` → `plan: free` in
 `render.yaml`. Accept ~30s cold starts on the first request after idle.
 
 ## Known limits (deliberately not fixed)
 
-- **Sample data only.** `USE_SAMPLE_DATA=true`, `PAYMENT_SOURCE=simulated`.
-  Live Presto still `NotImplementedError`; APDP stack not deployed.
+- **Sample data only on the FBB side.** `USE_SAMPLE_DATA=true`. Live
+  Presto still `NotImplementedError` (the query strings in
+  `backend/db/queries.py` exist for that future path). Payment side is
+  Live · APDP by default — see the APDP note below.
+- **APDP data comes from a packaged seed, not live ingestion.**
+  `infra/postgres/apdp_seed.sql` is a fixture pg_dump baked into the
+  Docker image (~23 MB). The backend applies it on first boot via
+  `main.py`'s lifespan hook when `normalized.transactions` is empty.
+  Real streaming ingestion via Kafka/Flink is out of scope for the
+  demo (the Flink Docker build is broken — see `apdp/CLAUDE.md`).
 - **One shared credential.** Basic Auth is a gate, not a user system. Anyone
   with the URL + password gets full access to every endpoint.
 - **Frankfurt region.** Latency from Lagos is ~150–200 ms; acceptable for a

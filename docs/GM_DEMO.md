@@ -29,8 +29,12 @@ The last one is the newest addition — a persisted *verification chain*
 ## The six tabs
 
 **Overview** — the landing page. Answers "is this month OK, and if not
-where do I look first?" Three bands stacked top-down:
+where do I look first?" Four bands stacked top-down:
 - **Posture** — module-level PASS / FLAG counts + severity roll-up
+- **Current Position** — platform-wide reconciliation headline: total
+  commission owed, amount settled, outstanding, exceptions count. Badged
+  Live · APDP or Simulated so you know which world you're in. The
+  Exceptions tile is clickable — jumps you into the Payment tab.
 - **Audit coverage** — trail counts per audit module for the period
 - **Dealers across multiple modules** — the "look here first" list
 Every card links into the deeper tab that owns that data.
@@ -49,8 +53,11 @@ purchases), `NO_INVOICE_RECORD` (activations with no matching invoice —
 possibly outside the data window), or `WITHIN_ALLOCATION` (fine).
 
 **Payment Intelligence** — Coverage card + per-dealer payment table +
-period-over-period variance. Shows whether we're on the simulated payment
-feed or wired to APDP.
+period-over-period variance. Runs on APDP settlement data by default
+(green Live · APDP banner). Every dealer row has a **Statement** button
+that opens the per-period Finance/RA internal statement — commission
+expected vs settled, variance, Position headline, linked audit trails,
+copy-as-markdown / download-as-`.md`.
 
 **Audit Trails** — The verification-chain browser. Pick a module + a
 period + click **Run**. Every "Partner X was/wasn't paid" claim gets a
@@ -128,12 +135,21 @@ means read the step-by-step before acting.
 ## Sample-data caveats (be honest with viewers)
 
 - **All numbers are fictional.** No customer PII, no real dealer names.
+- **Payment side is `Live · APDP`.** `PAYMENT_SOURCE=apdp` is the default —
+  every settlement, reconciliation status, and Position headline is
+  computed from `normalized.partner_settlements`, not from a static
+  CSV. On the tabs and the Statement modal you'll see a green
+  **Live · APDP** badge. It's still fictional data (fixture-seeded,
+  ~23k transaction rows across two periods) — but it flows through
+  the full APDP shape so the plumbing story is real.
 - **`Zero-Commission` module reads LOW confidence everywhere.** Legit:
   sample USP codes don't overlap activation codes (trips step 2) and
   sample payments are adjacent-period partials (trips step 5). This is
-  the system being honest about ambiguous data, not a bug.
-- **`Payment Intelligence` says SIMULATED** because `PAYMENT_SOURCE=simulated`.
-  Live APDP integration is scaffolded but not switched on for the demo.
+  the system being honest about ambiguous data, not a bug. Use
+  **`Payment Reconciliation`** for the broader signal — on APDP data it
+  produces a real spread across UNDERPAID / OVERPAID / DISPUTED_ROUNDING
+  / PAID_IN_FULL instead of the mono-bucket picture the simulated
+  path gave.
 - **`Inventory Intelligence` NO_INVOICE_RECORD counts are large** —
   intentional. The IFS data window doesn't cover every historical
   purchase, so many activations look "unmatched." The audit module treats
@@ -143,16 +159,29 @@ means read the step-by-step before acting.
 
 ---
 
-## What to look at first (2-min GM tour)
+## What to look at first (3-min GM tour)
 
-1. **Overview** — read the posture band + audit coverage
-2. Change the period to **Feb 2026**
-3. **Audit Trails** → **Payment Reconciliation** → **Run** → expand one
-   `UNDERPAID`/HIGH trail → walk the six steps
-4. **Audit Trails** → **Eligibility Window** → **Run** → note that
-   `MIXED_ATTRIBUTION` dominates; expand one and read step 5 to see the
-   attributed root cause
-5. **Inventory Intelligence** → search `hynex` → observe the SKU-alias
+1. **Overview** — read the Posture band + the new **Current Position**
+   band (Owed / Settled / Outstanding / Exceptions with a Live · APDP
+   badge) + the Audit Coverage tiles
+2. Change the period to **Feb 2026** if it's not already there
+3. **Payment Intelligence** → **All Payments** sub-tab → click
+   **Statement** on any dealer row → walk the modal:
+   - Position headline (PAID_IN_FULL / UNDERPAID / OVERPAID)
+   - Commission-side card (what we owe them)
+   - Payment-side card with Live · APDP badge + APDP detail
+     (sale count, statement count, settlement count, reconciliation
+     status)
+   - Linked audit trails at the bottom
+   - Hit **Download .md** to see the Finance-ready snapshot
+4. **Audit Trails** → **Payment Reconciliation** → **Run** for Feb 2026
+   → note the real spread of conclusions across UNDERPAID / OVERPAID
+   / DISPUTED_ROUNDING / PAID_IN_FULL — then expand one to walk the
+   6-step chain
+5. **Audit Trails** → **Eligibility Window** → **Run** → note that
+   `MIXED_ATTRIBUTION` dominates; expand one and read step 5 to see
+   the attributed root cause
+6. **Inventory Intelligence** → search `hynex` → observe the SKU-alias
    pattern that the audit module recognises
 
 ---
