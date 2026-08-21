@@ -5,6 +5,118 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-08-21  (APDP live-data sprint)
+
+The demo story added a new twist during manager review — "can you actually
+show live payment data from APDP turning into a real financial statement
+for a dealer?" This session ships the whole end-to-end. Chronological.
+
+**The blocker that shaped everything**
+The APDP fixture generator hardcoded 5 synthetic dealers (`FBB_D00001`…5)
+with no relationship to the ~900 FBB sample dealers (`19472`, `74050`…).
+Flipping `PAYMENT_SOURCE=apdp` without fixing this meant: 5 unrelated
+dealers in the Payment tab, every FBB partner INSUFFICIENT_DATA in the
+payment_reconciliation audit, and a Dealer Statement that could never
+join both sides for the same partner. Fixture generator now loads every
+distinct `distributor_code` from the FBB CSV for the target period —
+939 dealers in 202602, 922 in 202603, all real FBB IDs.
+
+**Kafka/Flink bypass**
+`apdp/CLAUDE.md` documents that the Flink Docker build is broken and the
+Kafka→Postgres sink was never wired. For the demo we only need
+`normalized.transactions` populated so `normalized.partner_settlements`
+returns rows. New `apdp/tools/ingest_fixtures_to_postgres.py` reads the
+fixture CSVs → runs `normalize_telecom_*` from `flink_jobs/normalizer_core.py`
+directly → INSERTs via psycopg2. One command, ~5 seconds, no Kafka.
+
+**APDP schemas applied to the shared Postgres**
+Local + Render both use the existing `fbb-audit-pg` Postgres for
+everything — the `audit` schema and the `raw` + `normalized` schemas
+coexist in one DB for the demo. Production separation is a later
+concern. This means one Render Postgres instance, one connection
+string, one place to reason about.
+
+**Packaged seed for Render**
+`infra/postgres/apdp_seed.sql` is a `pg_dump` (schema + data) of the
+raw + normalized schemas post-ingest — 23 MB, ~23k transaction rows
+across two periods, producing 939 + 922 dealer-settlement rows.
+`backend/main.py` lifespan hook runs a one-shot loader on backend boot:
+if `PAYMENT_SOURCE=apdp` and `normalized.transactions` is empty (or
+missing), apply the seed. Idempotent (COUNT-and-skip on later boots).
+Non-fatal (a failure logs and returns — Payment tab shows empty state
+with the Live·APDP badge, not a 500). First Render boot pays ~30-60s
+for the seed; every boot after is ~50ms.
+
+**Payment reconciliation signal on APDP data**
+Before this session, running `payment_reconciliation` gave 912 UNDERPAID
+/ 27 PAID_IN_FULL on simulated data — dominated by one bucket. On APDP
+data with real dealer IDs, the picture is much richer: 580 UNDERPAID /
+351 OVERPAID / 4 DISPUTED_ROUNDING / 4 PAID_IN_FULL. All four amount
+buckets show up, spread realistically. That's the demo signal we needed
+to prove the module actually reconciles rather than always says the
+same thing.
+
+**Dealer Statement — Finance/RA internal per-period view**
+Answers "for dealer X in period Y, what did we owe, what did we pay,
+what's outstanding, and which audit trails support that verdict?" all
+in one call.
+
+- `backend/db/dealer_statement.py` composes commission-side (dealer
+  summary) + ORSC + payment-side (respects `PAYMENT_SOURCE`) + linked
+  audit trail refs into one dict. A formatter, not a new data source.
+- `GET /dealers/{dealer_id}/statement?mon_period=…` new endpoint,
+  Pydantic-validated response.
+- `DealerStatementModal.jsx` renders it with a Position headline
+  (PAID_IN_FULL / UNDERPAID / OVERPAID), Commission-side card,
+  Payment-side card with a Live·APDP or Simulated badge, ORSC
+  informational, Linked audit trails list. Copy-as-markdown and
+  download-as-`.md` buttons in the footer, matching DisputeDraftModal.
+- Launched from a "Statement" button on each row in the All Payments
+  sub-tab. Adding the same button to Activation and Commission
+  dealer rows is a small follow-up.
+- Fixed two lingering `distributor_name` references in
+  PaymentSummaryTable that the earlier rename standardisation
+  missed — noticed while adding the Statement column.
+
+**Current Position card on Overview**
+New band on the landing page, placed above Audit Coverage. Four tiles:
+Total commission owed / Amount settled / Outstanding / Exceptions
+(disputed + partial + pending). Data-source badge flips Live·APDP or
+Simulated. The Exceptions tile is clickable and deep-links into the
+Payment tab. Best-effort load — a missing payment source degrades to
+"nothing rendered" rather than blanking the whole Overview.
+
+**Deploy**
+`render.yaml` — `PAYMENT_SOURCE=apdp` by default, `APDP_PG_*` env vars
+wired to the same managed fbb-audit-pg Postgres. `.dockerignore`
+excludes `apdp/` (deliberately — the runtime path doesn't need Flink or
+Kafka) but includes `infra/` where the seed lives. Dockerfile already
+COPYs `infra/` so the seed lands in the image.
+
+**Next — before GM demo**
+1. Watch the Render redeploy — expect ~2 min build + ~60s first-boot
+   seed apply. Once Live, `/health` should return
+   `payment_source: "apdp"`.
+2. Open the live URL: Overview → Current Position band should badge
+   Live·APDP with real totals; Payment tab → All Payments should show
+   939 dealers reconciled against APDP data; open a dealer's Statement
+   → should show Position headline + Live·APDP badge + linked audit
+   trails.
+3. Punch-list items after that: Statement button on Activation +
+   Commission tab dealer rows, address the pre-existing live-LLM
+   flake, second APDP dealer story ("this dealer was Overpaid — here's
+   the trail proving it").
+
+**Deferred (post-GM)**
+- Split APDP + FBB audit Postgres in production
+- APDP end-to-end ingestion via Kafka/Flink (fix the Docker build)
+- Fifth audit module — waiting on GM feedback about domain priority
+- Real dealer data via Mono consent / MTN internal feed — waiting on
+  finance/MTN access approval
+- Live-LLM flake in `test_kb_inventory_rules_grounded`
+
+---
+
 ## Session — 2026-08-10  (manager-review sprint)
 
 Long session — the senior manager received the preview link and started
