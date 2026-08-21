@@ -5,62 +5,116 @@ end of each work session. Newest session on top.
 
 ---
 
-## Session — 2026-08-10
+## Session — 2026-08-10  (manager-review sprint)
 
-**Done**
-- **Standardised the dealer-identifier naming across the whole codebase.**
-  The FBB code had drifted into two competing names for the same thing —
-  `distributor_code` (Phase 1: dealer_summary, orsc, payment endpoints)
-  vs `dealer_id` (Phase 2+: activation, inventory, payment variance).
-  The mismatch shipped a live bug: the Payment tab search returned zero
-  matches because the search filter looked for `dealer_id` but the payment
-  response returned `distributor_code`. Manager caught it during review.
-- **The convention, now documented in ARCHITECTURE.md § 6:**
-  - Raw SQL/CSV columns keep `distributor_code` (matches Presto — we don't
-    own the source).
-  - Every API response field is `dealer_id` / `dealer_name` (uniform,
-    user-facing vocabulary).
-  - INPUT parameters (tool params, endpoint request bodies, query dispatch
-    args) keep `distributor_code` — matches CLAUDE.md tool schema and the
-    SQL column.
-  - Audit-trail subject stays `partner_code` (generic, supports composite
-    keys like `dealer:product` in inventory_mismatch).
-- **What changed to enforce it:**
-  - 4 handlers in `backend/db/queries.py` now rename at the return boundary
-    (`get_dealer_summary`, `get_orsc_summary`, `get_payment_summary`,
-    `get_payment_exceptions`).
-  - Every downstream consumer updated: `backend/assurance/*.py`,
-    `backend/agent/dispute_responder.py`, `backend/db/composite.py`,
-    `backend/db/data_coverage.py`, `backend/db/triage.py`,
-    `backend/audit/*_audit.py` (3 files' `run_period` + `gather_inputs`),
-    `backend/api/schemas.py` (`DealerSummary`, `PaymentSummaryRecord`),
-    `backend/api/routes.py`.
-  - 6 frontend components migrated: `DealerSummaryTable`, `MessageBubble`,
-    `ChatInterface`, `PaymentSummaryTable`, `PaymentExceptionsTable`,
-    `DisputeDraftModal` + `useDealerVerification` hook. Dropped the
-    defensive dual-field-check that the earlier hotfix added — now moot.
-  - Tests updated: `test_queries.py`, `test_api.py`, `test_payment_queries.py`,
-    `test_agent.py`, `test_apdp_payments.py`.
+Long session — the senior manager received the preview link and started
+reviewing before it reaches the GM. Everything below was in response to
+observations from that review, plus onboarding prep for incoming team
+members. Order is roughly chronological.
+
+**Onboarding materials shipped (for team members joining Monday)**
+- `docs/FBB_Onboarding.pptx` — 18-slide deck: MTN/FBB business context
+  (no prior knowledge assumed), architecture, 4 audit modules,
+  contribution guide, short-term + long-term goals. Two revisions
+  incorporated feedback ("assume no MTN knowledge" and "add
+  ARCHITECTURE.md-update rule").
+- Onboarding note (5-step walkthrough, sent to team on WhatsApp — not
+  committed to repo per user preference).
+- Deck + note explicitly limit team members to **1–3 chat questions/day**
+  because each call bills to the Anthropic account. Access model: GitHub
+  repo access + preview URL + local dev tooling; no personal Anthropic
+  key initially.
+
+**Search filters shipped across every intelligence tab**
+- Activation (previous session), Inventory, Payment, Audit Trails all
+  now have client-side substring search. Persists across sub-tabs.
+- Inventory searches product code + name too (e.g. `hynex` isolates the
+  SKU-alias split).
+
+**Performance hotfix (audit run timing out on Render)**
+- Manager saw "timeout of 120000ms exceeded" clicking the Run button in
+  Audit Trails. Root cause: `adjacent_period_payments` was called inside
+  the per-partner loop, and `_load_csv` had no in-process cache — so
+  487 partners × 2 adjacent periods = 974 redundant full CSV parses per
+  audit run.
+- Fixed both: in-process CSV cache with defensive `.copy()`, plus
+  `prefetch_adjacent_frames()` at the orchestrator level threaded
+  through gather_inputs. Timings on my box: zero_commission
+  120s+ → 8.9s, payment_reconciliation ~15s → 0.9s. On Render (~3-5×
+  slower) safely under the 120s client ceiling.
+- Also bumped axios client timeout 60s → 120s so a slow first request
+  after quiet time doesn't fire the client-side abort before the server
+  is done.
+
+**Anthropic API-key rotation guidance**
+- Chat returned "I encountered an error retrieving that data" — Render
+  logs showed `401 invalid x-api-key`. Not a code bug. Rotate + repaste
+  in Render env. Documented the diagnostic path for the team so they
+  know to check Render logs → API keys → Anthropic billing in that
+  order for chat failures.
+
+**The dealer-identifier naming standardisation (the big one)**
+- Codebase had drifted into two competing names — `distributor_code`
+  (Phase 1 handlers) vs `dealer_id` (Phase 2+ handlers). The Payment
+  tab search shipped a live zero-results bug from this exact drift
+  (filter queried on `dealer_id`, response returned `distributor_code`).
+- Convention now documented in ARCHITECTURE.md § 6:
+  - Raw SQL/CSV columns keep `distributor_code` (matches Presto — we
+    don't own the source).
+  - **API response fields uniformly `dealer_id` / `dealer_name`.**
+  - Input parameters keep `distributor_code` (matches CLAUDE.md tool
+    schema + the SQL column being filtered).
+  - Audit trail subject stays `partner_code` (generic; supports
+    composite keys like `dealer:product`).
+- Enforcement: 29 files touched.
+  - `backend/db/queries.py` — 4 handlers (`dealer_summary`, `orsc_summary`,
+    `payment_summary`, `payment_exceptions`) rename at the return
+    boundary via `df.rename(columns={...})`.
+  - Downstream backend: `assurance/*`, `agent/dispute_responder.py`,
+    `db/{composite,data_coverage,triage}.py`, 3 `audit/*_audit.py`
+    files (`gather_inputs` + `run_period`), `api/{schemas,routes}.py`.
+  - Frontend: 6 components + 1 hook migrated. Defensive dual-field
+    check in `PaymentIntelligencePanel` dropped — now moot.
+  - 5 test files updated; RAW-CSV column reads (`dev_act_df["distributor_code"]`)
+    intentionally kept per convention. `test_payment_simulation_file_exists`
+    now carries a comment explaining why it stays on the raw name.
   - CLAUDE.md tool return docs updated for Tool 1 + Tool 4.
-- **Result:** Payment tab search works with a single-field filter (no more
-  defensive fallback). Every intelligence tab now reads the same field
-  names. New team members have one rule to remember, not two.
 
-**Learning to keep**
-This bug happened because two people (or the same person on two different
-days) chose different names for the same thing at different layers, and
-the frontend filter that came later trusted the newer name. The naming
-convention in ARCHITECTURE.md § 6 is the guardrail for the future — any
-new API handler that returns a dealer-scoped record has to alias at the
-return boundary.
+**Learning to keep** (into ARCHITECTURE.md § 6 as a guardrail)
+The naming bug happened because two people (or the same person on two
+different days) chose different names for the same thing at different
+layers, and the frontend filter that came later trusted the newer name.
+The layered rule in ARCHITECTURE.md § 6 is now the guardrail: any new
+API handler returning a dealer-scoped record MUST alias at the return
+boundary.
 
-**Next**
-- Ship the docs to the team on WhatsApp (deck + onboarding note ready
-  since last session; new team members are joining soon).
-- APDP end-to-end run with fixture data — still on deck.
-- Address the pre-existing live-LLM flake in
-  `test_kb_inventory_rules_grounded` — unchanged from the last two
-  sessions; low priority.
+**State at end of day**
+- 210 tests green (up from 208; the two new tests are indirect coverage
+  of the rename).
+- Live preview at fbb-preview.onrender.com — all 4 audit modules render;
+  Overview shows Audit Coverage band; search filters work on all four
+  intelligence tabs; Payment search works with a single-field filter.
+- Onboarding materials sent to team; new members joining Monday.
+
+**Next — before GM demo**
+1. Verify the Render redeploy after commit `13d6b75` shows the rename
+   fix live. Smoke-test Payment tab search end-to-end.
+2. Wait for the manager's remaining feedback and address any punch-list
+   items they surface.
+3. Send GM the URL + creds + `docs/GM_DEMO.md` as the read-along.
+4. If time permits before GM: prove `PAYMENT_SOURCE=apdp` end-to-end
+   with the APDP fixture generator. Not blocking — the demo is fine on
+   simulated data.
+
+**Deferred (post-GM feedback)**
+- `test_kb_inventory_rules_grounded` live-LLM flake (untouched; low
+  priority — model occasionally emits "fraud" in a KB-forbidden
+  negation).
+- APDP end-to-end continuous run.
+- Fifth audit module — waiting on GM feedback about which domain to
+  audit next.
+- Real dealer data via Mono consent or an MTN internal feed — waiting
+  on finance/MTN access approval.
 
 ---
 
