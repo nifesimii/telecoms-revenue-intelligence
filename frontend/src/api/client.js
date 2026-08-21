@@ -171,6 +171,24 @@ export async function draftDisputeResponse(body) {
   return data;
 }
 
+/**
+ * GET /dealers/{dealer_id}/statement?mon_period=YYYYMM
+ * Per-period Finance/RA internal dealer statement — composes commission
+ * entitlement + payment settlement + ORSC + linked audit trails.
+ * @returns {Promise<{
+ *   dealer_id: string, dealer_name: string, mon_period: string,
+ *   commission: object, orsc: object|null, payment: object,
+ *   position: object, audit_trails: Array<object>
+ * }>}
+ */
+export async function getDealerStatement(dealer_id, mon_period) {
+  const { data } = await api.get(
+    `/dealers/${encodeURIComponent(dealer_id)}/statement`,
+    { params: { mon_period } },
+  );
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Audit trails (generic, module-aware)
 // ---------------------------------------------------------------------------

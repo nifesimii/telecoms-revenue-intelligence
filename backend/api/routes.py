@@ -32,6 +32,7 @@ from backend.api.schemas import (
     ChatResponse,
     AuditRunResponse,
     DataCoverageTicketResponse,
+    DealerStatementResponse,
     DealerSummary,
     DisputeDraftRequest,
     DisputeDraftResponse,
@@ -110,6 +111,36 @@ def list_periods() -> PeriodList:
 # ---------------------------------------------------------------------------
 # GET /dealers
 # ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/dealers/{dealer_id}/statement",
+    response_model=DealerStatementResponse,
+)
+def get_dealer_statement(
+    dealer_id: str,
+    mon_period: str = Query(pattern=r"^\d{6}$"),
+) -> DealerStatementResponse:
+    """Per-period dealer statement — Finance/RA internal view.
+
+    Composes commission entitlement + payment settlement + ORSC + linked
+    audit trails into a single call. The payment side reflects the current
+    ``PAYMENT_SOURCE`` (simulated vs apdp) — the response's data_source
+    field lets the UI badge it accordingly.
+    """
+    from backend.db.dealer_statement import compose_dealer_statement
+    result = compose_dealer_statement(dealer_id, mon_period)
+    if not result.get("found"):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No activation record for dealer {dealer_id!r} in {mon_period}. "
+                "Check the dealer ID and period."
+            ),
+        )
+    # Drop the internal ``found`` flag before Pydantic validation.
+    result.pop("found", None)
+    return DealerStatementResponse(**result)
 
 
 @router.get("/dealers", response_model=list[DealerSummary])

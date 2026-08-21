@@ -269,7 +269,7 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
               />
             )}
             {activeTab === 'all' && (
-              <PaymentSummaryTable rows={filteredAll} loading={loading} />
+              <PaymentSummaryTable rows={filteredAll} loading={loading} period={period} />
             )}
             {activeTab === 'variance' && (
               <VarianceTable rows={filteredVariance} loading={false} />

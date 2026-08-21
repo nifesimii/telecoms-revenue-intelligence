@@ -281,6 +281,77 @@ class PaymentCoverageResponse(BaseModel):
     records: list[PaymentSummaryRecord]
 
 
+# ---------------------------------------------------------------------------
+# /dealers/{dealer_id}/statement — per-period Finance/RA internal statement
+# ---------------------------------------------------------------------------
+
+
+class DealerStatementCommission(BaseModel):
+    expected_ngn: float
+    total_activations: int
+    qualified_activation_count: int
+    zero_commission_count: int
+    by_denomination: dict[str, float]
+
+
+class DealerStatementOrsc(BaseModel):
+    device_count: int
+    total_subscription_amount_ngn: float
+    zero_amount_count: int
+
+
+class DealerStatementApdpDetail(BaseModel):
+    sale_count: int
+    total_sales_ngn: float
+    statement_count: int
+    statement_gross_revenue_ngn: float
+    settlement_count: int
+    paid_count: int
+    partial_count: int
+    disputed_count: int
+    reconciliation_status: str
+
+
+class DealerStatementPayment(BaseModel):
+    data_source: str        # "simulated" | "apdp"
+    amount_paid_ngn: float
+    payment_found: bool
+    payment_status: str | None = None
+    apdp_detail: DealerStatementApdpDetail | None = None
+
+
+class DealerStatementPosition(BaseModel):
+    expected_ngn: float
+    paid_ngn: float
+    outstanding_ngn: float
+    variance_pct: float | None = None
+    headline: str           # "PAID_IN_FULL" | "UNDERPAID" | "OVERPAID"
+
+
+class DealerStatementAuditRef(BaseModel):
+    module: str
+    label: str
+    trail_id: int | None = None
+    conclusion: str
+    confidence: str
+    caveat_count: int | None = None
+    generated_at: str | None = None
+
+
+class DealerStatementResponse(BaseModel):
+    """Per-period Finance/RA internal statement for one dealer."""
+
+    dealer_id: str
+    dealer_name: str
+    account_profile_class: str
+    mon_period: str
+    commission: DealerStatementCommission
+    orsc: DealerStatementOrsc | None = None
+    payment: DealerStatementPayment
+    position: DealerStatementPosition
+    audit_trails: list[DealerStatementAuditRef]
+
+
 class IfsMissingItem(BaseModel):
     """One dealer with NO_INVOICE_RECORD inventory rows for the period."""
 

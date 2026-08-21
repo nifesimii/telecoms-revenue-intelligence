@@ -13,10 +13,18 @@ cases to surface:
   * one settlement is PARTIAL (= dispute candidate)
   * one settlement is DISPUTED (= flagged on FBB side)
 
+Dealer roster is loaded from the FBB sample data
+(``data/samples/fbb_comm_dev_act_*.csv``) so that APDP fixture dealers
+match the dealer IDs the FBB app already knows about. This is what
+lets the same partner appear on both the commission side (FBB) and
+the settlement side (APDP), so the Payment Intelligence tab, the
+audit modules, and the Dealer Statement all reconcile against the
+same identity when PAYMENT_SOURCE=apdp.
+
 Deterministic via --seed. Default settlement period = current month.
 
 Usage:
-    python tools/generate_telecom_fixtures.py --period 202410 --out tools/fixtures
+    python tools/generate_telecom_fixtures.py --period 202602 --out tools/fixtures
 """
 from __future__ import annotations
 
@@ -27,7 +35,82 @@ import random
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-DEALERS = [
+# Loaded lazily in generate() from the FBB sample CSVs. Populated as
+# [(dealer_code, dealer_name, partner_code, msisdn), ...] to preserve the
+# original tuple shape the rest of the module depends on.
+DEALERS: list[tuple[str, str, str, str]] = []
+
+
+def _partner_code_for(profile_class: str) -> str:
+    """Map an FBB account_profile_class to a synthetic PARTNER_* bucket.
+
+    APDP fixtures need a partner_code per dealer for the raw event shape.
+    Grouping FBB's profile classes into three buckets keeps the fixture
+    shape realistic without inventing new taxonomies.
+    """
+    p = (profile_class or "").upper()
+    if "FIXED" in p or "BROADBAND" in p:
+        return "PARTNER_A"
+    if "PENTAGON" in p or "FRANCHISE" in p:
+        return "PARTNER_B"
+    return "PARTNER_C"
+
+
+def _synthetic_msisdn(dealer_code: str) -> str:
+    """Deterministic MSISDN per dealer — same code → same MSISDN across runs."""
+    # Take the last 8 digits of a hash-safe integer derived from the code.
+    tail = int(hex(abs(hash(dealer_code)))[-8:], 16) % 100_000_000
+    return f"+23480{tail:08d}"
+
+
+def _load_fbb_dealers(period: str) -> list[tuple[str, str, str, str]]:
+    """Read (dealer_code, dealer_name, partner_code, msisdn) tuples from the
+    FBB sample CSV for the given period.
+
+    Returns the full roster — every distinct distributor_code in the
+    period, one entry per dealer. Downstream code should be prepared for
+    ~900 dealers for a real FBB month.
+
+    Falls back to the legacy 5-dealer synthetic list if the FBB CSVs
+    aren't reachable (keeps the generator runnable in isolation).
+    """
+    # Resolve …/telecoms-revenue-intelligence/data/samples/fbb_comm_dev_act_<period>.csv
+    # from this file's location (…/apdp/tools/generate_telecom_fixtures.py).
+    repo_root = Path(__file__).resolve().parents[2]
+    csv_path = repo_root / "data" / "samples" / f"fbb_comm_dev_act_{period}.csv"
+    if not csv_path.is_file():
+        # Fall back to whichever period CSV exists — some FBB periods may
+        # not be present in the sample bundle.
+        candidates = sorted(
+            (repo_root / "data" / "samples").glob("fbb_comm_dev_act_*.csv")
+        )
+        if not candidates:
+            return _FALLBACK_DEALERS
+        csv_path = candidates[0]
+
+    seen: dict[str, tuple[str, str]] = {}   # code → (name, profile_class)
+    with csv_path.open(newline="") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            code = str(row.get("distributor_code") or "").strip()
+            if not code or code in seen:
+                continue
+            name = str(row.get("distributor_name") or code).strip()
+            profile = str(row.get("account_profile_class") or "").strip()
+            seen[code] = (name, profile)
+
+    if not seen:
+        return _FALLBACK_DEALERS
+
+    return [
+        (code, name, _partner_code_for(profile), _synthetic_msisdn(code))
+        for code, (name, profile) in seen.items()
+    ]
+
+
+# Preserved from the pre-integration version — used only if the FBB CSVs
+# aren't reachable (e.g. running the generator in a bare APDP checkout).
+_FALLBACK_DEALERS: list[tuple[str, str, str, str]] = [
     ("FBB_D00001", "MTN Connect Solutions",     "PARTNER_A", "+2348031000001"),
     ("FBB_D00002", "Hynex Distribution Ltd",    "PARTNER_A", "+2348031000002"),
     ("FBB_D00003", "Kashmir Global Networks",   "PARTNER_B", "+2348031000003"),
@@ -75,6 +158,13 @@ def generate(period: str, out_dir: Path, seed: int, sales_per_dealer: int) -> No
     rng = random.Random(seed)
     start, end = _period_dates(period)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Populate DEALERS from the FBB CSV for this period. Kept as a module
+    # global so the rest of the code (which reads DEALERS multiple times
+    # for name/msisdn lookups) doesn't need signature changes.
+    global DEALERS
+    DEALERS = _load_fbb_dealers(period)
+    print(f"Loaded {len(DEALERS)} dealers from FBB sample for period {period}")
 
     sales_rows: list[dict] = []
     # By (dealer_code, product_type) → list of sales for aggregation later

@@ -32,6 +32,78 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 
+_APDP_SEED_PATH = (
+    Path(__file__).resolve().parent.parent / "infra" / "postgres" / "apdp_seed.sql"
+)
+
+
+def _seed_apdp_if_empty() -> None:
+    """One-shot APDP seed loader.
+
+    When ``PAYMENT_SOURCE=apdp`` and the target Postgres has an empty
+    (or missing) ``normalized.transactions``, execute the packaged
+    ``infra/postgres/apdp_seed.sql`` — which restores the raw + normalized
+    schemas + the fixture data + the ``partner_settlements`` view.
+
+    Idempotent: on subsequent boots the table already has rows, so this
+    is a fast COUNT-and-skip. Deliberately non-fatal — if seeding fails
+    the app still boots (Payment tab just returns empty results with a
+    'Live · APDP' badge). Rendering an empty tab is a better demo
+    posture than a 500 wall.
+    """
+    if config.PAYMENT_SOURCE != "apdp":
+        return
+    if not _APDP_SEED_PATH.is_file():
+        logger.info("APDP seed file not present at %s — skipping.", _APDP_SEED_PATH)
+        return
+    try:
+        import psycopg2
+        conn = psycopg2.connect(
+            host=config.APDP_PG_HOST, port=config.APDP_PG_PORT,
+            dbname=config.APDP_PG_DB, user=config.APDP_PG_USER,
+            password=config.APDP_PG_PASSWORD, connect_timeout=10,
+        )
+    except Exception as exc:
+        logger.warning("APDP seed skipped — Postgres unreachable: %s", exc)
+        return
+
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT to_regclass('normalized.transactions') IS NOT NULL"
+            )
+            has_table = bool(cur.fetchone()[0])
+            row_count = 0
+            if has_table:
+                cur.execute("SELECT COUNT(*) FROM normalized.transactions")
+                row_count = int(cur.fetchone()[0])
+            if row_count > 0:
+                logger.info(
+                    "APDP seed skipped — normalized.transactions already "
+                    "has %d rows.", row_count,
+                )
+                return
+        # Empty (or table missing) — apply the seed.
+        logger.info("Applying APDP seed from %s …", _APDP_SEED_PATH)
+        sql = _APDP_SEED_PATH.read_text()
+        # autocommit so pg_dump's own transaction directives don't nest.
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(sql)
+        # Confirm.
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM normalized.transactions")
+            n = int(cur.fetchone()[0])
+        logger.info("APDP seed applied — %d transactions loaded.", n)
+    except Exception:
+        logger.exception("APDP seed failed — Payment tab will read empty results.")
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     """Verify the system prompt loads cleanly before serving traffic."""
@@ -43,10 +115,15 @@ async def _lifespan(app: FastAPI):
             "backend/knowledge_base/fbb_commission_kb.md."
         )
     logger.info(
-        "System prompt loaded (%d chars). USE_SAMPLE_DATA=%s.",
+        "System prompt loaded (%d chars). USE_SAMPLE_DATA=%s PAYMENT_SOURCE=%s.",
         len(system_prompt),
         config.USE_SAMPLE_DATA,
+        config.PAYMENT_SOURCE,
     )
+    # APDP seed happens after KB load so the app is definitely usable
+    # even if seeding fails. Runs synchronously in the startup phase —
+    # ~30-60s on first Render boot, ~50ms on subsequent boots (idempotent).
+    _seed_apdp_if_empty()
     yield
 
 

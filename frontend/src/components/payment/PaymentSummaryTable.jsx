@@ -8,7 +8,9 @@
 // When the row carries APDP reconciliation enrichment (data_source==="APDP"),
 // extra columns are rendered: Sales captured, Variance, Reconciliation status.
 
+import { useState } from 'react';
 import { formatNGN } from '../../lib/format.js';
+import DealerStatementModal from '../DealerStatementModal.jsx';
 
 const STATUS_TONE = {
   FULLY_PAID: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -49,7 +51,9 @@ function ReconBadge({ status }) {
   );
 }
 
-export default function PaymentSummaryTable({ rows = [], loading = false }) {
+export default function PaymentSummaryTable({ rows = [], loading = false, period = null }) {
+  const [statementDealer, setStatementDealer] = useState(null);
+
   if (loading) {
     return (
       <div className="p-4 text-sm text-gray-500 italic">
@@ -105,6 +109,7 @@ export default function PaymentSummaryTable({ rows = [], loading = false }) {
                 <th className="border-b border-gray-200 px-2 py-1.5 text-left font-semibold">Pay date</th>
               </>
             )}
+            <th className="border-b border-gray-200 px-2 py-1.5 text-right font-semibold w-[80px]"></th>
           </tr>
         </thead>
         <tbody>
@@ -123,9 +128,9 @@ export default function PaymentSummaryTable({ rows = [], loading = false }) {
               >
                 <td
                   className="px-2 py-1.5 text-gray-800 truncate max-w-[200px]"
-                  title={r.distributor_name}
+                  title={r.dealer_name}
                 >
-                  {r.distributor_name}
+                  {r.dealer_name}
                 </td>
                 {!isApdp && (
                   <td className="px-2 py-1.5 text-gray-500 truncate max-w-[130px]">
@@ -169,11 +174,28 @@ export default function PaymentSummaryTable({ rows = [], loading = false }) {
                     </td>
                   </>
                 )}
+                <td className="px-2 py-1.5 text-right">
+                  <button
+                    onClick={() => setStatementDealer({ id: r.dealer_id, name: r.dealer_name })}
+                    className="text-[10px] text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded px-1.5 py-0.5 hover:bg-yellow-50 hover:border-mtn-yellow transition"
+                    title="Open the per-period dealer statement (Finance/RA internal view)"
+                  >
+                    Statement
+                  </button>
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+
+      <DealerStatementModal
+        open={!!statementDealer}
+        onClose={() => setStatementDealer(null)}
+        dealerId={statementDealer?.id}
+        dealerName={statementDealer?.name}
+        period={period}
+      />
     </div>
   );
 }

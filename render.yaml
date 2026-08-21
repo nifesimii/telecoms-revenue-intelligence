@@ -26,11 +26,15 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     envVars:
-      # ── Sample-data mode (no live Presto, no APDP) ────────────────────
+      # ── Sample-data mode (no live Presto) ────────────────────────────
       - key: USE_SAMPLE_DATA
         value: "true"
+      # PAYMENT_SOURCE=apdp reads normalized.partner_settlements. The
+      # APDP schema + fixture data is packaged in infra/postgres/apdp_seed.sql
+      # and loaded once on backend startup if the target DB is empty.
+      # Flip back to "simulated" if you want to demo the CSV path instead.
       - key: PAYMENT_SOURCE
-        value: simulated
+        value: apdp
 
       # ── Same-origin deploy: SPA and API share the host, so CORS is a
       # no-op. Kept explicit so a future split-origin change is a one-line
@@ -66,6 +70,32 @@ services:
           name: fbb-audit-pg
           property: user
       - key: FBB_AUDIT_PG_PASSWORD
+        fromDatabase:
+          name: fbb-audit-pg
+          property: password
+
+      # ── APDP Postgres — reuses the same managed DB. The audit and
+      # normalized (APDP) schemas live in the same Postgres for the demo;
+      # in production these would be separate DBs behind different
+      # network boundaries. See infra/postgres/apdp_seed.sql for the
+      # one-shot schema+fixture bootstrap the backend applies at startup.
+      - key: APDP_PG_HOST
+        fromDatabase:
+          name: fbb-audit-pg
+          property: host
+      - key: APDP_PG_PORT
+        fromDatabase:
+          name: fbb-audit-pg
+          property: port
+      - key: APDP_PG_DB
+        fromDatabase:
+          name: fbb-audit-pg
+          property: database
+      - key: APDP_PG_USER
+        fromDatabase:
+          name: fbb-audit-pg
+          property: user
+      - key: APDP_PG_PASSWORD
         fromDatabase:
           name: fbb-audit-pg
           property: password

@@ -18,6 +18,7 @@ import {
   getAssuranceStatus,
   getAuditBreakdown,
   getAuditModules,
+  getPaymentSummary,
 } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
@@ -252,6 +253,120 @@ function CrossModuleRollup({ rows, periodLabel, onAsk }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Current Position — platform-wide payment reconciliation summary
+// ---------------------------------------------------------------------------
+
+function CurrentPositionBand({ period, onNavigate }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!period) return;
+    let cancelled = false;
+    setLoading(true);
+    getPaymentSummary(period)
+      .then((d) => !cancelled && setData(d))
+      .catch(() => !cancelled && setData(null))
+      .finally(() => !cancelled && setLoading(false));
+    return () => { cancelled = true; };
+  }, [period]);
+
+  if (!data) {
+    return loading ? (
+      <div className="bg-white border border-gray-200 rounded-lg shadow-sm px-4 py-3 text-xs text-gray-500 italic">
+        Loading current position…
+      </div>
+    ) : null;
+  }
+
+  const owed     = Number(data.total_commission_owed || 0);
+  const paid     = Number(data.total_amount_paid || 0);
+  const unpaid   = Number(data.total_amount_unpaid || 0);
+  const coverage = Number(data.payment_coverage_pct || 0);
+  const isApdp   = data.data_source === 'APDP';
+
+  const disputed  = Number(data.disputed_count || 0);
+  const partial   = Number(data.partially_paid_count || 0);
+  const pending   = Number(data.pending_count || 0);
+  const exceptions = disputed + partial + pending;
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
+      <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-700">
+            Current Position · {formatPeriod(period) || '—'}
+          </h3>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            Platform-wide reconciliation — what we owe partners, what we've settled, what's outstanding.
+          </p>
+        </div>
+        <span
+          className={`inline-block px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wide border rounded-full ${
+            isApdp
+              ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+              : 'bg-amber-100 text-amber-800 border-amber-200'
+          }`}
+          title={isApdp
+            ? 'Reading normalized.partner_settlements from APDP'
+            : 'Simulated payment data — flip PAYMENT_SOURCE=apdp to use live data'}
+        >
+          {isApdp ? 'Live · APDP' : 'Simulated'}
+        </span>
+      </div>
+
+      <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+        <PositionTile
+          label="Total commission owed"
+          value={formatNGN(owed)}
+          tone="text-gray-900"
+        />
+        <PositionTile
+          label="Amount settled"
+          value={formatNGN(paid)}
+          tone="text-emerald-700"
+          sub={`${coverage.toFixed(1)}% coverage`}
+        />
+        <PositionTile
+          label="Outstanding"
+          value={formatNGN(unpaid)}
+          tone={unpaid > 0 ? 'text-red-700' : 'text-gray-900'}
+        />
+        <PositionTile
+          label="Exceptions"
+          value={exceptions.toLocaleString()}
+          tone={exceptions > 0 ? 'text-amber-700' : 'text-gray-900'}
+          sub={`${disputed} disputed · ${partial} partial · ${pending} pending`}
+          onClick={onNavigate ? () => onNavigate('payment') : undefined}
+        />
+      </div>
+    </div>
+  );
+}
+
+function PositionTile({ label, value, tone = 'text-gray-900', sub, onClick }) {
+  const Wrapper = onClick ? 'button' : 'div';
+  return (
+    <Wrapper
+      onClick={onClick}
+      className={`text-left px-3 py-2 rounded-md ${
+        onClick ? 'hover:bg-yellow-50 transition cursor-pointer' : ''
+      }`}
+    >
+      <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
+        {label}
+      </div>
+      <div className={`text-lg font-bold tabular-nums ${tone} mt-0.5`}>
+        {value}
+      </div>
+      {sub && (
+        <div className="text-[10px] text-gray-500 mt-0.5">{sub}</div>
+      )}
+    </Wrapper>
   );
 }
 
@@ -891,6 +1006,8 @@ export default function AssuranceStatusPanel({ onNavigate, onAsk }) {
                 priorPeriod={priorPayload ? priorPeriod : null}
               />
             )}
+
+            <CurrentPositionBand period={period} onNavigate={onNavigate} />
 
             <AuditCoverageBand period={period} onNavigate={onNavigate} />
 
