@@ -37,6 +37,7 @@ from backend.api.schemas import (
     DisputeDraftRequest,
     DisputeDraftResponse,
     InventoryComparisonRecord,
+    PartnerHealthRecord,
     PaymentCoverageResponse,
     PaymentSummaryRecord,
     PaymentVarianceRecord,
@@ -692,6 +693,64 @@ def list_payment_variance(
         {"period_a": period_a, "period_b": period_b},
     )
     return [PaymentVarianceRecord(**row) for row in df.to_dict(orient="records")]
+
+
+# ---------------------------------------------------------------------------
+# Partner Health Scorecard
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/partner/health",
+    response_model=list[PartnerHealthRecord],
+)
+def get_partner_health(
+    period: str = Query(
+        default="202603",
+        pattern=r"^\d{6}$",
+        description="Current reporting month (YYYYMM).",
+    ),
+    prior_period: str = Query(
+        default="202602",
+        pattern=r"^\d{6}$",
+        description="Prior month for MoM delta (YYYYMM).",
+    ),
+) -> list[PartnerHealthRecord]:
+    """Composite financial health scorecard per dealer.
+
+    Returns all dealers sorted worst-first (lowest health_score first) so the
+    most at-risk partners surface immediately. Each row carries four ratios:
+    settlement_rate, commission_yield, zero_commission_rate, outstanding_ngn;
+    plus a weighted health_score (0–100) and health_band (HEALTHY/WATCH/AT RISK).
+    """
+    df = execute_query(
+        "get_health_scorecard",
+        {"current_period": period, "prior_period": prior_period},
+    )
+    records = []
+    for row in df.to_dict(orient="records"):
+        records.append(
+            PartnerHealthRecord(
+                dealer_id=str(row["dealer_id"]),
+                dealer_name=str(row["dealer_name"]),
+                account_profile_class=str(row.get("account_profile_class", "")),
+                health_score=float(row["health_score"]),
+                health_band=str(row["health_band"]),
+                settlement_rate_pct=float(row["settlement_rate_pct"]),
+                settlement_rate_delta=(
+                    float(row["settlement_rate_delta"])
+                    if row.get("settlement_rate_delta") is not None
+                    and row["settlement_rate_delta"] == row["settlement_rate_delta"]
+                    else None
+                ),
+                commission_yield_pct=float(row["commission_yield_pct"]),
+                zero_commission_rate_pct=float(row["zero_commission_rate_pct"]),
+                outstanding_ngn=float(row["outstanding_ngn"]),
+                dispute_flag=bool(row["dispute_flag"]),
+                data_source=str(row["data_source"]),
+            )
+        )
+    return records
 
 
 # ---------------------------------------------------------------------------

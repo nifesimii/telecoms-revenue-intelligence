@@ -370,10 +370,9 @@ GET_PAYMENT_SUMMARY: dict[str, Any] = {
         "amount_paid, amount_unpaid, payment_status (FULLY_PAID / "
         "PARTIALLY_PAID / DISPUTED / PENDING), payment_channel, "
         "payment_date, exception_flag, data_source.\n\n"
-        "IMPORTANT: Payment data is simulated. Derived from real "
-        "commission and exception records — live Oracle AP integration "
-        "will replace this in production. Always disclose this when "
-        "presenting payment findings."
+        "IMPORTANT: Payment data is synthetically generated for demo "
+        "purposes. No real MTN data was used. Always disclose this "
+        "when presenting payment findings."
     ),
     "input_schema": {
         "type": "object",

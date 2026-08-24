@@ -12,6 +12,7 @@
 // finance ticket or emailing to Revenue Assurance.
 
 import { useEffect, useMemo, useState } from 'react';
+import * as XLSX from 'xlsx';
 import { getDealerStatement } from '../api/client.js';
 import { formatNGN, formatPeriod } from '../lib/format.js';
 
@@ -63,8 +64,8 @@ function DataSourceBadge({ source }) {
     );
   }
   return (
-    <span className="inline-block px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide border rounded bg-amber-100 text-amber-800 border-amber-200">
-      Simulated
+    <span className="inline-block px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide border rounded bg-orange-100 text-orange-800 border-orange-200">
+      Demo · Synthetic
     </span>
   );
 }
@@ -75,7 +76,7 @@ function composeMarkdown(s) {
   lines.push(`# Dealer Statement — ${s.dealer_name} (${s.dealer_id})`);
   lines.push('');
   lines.push(`**Period:** ${formatPeriod(s.mon_period)}   **Profile class:** ${s.account_profile_class}`);
-  lines.push(`**Payment data source:** ${s.payment.data_source === 'apdp' ? 'Live · APDP' : 'Simulated'}`);
+  lines.push(`**Payment data source:** ${s.payment.data_source === 'apdp' ? 'Live · APDP' : 'Demo · Synthetic — no real MTN data used'}`);
   lines.push('');
   lines.push('## Position');
   lines.push(`- Expected commission: **${formatNGN(s.position.expected_ngn)}**`);
@@ -164,6 +165,79 @@ export default function DealerStatementModal({ open, onClose, dealerId, dealerNa
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  function buildWorkbook() {
+    if (!data) return null;
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Summary
+    const summary = [
+      ['Field', 'Value'],
+      ['Dealer ID', data.dealer_id],
+      ['Dealer Name', data.dealer_name],
+      ['Period', formatPeriod(data.mon_period)],
+      ['Profile Class', data.account_profile_class],
+      ['Payment Source', data.payment.data_source],
+      [],
+      ['POSITION', ''],
+      ['Expected Commission (NGN)', data.position.expected_ngn],
+      ['Amount Settled (NGN)', data.position.paid_ngn],
+      ['Outstanding (NGN)', data.position.outstanding_ngn],
+      ['Variance %', data.position.variance_pct ?? ''],
+      ['Verdict', data.position.headline],
+      [],
+      ['COMMISSION SIDE', ''],
+      ['Total Activations', data.commission.total_activations],
+      ['Qualified', data.commission.qualified_activation_count],
+      ['Zero-Commission Records', data.commission.zero_commission_count],
+      [],
+      ['PAYMENT SIDE', ''],
+      ['Amount Paid (NGN)', data.payment.amount_paid_ngn],
+      ['Payment Found', data.payment.payment_found ? 'Yes' : 'No'],
+      ['Status', data.payment.payment_status ?? ''],
+    ];
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), 'Summary');
+
+    // Sheet 2: Denomination breakdown
+    const denomRows = [['Denomination', 'Commission (NGN)']];
+    for (const [k, v] of Object.entries(data.commission.by_denomination || {})) {
+      denomRows.push([k, v]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(denomRows), 'By Denomination');
+
+    // Sheet 3: Audit trails (if any)
+    if (data.audit_trails && data.audit_trails.length > 0) {
+      const trailRows = [['Module', 'Label', 'Trail ID', 'Conclusion', 'Confidence', 'Generated At']];
+      for (const t of data.audit_trails) {
+        trailRows.push([t.module, t.label, t.trail_id ?? '', t.conclusion, t.confidence, t.generated_at ?? '']);
+      }
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(trailRows), 'Audit Trails');
+    }
+
+    return wb;
+  }
+
+  function downloadSpreadsheet(fmt) {
+    const wb = buildWorkbook();
+    if (!wb) return;
+    const ext = fmt === 'xlsb' ? 'xlsb' : fmt === 'csv' ? 'csv' : 'xlsx';
+    const fileName = `statement_${data.dealer_id}_${data.mon_period}.${ext}`;
+    if (fmt === 'csv') {
+      // CSV: export first sheet only
+      const csv = XLSX.utils.sheet_to_csv(wb.Sheets[wb.SheetNames[0]]);
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } else {
+      XLSX.writeFile(wb, fileName, { bookType: fmt });
+    }
   }
 
   if (!open) return null;
@@ -300,27 +374,53 @@ export default function DealerStatementModal({ open, onClose, dealerId, dealerNa
         </div>
 
         {/* Footer actions */}
-        <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-end gap-2 shrink-0">
-          <button
-            onClick={copyMarkdown}
-            disabled={!data}
-            className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-3 py-1.5 hover:bg-yellow-50 hover:border-mtn-yellow transition disabled:opacity-40"
-          >
-            {copyOk ? '✓ Copied' : 'Copy as markdown'}
-          </button>
-          <button
-            onClick={downloadMarkdown}
-            disabled={!data}
-            className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-3 py-1.5 hover:bg-yellow-50 hover:border-mtn-yellow transition disabled:opacity-40"
-          >
-            ⬇ Download .md
-          </button>
-          <button
-            onClick={onClose}
-            className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-3 py-1.5 hover:bg-gray-50 transition"
-          >
-            Close
-          </button>
+        <div className="px-5 py-3 border-t border-gray-200 flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={copyMarkdown}
+              disabled={!data}
+              className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-3 py-1.5 hover:bg-yellow-50 hover:border-mtn-yellow transition disabled:opacity-40"
+            >
+              {copyOk ? '✓ Copied' : 'Copy as markdown'}
+            </button>
+            <button
+              onClick={downloadMarkdown}
+              disabled={!data}
+              className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-3 py-1.5 hover:bg-yellow-50 hover:border-mtn-yellow transition disabled:opacity-40"
+            >
+              ⬇ .md
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-gray-400 font-medium">Export:</span>
+            <button
+              onClick={() => downloadSpreadsheet('csv')}
+              disabled={!data}
+              className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-3 py-1.5 hover:bg-emerald-50 hover:border-emerald-400 transition disabled:opacity-40"
+            >
+              ⬇ CSV
+            </button>
+            <button
+              onClick={() => downloadSpreadsheet('xlsx')}
+              disabled={!data}
+              className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-3 py-1.5 hover:bg-emerald-50 hover:border-emerald-400 transition disabled:opacity-40"
+            >
+              ⬇ Excel (.xlsx)
+            </button>
+            <button
+              onClick={() => downloadSpreadsheet('xlsb')}
+              disabled={!data}
+              className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-3 py-1.5 hover:bg-emerald-50 hover:border-emerald-400 transition disabled:opacity-40"
+            >
+              ⬇ XLSB
+            </button>
+            <button
+              onClick={onClose}
+              className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-3 py-1.5 hover:bg-gray-50 transition"
+            >
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>

@@ -34,7 +34,7 @@ from typing import Any
 import psycopg2
 import psycopg2.extras
 import structlog
-from confluent_kafka import Consumer, KafkaError, KafkaException
+from confluent_kafka import Consumer, KafkaError, KafkaException, Producer
 from prometheus_client import Counter, start_http_server
 
 log = structlog.get_logger("postgres_sink")
@@ -50,6 +50,8 @@ events_failed = Counter(
     "Events skipped due to parse/validation/DB error",
     ["reason"],
 )
+
+DLQ_TOPIC = "dead.letter.queue"
 
 
 # ── Field mapping: normalized JSON → Postgres columns ────────────────────────
@@ -171,6 +173,54 @@ def _build_consumer() -> Consumer:
     )
 
 
+def _build_dlq_producer() -> Producer:
+    """Build the producer used to preserve unrecoverable source messages."""
+    return Producer(
+        {
+            "bootstrap.servers": os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092"),
+            "client.id": "postgres-sink-dlq",
+            "acks": "all",
+            "retries": 3,
+        }
+    )
+
+
+def _publish_to_dlq(msg: Any, raw_value: Any, reason: str) -> bool:
+    """Persist an invalid source message before its input offset is committed."""
+    delivered = [False]
+
+    def on_delivery(err, _message) -> None:
+        if err is None:
+            delivered[0] = True
+        else:
+            log.error("DLQ delivery failed", error=str(err), reason=reason)
+
+    payload = {
+        "reason": reason,
+        "source_topic": msg.topic(),
+        "source_partition": msg.partition(),
+        "source_offset": msg.offset(),
+        "raw_value": (
+            raw_value.decode("utf-8", errors="replace")
+            if isinstance(raw_value, bytes)
+            else str(raw_value)
+        ),
+    }
+    producer = _build_dlq_producer()
+    try:
+        producer.produce(
+            DLQ_TOPIC,
+            key=f"{payload['source_topic']}:{payload['source_partition']}:{payload['source_offset']}",
+            value=json.dumps(payload).encode("utf-8"),
+            callback=on_delivery,
+        )
+        remaining = producer.flush(30.0)
+        return remaining == 0 and delivered[0]
+    except (BufferError, KafkaException) as exc:
+        log.error("Failed to enqueue DLQ record", error=str(exc), reason=reason)
+        return False
+
+
 def _build_db_conn():
     conn = psycopg2.connect(
         host     = os.getenv("POSTGRES_HOST", "postgres"),
@@ -228,14 +278,16 @@ def main() -> int:
                 log.error("Bad JSON, skipping", error=str(e),
                           offset=msg.offset(), partition=msg.partition())
                 events_failed.labels(reason="bad_json").inc()
-                consumer.commit(message=msg, asynchronous=False)
+                if _publish_to_dlq(msg, raw_value, "bad_json"):
+                    consumer.commit(message=msg, asynchronous=False)
                 continue
 
             if not evt.get("transaction_id"):
                 log.error("Missing transaction_id, skipping",
                           offset=msg.offset(), partition=msg.partition())
                 events_failed.labels(reason="missing_id").inc()
-                consumer.commit(message=msg, asynchronous=False)
+                if _publish_to_dlq(msg, raw_value, "missing_transaction_id"):
+                    consumer.commit(message=msg, asynchronous=False)
                 continue
 
             row = _row_from_event(evt)

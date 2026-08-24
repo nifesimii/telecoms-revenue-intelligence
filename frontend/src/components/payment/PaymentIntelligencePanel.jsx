@@ -1,5 +1,5 @@
 // Phase 4 panel — Payment Intelligence.
-// PaymentCoverageCard at top + tabbed table (Exceptions | All | Variance).
+// PaymentCoverageCard at top + tabbed table (Exceptions | All | Variance | Health).
 // Period comes from the global PeriodProvider.
 
 import { useEffect, useMemo, useState } from 'react';
@@ -7,17 +7,20 @@ import {
   getPaymentSummary,
   getPaymentExceptions,
   getPaymentVariance,
+  getPartnerHealth,
 } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 import PaymentCoverageCard from './PaymentCoverageCard.jsx';
 import PaymentSummaryTable from './PaymentSummaryTable.jsx';
 import PaymentExceptionsTable from './PaymentExceptionsTable.jsx';
+import PartnerHealthScorecard from './PartnerHealthScorecard.jsx';
 
 const TABS = [
   { id: 'exceptions', label: 'Exceptions' },
   { id: 'all', label: 'All Payments' },
   { id: 'variance', label: 'Variance' },
+  { id: 'health', label: 'Health' },
 ];
 
 function VarianceTable({ rows = [], loading }) {
@@ -104,6 +107,8 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
   const [allRows, setAllRows] = useState([]);
   const [exceptions, setExceptions] = useState([]);
   const [variance, setVariance] = useState([]);
+  const [healthRows, setHealthRows] = useState([]);
+  const [healthLoading, setHealthLoading] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -156,6 +161,20 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
       cancelled = true;
     };
   }, [activeTab, period, priorPeriod, periods]);
+
+  useEffect(() => {
+    if (activeTab !== 'health') return;
+    if (!period) return;
+    let cancelled = false;
+    setHealthLoading(true);
+    getPartnerHealth(period, priorPeriod)
+      .then((rows) => !cancelled && setHealthRows(Array.isArray(rows) ? rows : []))
+      .catch(() => !cancelled && setHealthRows([]))
+      .finally(() => !cancelled && setHealthLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, period, priorPeriod]);
 
   return (
     <div className="h-full flex flex-col bg-gray-50 text-gray-800">
@@ -213,9 +232,8 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
             Simulated
           </span>
           <span>
-            Payment data is simulated from real commission and exception records.
-            Live Oracle AP / APDP integration pending — set{' '}
-            <code>PAYMENT_SOURCE=apdp</code> when ready.
+            Payment figures are synthetically generated for this demo.
+            No real MTN commission or settlement data was used.
           </span>
         </div>
       )}
@@ -252,8 +270,15 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
                   {dealerQuery && filteredVariance.length !== variance.length && ` (of ${variance.length.toLocaleString()})`}
                 </>
               )}
+              {activeTab === 'health' && (
+                <>
+                  {healthRows.length.toLocaleString()} dealer{healthRows.length === 1 ? '' : 's'} · sorted at-risk first
+                </>
+              )}
             </span>
-            {coverage?.data_source === 'APDP' ? (
+            {(activeTab === 'health'
+              ? healthRows[0]?.data_source
+              : coverage?.data_source) === 'APDP' ? (
               <span className="text-emerald-700 font-semibold">[APDP]</span>
             ) : (
               <span className="text-amber-700 font-semibold">[SIMULATED]</span>
@@ -273,6 +298,9 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
             )}
             {activeTab === 'variance' && (
               <VarianceTable rows={filteredVariance} loading={false} />
+            )}
+            {activeTab === 'health' && (
+              <PartnerHealthScorecard rows={healthRows} loading={healthLoading} period={period} />
             )}
           </div>
         </div>

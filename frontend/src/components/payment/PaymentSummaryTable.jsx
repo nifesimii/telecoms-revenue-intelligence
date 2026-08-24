@@ -81,7 +81,7 @@ export default function PaymentSummaryTable({ rows = [], loading = false, period
         </div>
       ) : (
         <div className="px-3 py-2 text-[10px] uppercase tracking-wide text-amber-700 bg-amber-50 border-b border-amber-200 font-semibold sticky top-0 z-20">
-          SIMULATED data — generated from real commission and exception records
+          DEMO data — synthetically generated. No real MTN data used.
         </div>
       )}
       <table className="w-full text-xs border-collapse">

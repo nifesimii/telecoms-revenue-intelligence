@@ -209,14 +209,17 @@ def _load_audit_trails_for(dealer_id: str, mon_period: str) -> list[dict[str, An
                 continue
             if not trail:
                 continue
+            generated_at = trail.get("generated_at")
+            if hasattr(generated_at, "isoformat"):
+                generated_at = generated_at.isoformat()
             trails.append({
-                "module":     module.name,
-                "label":      module.label,
-                "trail_id":   trail.get("trail_id"),
-                "conclusion": trail.get("conclusion"),
-                "confidence": trail.get("confidence"),
+                "module":       module.name,
+                "label":        module.label,
+                "trail_id":     trail.get("trail_id"),
+                "conclusion":   trail.get("conclusion"),
+                "confidence":   trail.get("confidence"),
                 "caveat_count": trail.get("caveat_count"),
-                "generated_at": trail.get("generated_at"),
+                "generated_at": generated_at,
             })
     except Exception:
         return trails

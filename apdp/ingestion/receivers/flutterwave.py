@@ -24,9 +24,10 @@ def verify_signature(verif_hash: str | None) -> bool:
     The hash you set in your FLW dashboard must match the header.
     """
     if not settings.FLUTTERWAVE_WEBHOOK_HASH:
-        # In development without a hash configured, allow through but warn
-        log.warning("FLUTTERWAVE_WEBHOOK_HASH not set — skipping signature check")
-        return True
+        # Never accept an unauthenticated payment event. Local testing uses
+        # the explicit /test route instead of weakening the real receiver.
+        log.error("FLUTTERWAVE_WEBHOOK_HASH not set — rejecting webhook")
+        return False
     return verif_hash == settings.FLUTTERWAVE_WEBHOOK_HASH
 
 

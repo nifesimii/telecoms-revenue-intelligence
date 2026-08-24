@@ -7,8 +7,8 @@ services:
     image: confluentinc/cp-kafka:7.5.0
     container_name: app_kafka
     ports:
-      - "9092:9092"   # External client access
-      - "9101:9101"   # JMX metrics
+      - "127.0.0.1:9092:9092"   # Local development client access
+      - "127.0.0.1:9101:9101"   # Local JMX metrics
     environment:
       # ── KRaft identity ────────────────────────────────────
       KAFKA_NODE_ID: 1
@@ -48,7 +48,7 @@ services:
       kafka:
         condition: service_healthy
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     environment:
       SCHEMA_REGISTRY_HOST_NAME: schema-registry
       SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: kafka:29092
@@ -73,7 +73,7 @@ services:
       - kafka
       - schema-registry
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: african-payment-platform
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
@@ -84,7 +84,7 @@ services:
     image: redis:7.2-alpine
     container_name: app_redis
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
@@ -99,11 +99,11 @@ services:
     image: postgres:15-alpine
     container_name: app_postgres
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       POSTGRES_DB: payment_platform
       POSTGRES_USER: platform_user
-      POSTGRES_PASSWORD: platform_pass
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -125,7 +125,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     environment:
@@ -154,7 +154,7 @@ services:
       - .env
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
-      DATABASE_URL: postgresql://platform_user:platform_pass@postgres:5432/payment_platform
+      DATABASE_URL: "postgresql://platform_user:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/payment_platform"
     volumes:
       - ./ingestion:/app/ingestion
     # Uses a dedicated entrypoint script to avoid shell quoting issues with
@@ -190,7 +190,7 @@ services:
     image: prom/prometheus:v2.47.0
     container_name: app_prometheus
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     volumes:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
@@ -205,10 +205,10 @@ services:
     depends_on:
       - prometheus
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}"
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana_data:/var/lib/grafana
@@ -263,7 +263,7 @@ services:
       TELECOM_POLL_INTERVAL_SECONDS: "30"
       METRICS_PORT: "9102"
     ports:
-      - "9102:9102"   # Prometheus metrics (9101 is Kafka JMX)
+      - "127.0.0.1:9102:9102"   # Local Prometheus metrics (9101 is Kafka JMX)
     volumes:
       - ./ingestion:/app/ingestion
       - ./telecom_data:/data/telecom
@@ -294,10 +294,10 @@ services:
       POSTGRES_PORT: "5432"
       POSTGRES_DB: payment_platform
       POSTGRES_USER: platform_user
-      POSTGRES_PASSWORD: platform_pass
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}"
       METRICS_PORT: "9100"
     ports:
-      - "9100:9100"   # Prometheus metrics
+      - "127.0.0.1:9100:9100"   # Local Prometheus metrics
     volumes:
       - ./services:/app/services
     command: python /app/services/postgres_sink/main.py

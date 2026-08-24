@@ -313,9 +313,9 @@ function CurrentPositionBand({ period, onNavigate }) {
           }`}
           title={isApdp
             ? 'Reading normalized.partner_settlements from APDP'
-            : 'Simulated payment data — flip PAYMENT_SOURCE=apdp to use live data'}
+            : 'Demo — synthetically generated data. No real MTN data used.'}
         >
-          {isApdp ? 'Live · APDP' : 'Simulated'}
+          {isApdp ? 'Live · APDP' : 'Demo · Synthetic'}
         </span>
       </div>
 

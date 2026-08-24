@@ -1292,6 +1292,175 @@ def _sample_get_payment_variance(params: dict) -> pd.DataFrame:
     return result.reset_index(drop=True)
 
 
+def _sample_get_health_scorecard(params: dict) -> pd.DataFrame:
+    """Partner Financial Health Scorecard — composite ratios per dealer.
+
+    Joins payment_simulation (settlement data) with fbb_comm_dev_act (activation
+    data) for current_period and prior_period. Computes four ratios and a
+    weighted health score (0-100). Sorted worst-first so the most at-risk
+    partners surface immediately.
+
+    Health score:
+        settlement_rate (50 pts) + commission_consistency (30 pts) + clean_record (20 pts)
+    Bands: HEALTHY ≥80 · WATCH ≥60 · AT RISK <60
+    """
+    current = _norm_str(params.get("current_period", ""))
+    prior = _norm_str(params.get("prior_period", ""))
+
+    # --- payment data for both periods ---
+    # PAYMENT_SOURCE is independent from USE_SAMPLE_DATA: Render deliberately
+    # combines sample activation data with live APDP settlement data. Keep the
+    # scorecard aligned with the other payment endpoints in that deployment.
+    from backend import config
+    from backend.audit.payment_data import payment_lookup
+
+    payment_source = config.PAYMENT_SOURCE
+    pay_cur = payment_lookup(current, payment_source)
+    pay_pri = payment_lookup(prior, payment_source) if prior else pd.DataFrame()
+
+    if payment_source == "apdp":
+        payment_renames = {
+            "expected_commission_ngn": "commission_owed",
+            "total_settled_ngn": "amount_paid",
+            "reconciliation_status": "payment_status",
+        }
+        pay_cur = pay_cur.rename(columns=payment_renames)
+        pay_pri = pay_pri.rename(columns=payment_renames)
+    else:
+        pay_cur = pay_cur.rename(columns={"distributor_code": "dealer_id"})
+        pay_pri = pay_pri.rename(columns={"distributor_code": "dealer_id"})
+
+    required_payment_columns = ("dealer_id", "commission_owed", "amount_paid", "payment_status")
+    for df in (pay_cur, pay_pri):
+        for col in required_payment_columns:
+            if col not in df.columns:
+                df[col] = pd.Series(dtype="object")
+
+    # --- activation data for both periods ---
+    act_cur = _load_csv("fbb_comm_dev_act", period=current).copy()
+    act_pri = _load_csv("fbb_comm_dev_act", period=prior).copy() if prior else pd.DataFrame()
+
+    # Cast numeric columns in activation frames; normalise distributor_code to str.
+    for df in (act_cur, act_pri):
+        if df.empty:
+            continue
+        for col in ("unit_selling_price", "commission_rate"):
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        df["distributor_code"] = df["distributor_code"].astype(str)
+
+    # Normalise payment dealer IDs to strings for consistent merging.
+    for df in (pay_cur, pay_pri):
+        if df.empty:
+            continue
+        df["dealer_id"] = df["dealer_id"].astype(str)
+
+    def _act_metrics(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return pd.DataFrame(columns=[
+                "distributor_code", "dealer_name", "account_profile_class",
+                "gross_revenue", "commission_earned", "zero_count", "total_count",
+            ])
+        grp = df.groupby("distributor_code").agg(
+            dealer_name=("distributor_name", "first"),
+            account_profile_class=("account_profile_class", "first"),
+            gross_revenue=("unit_selling_price", "sum"),
+            commission_earned=("commission_rate", "sum"),
+            zero_count=("commission_rate", lambda x: (x == 0).sum()),
+            total_count=("commission_rate", "count"),
+        ).reset_index()
+        return grp
+
+    act_cur_m = _act_metrics(act_cur)
+    act_pri_m = _act_metrics(act_pri)
+
+    # --- merge current payment + activation ---
+    cur = pay_cur.copy()
+    cur = cur.merge(
+        act_cur_m.rename(columns={"distributor_code": "dealer_id"}),
+        on="dealer_id", how="left",
+    )
+    for col in ("gross_revenue", "commission_earned", "zero_count", "total_count"):
+        cur[col] = cur[col].fillna(0.0)
+
+    # --- prior period settlement rate per dealer for MoM delta ---
+    if not pay_pri.empty:
+        pri = pay_pri[["dealer_id", "commission_owed", "amount_paid"]].copy()
+        pri["settlement_rate_prior"] = pri.apply(
+            lambda r: (r["amount_paid"] / r["commission_owed"] * 100) if r["commission_owed"] > 0 else 0.0,
+            axis=1,
+        )
+        pri = pri[["dealer_id", "settlement_rate_prior"]]
+    else:
+        pri = pd.DataFrame(columns=["dealer_id", "settlement_rate_prior"])
+
+    cur = cur.merge(pri, on="dealer_id", how="left")
+    cur["settlement_rate_prior"] = cur["settlement_rate_prior"].fillna(float("nan"))
+
+    # --- compute ratios ---
+    rows: list[dict] = []
+    for _, r in cur.iterrows():
+        owed = float(r["commission_owed"])
+        paid = float(r["amount_paid"])
+        gross = float(r["gross_revenue"])
+        earned = float(r["commission_earned"])
+        zero_count = int(r["zero_count"])
+        total_count = int(r["total_count"])
+
+        settlement_rate = (paid / owed * 100) if owed > 0 else 0.0
+        commission_yield = (earned / gross * 100) if gross > 0 else 0.0
+        zero_rate = (zero_count / total_count * 100) if total_count > 0 else 0.0
+        outstanding = max(owed - paid, 0.0)
+        dispute_flag = str(r["payment_status"]) in ("DISPUTED", "PARTIALLY_PAID")
+
+        # MoM settlement rate delta
+        prior_rate = r["settlement_rate_prior"]
+        settlement_rate_delta = (
+            round(settlement_rate - float(prior_rate), 1)
+            if not (prior_rate != prior_rate)  # NaN check
+            else None
+        )
+
+        # Weighted health score
+        consistency_pts = (1 - zero_rate / 100) * 30
+        clean_pts = 0.0 if dispute_flag else 20.0
+        score = round((settlement_rate / 100 * 50) + consistency_pts + clean_pts, 1)
+        band = "HEALTHY" if score >= 80 else "WATCH" if score >= 60 else "AT RISK"
+
+        dealer_name = r.get("dealer_name")
+        profile_class = r.get("account_profile_class")
+        rows.append({
+            "dealer_id": str(r["dealer_id"]),
+            "dealer_name": (
+                str(dealer_name)
+                if dealer_name is not None and not pd.isna(dealer_name)
+                else str(r["dealer_id"])
+            ),
+            "account_profile_class": (
+                str(profile_class)
+                if profile_class is not None and not pd.isna(profile_class)
+                else ""
+            ),
+            "health_score": score,
+            "health_band": band,
+            "settlement_rate_pct": round(settlement_rate, 1),
+            "settlement_rate_delta": settlement_rate_delta,
+            "commission_yield_pct": round(commission_yield, 1),
+            "zero_commission_rate_pct": round(zero_rate, 1),
+            "outstanding_ngn": round(outstanding, 2),
+            "dispute_flag": dispute_flag,
+            "data_source": "APDP" if payment_source == "apdp" else "SIMULATED",
+        })
+
+    result = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
+        "dealer_id", "dealer_name", "account_profile_class",
+        "health_score", "health_band", "settlement_rate_pct",
+        "settlement_rate_delta", "commission_yield_pct",
+        "zero_commission_rate_pct", "outstanding_ngn", "dispute_flag",
+        "data_source",
+    ])
+    return result.sort_values("health_score", ascending=True).reset_index(drop=True)
+
+
 SAMPLE_HANDLERS: dict[str, Callable[[dict], pd.DataFrame]] = {
     "get_dealer_summary": _sample_get_dealer_summary,
     "get_zero_commission_records": _sample_get_zero_commission_records,
@@ -1307,6 +1476,8 @@ SAMPLE_HANDLERS: dict[str, Callable[[dict], pd.DataFrame]] = {
     "get_payment_summary": _sample_get_payment_summary,
     "get_payment_exceptions": _sample_get_payment_exceptions,
     "get_payment_variance": _sample_get_payment_variance,
+    # --- Partner Health Scorecard ---
+    "get_health_scorecard": _sample_get_health_scorecard,
 }
 
 

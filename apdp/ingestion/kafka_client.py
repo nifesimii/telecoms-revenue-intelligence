@@ -47,7 +47,15 @@ def delivery_callback(err, msg):
         log.debug("Message delivered", topic=msg.topic(), partition=msg.partition(), offset=msg.offset())
 
 
-def publish_event(topic: str, payload: dict, provider: str, key: str | None = None) -> bool:
+def publish_event(
+    topic: str,
+    payload: dict,
+    provider: str,
+    key: str | None = None,
+    *,
+    wait_for_delivery: bool = False,
+    delivery_timeout_seconds: float = 30.0,
+) -> bool:
     """
     Publish a payment event to a Kafka topic.
     
@@ -58,7 +66,8 @@ def publish_event(topic: str, payload: dict, provider: str, key: str | None = No
         key:      Optional message key for partition routing
     
     Returns:
-        True if enqueued successfully, False on error
+        True if enqueued successfully. When ``wait_for_delivery`` is true,
+        returns true only after Kafka has acknowledged delivery.
     """
     producer = get_producer()
     
@@ -66,17 +75,35 @@ def publish_event(topic: str, payload: dict, provider: str, key: str | None = No
     payload["_ingested_at"] = datetime.now(timezone.utc).isoformat()
     payload["_source_topic"] = topic
     
+    delivery_error: list[Exception | None] = [None]
+
+    def _delivery_callback(err, msg):
+        if err:
+            delivery_error[0] = err
+        delivery_callback(err, msg)
+
     try:
         producer.produce(
             topic=topic,
             key=key.encode("utf-8") if key else None,
             value=json.dumps(payload).encode("utf-8"),
-            callback=delivery_callback
+            callback=_delivery_callback,
         )
-        producer.poll(0)  # Trigger delivery callbacks without blocking
+        if wait_for_delivery:
+            # ``produce`` only queues locally. File ingestion must not archive
+            # its source until Kafka has actually acknowledged the event.
+            remaining = producer.flush(delivery_timeout_seconds)
+            if remaining or delivery_error[0] is not None:
+                raise KafkaException(
+                    "Kafka did not acknowledge delivery before the timeout"
+                )
+        else:
+            producer.poll(0)  # Trigger delivery callbacks without blocking
+            if delivery_error[0] is not None:
+                raise KafkaException("Kafka rejected the event")
         messages_published.labels(topic=topic, provider=provider).inc()
         return True
-    except KafkaException as e:
+    except (BufferError, KafkaException) as e:
         log.error("Failed to publish event", topic=topic, provider=provider, error=str(e))
         messages_failed.labels(topic=topic, provider=provider).inc()
         return False

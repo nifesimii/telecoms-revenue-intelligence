@@ -147,9 +147,8 @@ class PaymentAssuranceService(BaseAssuranceService):
             )
 
         simulation_note = (
-            "Payment data is synthetically generated from real commission "
-            "and exception data. Results will improve when live Oracle AP "
-            "data is integrated."
+            "Payment data is synthetically generated for demo purposes. "
+            "No real MTN commission or settlement records were used."
         )
 
         return AssuranceResult(

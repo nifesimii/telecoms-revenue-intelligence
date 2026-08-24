@@ -437,6 +437,23 @@ class AuditRunResponse(BaseModel):
     module: str = "zero_commission"
 
 
+class PartnerHealthRecord(BaseModel):
+    """One dealer's health scorecard row."""
+
+    dealer_id: str
+    dealer_name: str
+    account_profile_class: str = ""
+    health_score: float
+    health_band: str
+    settlement_rate_pct: float
+    settlement_rate_delta: float | None = None
+    commission_yield_pct: float
+    zero_commission_rate_pct: float
+    outstanding_ngn: float
+    dispute_flag: bool
+    data_source: str
+
+
 class PaymentVarianceRecord(BaseModel):
     """One dealer's payment delta between two periods, returned by
     ``GET /payments/variance``."""

@@ -262,4 +262,15 @@ export async function getPaymentVariance(period_a, period_b) {
   return data;
 }
 
+/**
+ * GET /partner/health?period=YYYYMM&prior_period=YYYYMM
+ * Returns dealer health scorecard rows sorted worst-first.
+ */
+export async function getPartnerHealth(period, prior_period) {
+  const { data } = await api.get('/partner/health', {
+    params: { period, prior_period },
+  });
+  return data;
+}
+
 export default api;
