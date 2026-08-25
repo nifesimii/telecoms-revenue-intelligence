@@ -36,6 +36,12 @@ logger = logging.getLogger(__name__)
 _APDP_SEED_PATH = (
     Path(__file__).resolve().parent.parent / "infra" / "postgres" / "apdp_seed.sql"
 )
+_APDP_REPAIR_PATH = (
+    Path(__file__).resolve().parent.parent
+    / "infra"
+    / "postgres"
+    / "apdp_schema_repair.sql"
+)
 
 
 def _seed_apdp_if_empty() -> None:
@@ -46,8 +52,10 @@ def _seed_apdp_if_empty() -> None:
     ``infra/postgres/apdp_seed.sql`` — which restores the raw + normalized
     schemas + the fixture data + the ``partner_settlements`` view.
 
-    Idempotent: on subsequent boots the table already has rows, so this
-    is a fast COUNT-and-skip. Deliberately non-fatal — if seeding fails
+    Idempotent: on subsequent boots both the table and settlement view exist,
+    so this is a fast metadata-check-and-skip. A partially initialised database
+    (transactions present, view absent) gets a non-destructive schema repair.
+    Deliberately non-fatal — if seeding fails
     the app still boots (Payment tab just returns empty results with a
     'Live · APDP' badge). Rendering an empty tab is a better demo
     posture than a 500 wall.
@@ -74,15 +82,46 @@ def _seed_apdp_if_empty() -> None:
                 "SELECT to_regclass('normalized.transactions') IS NOT NULL"
             )
             has_table = bool(cur.fetchone()[0])
+            cur.execute(
+                "SELECT to_regclass('normalized.partner_settlements') "
+                "IS NOT NULL"
+            )
+            has_view = bool(cur.fetchone()[0])
             row_count = 0
             if has_table:
                 cur.execute("SELECT COUNT(*) FROM normalized.transactions")
                 row_count = int(cur.fetchone()[0])
-            if row_count > 0:
+            if row_count > 0 and has_view:
                 logger.info(
-                    "APDP seed skipped — normalized.transactions already "
-                    "has %d rows.", row_count,
+                    "APDP bootstrap skipped — normalized.transactions has "
+                    "%d rows and partner_settlements exists.", row_count,
                 )
+                return
+            if row_count > 0 and not has_view:
+                if not _APDP_REPAIR_PATH.is_file():
+                    logger.warning(
+                        "APDP schema repair file not present at %s.",
+                        _APDP_REPAIR_PATH,
+                    )
+                    return
+                logger.warning(
+                    "APDP database is partially initialised: %d transactions "
+                    "exist but partner_settlements is missing. Repairing schema.",
+                    row_count,
+                )
+                conn.autocommit = True
+                with conn.cursor() as repair_cur:
+                    repair_cur.execute(_APDP_REPAIR_PATH.read_text())
+                    repair_cur.execute(
+                        "SELECT to_regclass('normalized.partner_settlements') "
+                        "IS NOT NULL"
+                    )
+                    if not bool(repair_cur.fetchone()[0]):
+                        raise RuntimeError(
+                            "APDP schema repair completed without creating "
+                            "normalized.partner_settlements"
+                        )
+                logger.info("APDP partner_settlements view repaired.")
                 return
         # Empty (or table missing) — apply the seed.
         logger.info("Applying APDP seed from %s …", _APDP_SEED_PATH)
