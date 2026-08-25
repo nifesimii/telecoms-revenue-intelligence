@@ -40,6 +40,13 @@ failed with Anthropic 401 responses. Live tests now carry the `live_agent`
 marker and require `RUN_LIVE_AGENT_TESTS=1`; the normal sample-data workflow
 runs without any Anthropic key. CI-equivalent result: 215 passed, 28 skipped.
 
+**Render follow-up:** the TanStack Query install regenerated
+`package-lock.json` under local npm 11, while Render's `node:22-alpine` image
+uses npm 10.9.8. npm 10 rejected the peer/dependency layout (`picomatch` and
+React types) before the Vite build. The lockfile was regenerated inside the
+exact Render image, `packageManager` now pins npm 10.9.8, and CI now runs
+`npm ci` + `npm run build` under Node 22 so lockfile drift fails before deploy.
+
 ---
 
 ## Session — 2026-08-21  (APDP live-data sprint)
