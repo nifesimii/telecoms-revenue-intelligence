@@ -21,6 +21,7 @@ class _Cursor:
         return False
 
     def execute(self, sql):
+        self.connection.statement_started = True
         self.connection.statements.append(sql)
         if "apdp_schema_repair" in sql or "ALTER TABLE normalized.transactions" in sql:
             self.connection.view_exists = True
@@ -40,8 +41,21 @@ class _Connection:
         self.row_count = row_count
         self.view_exists = view_exists
         self.statements = []
-        self.autocommit = False
+        self._autocommit = False
+        self.statement_started = False
         self.closed = False
+
+    @property
+    def autocommit(self):
+        return self._autocommit
+
+    @autocommit.setter
+    def autocommit(self, value):
+        # Mirror psycopg2: session characteristics cannot be changed once a
+        # transaction has begun. This catches the Render startup regression.
+        if value and self.statement_started:
+            raise RuntimeError("set_session cannot be used inside a transaction")
+        self._autocommit = value
 
     def cursor(self):
         return _Cursor(self)
@@ -83,7 +97,7 @@ def test_bootstrap_skips_complete_apdp_schema():
     ):
         main._seed_apdp_if_empty()
 
-    assert connection.autocommit is False
+    assert connection.autocommit is True
     assert connection.closed is True
     assert not any(
         "ALTER TABLE normalized.transactions" in statement

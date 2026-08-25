@@ -77,6 +77,11 @@ def _seed_apdp_if_empty() -> None:
         return
 
     try:
+        # Enable autocommit before the first statement. psycopg2 starts a
+        # transaction even for SELECTs; changing autocommit after the metadata
+        # checks raises ProgrammingError and previously prevented both the
+        # seed and partial-schema repair from ever running on Render.
+        conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT to_regclass('normalized.transactions') IS NOT NULL"
@@ -109,7 +114,6 @@ def _seed_apdp_if_empty() -> None:
                     "exist but partner_settlements is missing. Repairing schema.",
                     row_count,
                 )
-                conn.autocommit = True
                 with conn.cursor() as repair_cur:
                     repair_cur.execute(_APDP_REPAIR_PATH.read_text())
                     repair_cur.execute(
@@ -126,8 +130,6 @@ def _seed_apdp_if_empty() -> None:
         # Empty (or table missing) — apply the seed.
         logger.info("Applying APDP seed from %s …", _APDP_SEED_PATH)
         sql = _APDP_SEED_PATH.read_text()
-        # autocommit so pg_dump's own transaction directives don't nest.
-        conn.autocommit = True
         with conn.cursor() as cur:
             cur.execute(sql)
         # Confirm.
