@@ -119,6 +119,12 @@ def _seed_apdp_if_empty() -> bool:
                 cur.execute("SELECT COUNT(*) FROM normalized.transactions")
                 row_count = int(cur.fetchone()[0])
             if row_count > 0 and has_view:
+                # Prove the application user can query the same relation used
+                # by every Payment Intelligence endpoint; existence alone is
+                # not a sufficient readiness signal.
+                cur.execute(
+                    "SELECT 1 FROM normalized.partner_settlements LIMIT 1"
+                )
                 _PAYMENT_BOOTSTRAP_STAGE = "ready"
                 logger.info(
                     "APDP bootstrap skipped — normalized.transactions has "
@@ -150,6 +156,9 @@ def _seed_apdp_if_empty() -> bool:
                             "APDP schema repair completed without creating "
                             "normalized.partner_settlements"
                         )
+                    repair_cur.execute(
+                        "SELECT 1 FROM normalized.partner_settlements LIMIT 1"
+                    )
                 logger.info("APDP partner_settlements view repaired.")
                 _PAYMENT_BOOTSTRAP_STAGE = "ready_after_repair"
                 return True

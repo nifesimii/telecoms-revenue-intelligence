@@ -82,6 +82,10 @@ def test_bootstrap_repairs_missing_settlement_view_without_reseeding():
         "CREATE OR REPLACE VIEW normalized.partner_settlements" in statement
         for statement in connection.statements
     )
+    assert any(
+        "SELECT 1 FROM normalized.partner_settlements" in statement
+        for statement in connection.statements
+    )
     assert not any(
         "DROP TABLE IF EXISTS normalized.transactions" in statement
         for statement in connection.statements
@@ -101,6 +105,10 @@ def test_bootstrap_skips_complete_apdp_schema():
     assert ready is True
     assert connection.autocommit is True
     assert connection.closed is True
+    assert any(
+        "SELECT 1 FROM normalized.partner_settlements" in statement
+        for statement in connection.statements
+    )
     assert not any(
         "ALTER TABLE normalized.transactions" in statement
         for statement in connection.statements
