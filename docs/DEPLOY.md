@@ -71,6 +71,11 @@ curl -i https://fbb-preview.onrender.com/
 curl -i -u "mtn-gm:<password>" https://fbb-preview.onrender.com/periods
 ```
 
+The application also enforces `simulated` when Render identifies the service
+as `fbb-preview`. This guards against a stale dashboard-level
+`PAYMENT_SOURCE=apdp` override. Use a separately named service for APDP
+integration testing.
+
 In a browser: open the site, browser prompts for the basic-auth credentials,
 enter them once, the SPA loads. Click **Audit Trails** → **Run** → confirm
 trails come back (proves the managed Postgres is wired end-to-end;

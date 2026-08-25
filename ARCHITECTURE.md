@@ -42,7 +42,9 @@ integration mode. **Localhost and the Render GM preview both use
 `PAYMENT_SOURCE=simulated`** so they return the same deterministic
 `payment_simulation.csv` records, totals, dealer names, and exception
 flags. A dedicated APDP environment can enable the Postgres path without
-changing the preview contract.
+changing the preview contract. `backend/config.py` enforces this for the
+Render service named `fbb-preview`, preventing a stale dashboard-level
+`PAYMENT_SOURCE` value from silently overriding the preview contract.
 
 The APDP fixture generator now samples from the FBB dealer roster
 (`data/samples/fbb_comm_dev_act_<period>.csv`) rather than 5 hardcoded

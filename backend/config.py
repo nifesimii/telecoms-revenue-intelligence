@@ -37,9 +37,23 @@ USE_SAMPLE_DATA: bool = os.getenv("USE_SAMPLE_DATA", "true").lower() == "true"
 # "simulated" (default) → read from backend/data/samples/payment_simulation.csv
 # "apdp"                → read from APDP Postgres normalized.partner_settlements
 # Anything else is treated as "simulated" for safety.
-PAYMENT_SOURCE: str = os.getenv("PAYMENT_SOURCE", "simulated").lower()
-if PAYMENT_SOURCE not in ("simulated", "apdp"):
-    PAYMENT_SOURCE = "simulated"
+def _resolve_payment_source(requested: str, render_service_name: str) -> str:
+    source = requested.lower()
+    if source not in ("simulated", "apdp"):
+        source = "simulated"
+    # fbb-preview is the deterministic GM environment. Render dashboard
+    # variables can drift from render.yaml, so enforce the preview contract at
+    # the application boundary. A separately named Render service can still
+    # opt into APDP for integration testing.
+    if render_service_name == "fbb-preview":
+        return "simulated"
+    return source
+
+
+PAYMENT_SOURCE: str = _resolve_payment_source(
+    os.getenv("PAYMENT_SOURCE", "simulated"),
+    os.getenv("RENDER_SERVICE_NAME", ""),
+)
 
 # --- APDP Postgres (only used when PAYMENT_SOURCE=apdp) ---
 # Keep the raw explicit values so the audit connection can distinguish a real
