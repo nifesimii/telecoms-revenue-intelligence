@@ -12,6 +12,7 @@ empty.
 from __future__ import annotations
 
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -44,7 +45,7 @@ _APDP_REPAIR_PATH = (
 )
 
 
-def _seed_apdp_if_empty() -> None:
+def _seed_apdp_if_empty() -> bool:
     """One-shot APDP seed loader.
 
     When ``PAYMENT_SOURCE=apdp`` and the target Postgres has an empty
@@ -61,10 +62,10 @@ def _seed_apdp_if_empty() -> None:
     posture than a 500 wall.
     """
     if config.PAYMENT_SOURCE != "apdp":
-        return
+        return True
     if not _APDP_SEED_PATH.is_file():
         logger.info("APDP seed file not present at %s — skipping.", _APDP_SEED_PATH)
-        return
+        return False
     try:
         import psycopg2
         conn = psycopg2.connect(
@@ -74,7 +75,7 @@ def _seed_apdp_if_empty() -> None:
         )
     except Exception as exc:
         logger.warning("APDP seed skipped — Postgres unreachable: %s", exc)
-        return
+        return False
 
     try:
         # Enable autocommit before the first statement. psycopg2 starts a
@@ -101,14 +102,14 @@ def _seed_apdp_if_empty() -> None:
                     "APDP bootstrap skipped — normalized.transactions has "
                     "%d rows and partner_settlements exists.", row_count,
                 )
-                return
+                return True
             if row_count > 0 and not has_view:
                 if not _APDP_REPAIR_PATH.is_file():
                     logger.warning(
                         "APDP schema repair file not present at %s.",
                         _APDP_REPAIR_PATH,
                     )
-                    return
+                    return False
                 logger.warning(
                     "APDP database is partially initialised: %d transactions "
                     "exist but partner_settlements is missing. Repairing schema.",
@@ -126,7 +127,7 @@ def _seed_apdp_if_empty() -> None:
                             "normalized.partner_settlements"
                         )
                 logger.info("APDP partner_settlements view repaired.")
-                return
+                return True
         # Empty (or table missing) — apply the seed.
         logger.info("Applying APDP seed from %s …", _APDP_SEED_PATH)
         sql = _APDP_SEED_PATH.read_text()
@@ -137,8 +138,10 @@ def _seed_apdp_if_empty() -> None:
             cur.execute("SELECT COUNT(*) FROM normalized.transactions")
             n = int(cur.fetchone()[0])
         logger.info("APDP seed applied — %d transactions loaded.", n)
+        return True
     except Exception:
         logger.exception("APDP seed failed — Payment tab will read empty results.")
+        return False
     finally:
         try:
             conn.close()
@@ -165,7 +168,7 @@ async def _lifespan(app: FastAPI):
     # APDP seed happens after KB load so the app is definitely usable
     # even if seeding fails. Runs synchronously in the startup phase —
     # ~30-60s on first Render boot, ~50ms on subsequent boots (idempotent).
-    _seed_apdp_if_empty()
+    app.state.payment_ready = _seed_apdp_if_empty()
     yield
 
 
@@ -223,11 +226,15 @@ if install_basic_auth(app):
 
 @app.get("/health")
 def health() -> dict:
-    """Lightweight liveness probe — also reports which data mode is active."""
+    """Liveness plus deploy identity and Payment-source readiness."""
     return {
         "status": "ok",
         "sample_data_mode": config.USE_SAMPLE_DATA,
         "payment_source": config.PAYMENT_SOURCE,   # "simulated" | "apdp"
+        "payment_ready": getattr(
+            app.state, "payment_ready", config.PAYMENT_SOURCE != "apdp"
+        ),
+        "revision": os.getenv("RENDER_GIT_COMMIT", "local")[:7],
     }
 
 

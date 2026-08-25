@@ -72,8 +72,9 @@ def test_bootstrap_repairs_missing_settlement_view_without_reseeding():
         patch.object(main.config, "PAYMENT_SOURCE", "apdp"),
         patch.dict(sys.modules, {"psycopg2": fake_psycopg2}),
     ):
-        main._seed_apdp_if_empty()
+        ready = main._seed_apdp_if_empty()
 
+    assert ready is True
     assert connection.view_exists is True
     assert connection.autocommit is True
     assert connection.closed is True
@@ -95,8 +96,9 @@ def test_bootstrap_skips_complete_apdp_schema():
         patch.object(main.config, "PAYMENT_SOURCE", "apdp"),
         patch.dict(sys.modules, {"psycopg2": fake_psycopg2}),
     ):
-        main._seed_apdp_if_empty()
+        ready = main._seed_apdp_if_empty()
 
+    assert ready is True
     assert connection.autocommit is True
     assert connection.closed is True
     assert not any(
