@@ -16,6 +16,34 @@ Framed against *this specific codebase* — not generic advice.
 
 ## Tier 1 — Non-negotiable to get this into finance's hands
 
+### 0. Preserve the bounded collection contract
+
+The MVP now has the correct browser/API boundary for large Inventory and
+Payment tables: capped pages, server-owned filtering/sorting/aggregates,
+on-demand verification, request deduplication, and timing visibility. Do not
+regress to returning bare unbounded arrays.
+
+When moving from MVP to the platform, finish the storage-engine side using
+measurements from real data:
+
+- Implement native parameterized Presto/Postgres page, count, and aggregate
+  queries behind the existing response envelopes.
+- Validate partition pruning, deterministic ordering, deep-page cost, exact
+  count cost, and response-size/latency percentiles.
+- Add database indexes or materialized/pre-aggregated views only after query
+  plans show they are needed.
+- Keep offset pagination for finance page-number workflows until deep offsets
+  become a measured problem; introduce cursors endpoint-by-endpoint if needed.
+- Add Redis only when multiple backend instances or repeated database load
+  require a shared cache, with explicit open-period and closed-period freshness
+  policies.
+- Add frontend integration tests for request deduplication, stale-request
+  cancellation, inactive-tab non-rendering, and URL-restorable investigation
+  state.
+
+This is production hardening, not an invitation to create a universal table
+framework or cache financial data indefinitely.
+
 ### 1. LLM evals + observability as a continuous practice
 The eval harness exists (`backend/tests/evals/`). What matters is *using*
 it weekly, growing the golden set as regressions surface, and mining real
@@ -66,6 +94,9 @@ prompt-caching docs; this is the single highest ROI change available.
 - **SLOs not SLAs** — Google SRE book ch. 3-4. Internalize error budgets.
 - **Four golden signals** — latency, traffic, errors, saturation. Wire
   them into the Grafana already running in the APDP stack.
+- Promote the current `Server-Timing` and structured HTTP duration logs into
+  endpoint/query latency histograms, response-size dashboards, and performance
+  budgets for Inventory and Payment.
 - **Runbooks** — every alert needs a documented response. Start with the
   top 5: APDP Postgres down, Anthropic rate limit, Flink killed, Kafka
   lag, sink consumer stalled.

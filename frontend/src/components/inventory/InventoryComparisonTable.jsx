@@ -12,8 +12,8 @@
 
 import { useState } from 'react';
 import { formatNGN } from '../../lib/format.js';
-import useDealerVerification from '../../hooks/useDealerVerification.js';
 import HelpIcon, { QUALIFICATION_HELP } from '../shared/HelpIcon.jsx';
+import useLazyDealerVerification from '../../hooks/useLazyDealerVerification.js';
 
 const BADGE_STYLE = {
   CONFIRMED_MISMATCH: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -189,6 +189,30 @@ function VerificationPanel({ row, activation, dealer, onAsk, period }) {
 }
 
 // ---------------------------------------------------------------------------
+// Collapsed-row verdict chip — surface the key verdict before expanding.
+// ---------------------------------------------------------------------------
+
+function inventoryVerdict(row, activation, dealer) {
+  const isNoInvoice = row.finding_type === 'NO_INVOICE_RECORD';
+  if (isNoInvoice) return { label: 'ℹ No invoice record', tone: 'bg-blue-100 text-blue-800 border-blue-200' };
+  const gap      = Number(row.inventory_gap || 0);
+  const earned   = Number(activation?.activation_commission_amount || 0);
+  const zeroCount = Number(dealer?.zero_commission_count || 0);
+  if (zeroCount > 0 && gap > 0) return { label: '✓ Commission withheld', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+  if (gap > 0 && earned > 0 && zeroCount === 0) return { label: '✗ Possible leakage', tone: 'bg-red-100 text-red-800 border-red-200' };
+  return { label: '⚠ Review needed', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
+}
+
+function InventoryVerificationChip({ row, activation, dealer }) {
+  const { label, tone } = inventoryVerdict(row, activation, dealer);
+  return (
+    <span className={`inline-block px-2 py-0.5 text-[10px] font-semibold border rounded-full ${tone}`}>
+      {label}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main table
 // ---------------------------------------------------------------------------
 
@@ -198,8 +222,8 @@ export default function InventoryComparisonTable({
   period = null,
   onAsk = null,
 }) {
-  const { activationByDealer, dealerByCode } = useDealerVerification(period);
   const [expanded, setExpanded] = useState({}); // { `${dealer}-${product}-${i}`: bool }
+  const { records: verificationByDealer, loading: verificationLoading, load } = useLazyDealerVerification(period);
 
   if (loading) {
     return (
@@ -212,7 +236,11 @@ export default function InventoryComparisonTable({
     return <div className="p-4 text-sm text-gray-500 italic">No data.</div>;
   }
 
-  const toggle = (key) => setExpanded((e) => ({ ...e, [key]: !e[key] }));
+  const toggle = (key, dealerId) => {
+    const opening = !expanded[key];
+    setExpanded((e) => ({ ...e, [key]: !e[key] }));
+    if (opening) load(dealerId).catch(() => {});
+  };
 
   return (
     <div className="overflow-auto h-full">
@@ -242,12 +270,17 @@ export default function InventoryComparisonTable({
                   BORDER_STYLE[r.finding_type] || ''
                 }`}
               >
-                <td
-                  className={`px-2 py-1.5 select-none ${canVerify ? 'text-gray-400 cursor-pointer' : 'text-transparent'}`}
-                  onClick={canVerify ? () => toggle(key) : undefined}
-                  title={canVerify ? (isOpen ? 'Collapse' : 'Expand verification') : ''}
-                >
-                  {canVerify ? (isOpen ? '▼' : '▶') : ''}
+                <td className="px-2 py-1.5 w-6">
+                  {canVerify ? (
+                    <button
+                      onClick={() => toggle(key, r.dealer_id)}
+                      aria-expanded={isOpen}
+                      aria-label={isOpen ? 'Collapse verification' : 'Expand verification'}
+                      className="text-gray-400 hover:text-gray-700 select-none"
+                    >
+                      {isOpen ? '▼' : '▶'}
+                    </button>
+                  ) : null}
                 </td>
                 <td className="px-2 py-1.5 text-gray-800 truncate max-w-[200px]" title={r.dealer_name}>
                   {r.dealer_name}
@@ -274,24 +307,36 @@ export default function InventoryComparisonTable({
                 </td>
                 <td className="px-2 py-1.5">
                   {canVerify ? (
-                    <button
-                      onClick={() => toggle(key)}
-                      className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded px-2 py-0.5 hover:bg-yellow-50 hover:border-mtn-yellow transition"
-                    >
-                      {isOpen ? 'Hide' : 'Verify'}
-                    </button>
+                    <div className="flex flex-col gap-1 items-start">
+                      {!isOpen && (
+                        <InventoryVerificationChip
+                          row={r}
+                          activation={verificationByDealer[r.dealer_id]}
+                          dealer={verificationByDealer[r.dealer_id]}
+                        />
+                      )}
+                      <button
+                        onClick={() => toggle(key)}
+                        className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded px-2 py-0.5 hover:bg-yellow-50 hover:border-mtn-yellow transition"
+                      >
+                        {isOpen ? 'Hide' : 'Verify'}
+                      </button>
+                    </div>
                   ) : (
                     <span className="text-[10px] text-gray-400 italic">n/a</span>
                   )}
                 </td>
               </tr>,
-              canVerify && isOpen && (
+              canVerify && isOpen && verificationLoading[r.dealer_id] && (
+                <tr key={`${key}-loading`}><td colSpan={9} className="p-3 text-xs text-gray-500 italic">Loading verification evidence…</td></tr>
+              ),
+              canVerify && isOpen && !verificationLoading[r.dealer_id] && (
                 <tr key={`${key}-detail`} className="bg-gray-50">
                   <td colSpan={9} className="p-0">
                     <VerificationPanel
                       row={r}
-                      activation={activationByDealer[r.dealer_id]}
-                      dealer={dealerByCode[r.dealer_id]}
+                      activation={verificationByDealer[r.dealer_id]}
+                      dealer={verificationByDealer[r.dealer_id]}
                       onAsk={onAsk}
                       period={period}
                     />

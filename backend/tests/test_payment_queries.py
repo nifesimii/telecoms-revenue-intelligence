@@ -197,3 +197,28 @@ def test_payment_api_summary_endpoint(client: TestClient) -> None:
     assert body["period"] == "202603"
     assert isinstance(body["records"], list)
     assert len(body["records"]) > 0
+
+
+def test_payment_collection_is_bounded_and_consolidates_exceptions(client: TestClient) -> None:
+    r = client.get("/payments", params={
+        "mon_period": "202603", "limit": 25,
+        "payment_status": "DISPUTED,PARTIALLY_PAID,PENDING",
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["items"]) <= 25
+    assert body["pagination"]["returned"] == len(body["items"])
+    assert all(row["payment_status"] != "FULLY_PAID" for row in body["items"])
+    assert "Server-Timing" in r.headers
+
+
+def test_dealer_verification_is_on_demand(client: TestClient) -> None:
+    dealer = client.get("/dealers", params={"mon_period": "202603"}).json()[0]
+    r = client.get(
+        f"/dealers/{dealer['dealer_id']}/verification",
+        params={"mon_period": "202603"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["dealer_id"] == dealer["dealer_id"]
+    assert body["activation_count"] >= body["qualified_activation_count"]

@@ -86,10 +86,14 @@ the source of truth for what to install.
 - **Tailwind CSS 3** — styling (utility classes, no component library).
 - **axios** — HTTP client; every backend call is centralised in
   `frontend/src/api/client.js`.
+- **TanStack Query 5** — bounded page cache, in-flight request deduplication,
+  cancellation signals, retry policy, and short-lived reuse on tab returns.
 - **react-markdown** + **remark-gfm** — render the agent's markdown answers.
 
-No TypeScript, no state-management library (React context + hooks are enough at
-this size), no test runner on the frontend yet.
+No TypeScript, no global state-management library (React context + focused
+hooks are enough at this size), no test runner on the frontend yet. Large
+collection state is deliberately bounded by the API rather than stored as a
+complete browser-side dataset.
 
 ### APDP (Python + infra)
 - **Apache Kafka** (KRaft mode, no Zookeeper) — event backbone.
@@ -234,7 +238,8 @@ frontend/src/
 ├── context/PeriodContext.jsx  Selected reporting month, shared app-wide, URL-synced.
 ├── hooks/
 │   ├── useChat.js          Chat state + localStorage persistence.
-│   └── useDealerVerification.js  Shared fetch for the inline "verify" expandables.
+│   ├── useDebouncedValue.js       Debounces server-side table search.
+│   └── useLazyDealerVerification.js  Fetches/caches evidence only for rows opened.
 ├── lib/
 │   ├── format.js           NGN + period (YYYYMM → "Feb 2026") formatting.
 │   └── csv.js              CSV export helper.
@@ -295,15 +300,33 @@ The agent may fetch KB addenda mid-answer via `get_kb_section`, and may call
 `get_dealer_full_context` to get commission+activation+inventory+payment in one
 shot instead of four calls.
 
-### Flow B — a data panel (e.g. Payment Intelligence)
+### Flow B — a bounded data panel (e.g. Payment Intelligence)
 ```
-Browser panel → api/client.js GET /payments/summary?mon_period=YYYYMM
-  → routes.py → db/connection.execute_query("get_payment_summary", ...)
+Browser panel → api/client.js GET /payments?mon_period=YYYYMM&limit=50&offset=0
+  → routes.py validates bounded pagination/filter/sort parameters
+  → db/connection.execute_query("get_payment_summary", ...)
     → if PAYMENT_SOURCE=simulated: pandas over payment_simulation.csv
     → if PAYMENT_SOURCE=apdp:      db/apdp.py reads normalized.partner_settlements
-  ← Pydantic-shaped rows → panel table
+  ← {items (max 100), pagination, whole-filter-set summary} → panel table
 ```
-This is a plain data endpoint — no LLM involved.
+This is a plain data endpoint — no LLM involved. Inventory follows the same
+contract at `/inventory/comparison-page`. Search is debounced and stale HTTP
+requests are aborted. Payment Exceptions and All Payments share the single
+`/payments` collection with a status filter, so the APDP settlement dataset is
+not fetched twice. Only the active Payment sub-tab is mounted.
+
+Expandable Verify rows use
+`GET /dealers/{dealer_id}/verification?mon_period=YYYYMM`. The compact response
+is fetched only when the row is first opened and cached by dealer-period; tab
+mounting no longer downloads verification evidence for every dealer.
+
+**Current storage-engine boundary:** sample mode still has to aggregate the
+period CSV in-process before applying the bounded page, and the APDP summary
+adapter currently reads the period reconciliation rows before slicing. The
+wire contract is already bounded, so these internals can move to native
+Presto/Postgres page/count/aggregate queries without changing the frontend.
+Live Presto remains unimplemented; do not claim database-level page efficiency
+until that path is wired and measured.
 
 ### Flow C — the audit trail (generate + inspect verification chains)
 ```
@@ -427,6 +450,28 @@ mislabel a data gap as not-paid?"), which a text blob can't support.
 
 **`PeriodContext` (frontend).** The selected reporting month is global app state,
 synced to the URL, so all panels stay on the same period and links are shareable.
+
+**Bounded intelligence collections (`PaginationMeta` + page response models).**
+Inventory and Payment never return an unbounded array to their main tables.
+The server owns search, filters, deterministic sorting, total counts, and
+whole-filter-set aggregates; the browser renders at most 100 records and uses
+shared pagination controls. *Why:* virtualization alone reduces DOM work but
+does not reduce payload, JSON parsing, or browser memory. The bounded wire
+contract is the stable seam that lets the future data engine evolve safely.
+
+**On-demand verification (`useLazyDealerVerification`).** Expandable evidence
+is keyed and cached by `(period, dealer_id)`, with concurrent requests
+deduplicated. *Why:* verification is a detail workflow, not a prerequisite for
+showing a table page.
+
+**TanStack Query client (`frontend/src/main.jsx`).** Collection pages are keyed
+by period + pagination + search + filters, stay fresh for 60 seconds, and are
+garbage-collected after five minutes. This is intentionally a browser cache,
+not a source of truth; the backend remains authoritative.
+
+**HTTP performance observability (`backend/main.py`).** Every response includes
+a `Server-Timing` duration and emits a payload-free structured timing log. The
+middleware intentionally logs no SQL or financial record contents.
 
 **APDP seed loading (`backend/main.py::_seed_apdp_if_empty` +
 `infra/postgres/apdp_seed.sql`).** On backend startup, when

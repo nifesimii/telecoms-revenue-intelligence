@@ -25,26 +25,7 @@ import { formatNGN, formatPeriod } from '../../lib/format.js';
 import useDealerVerification from '../../hooks/useDealerVerification.js';
 import HelpIcon, { QUALIFICATION_HELP } from '../shared/HelpIcon.jsx';
 
-// Green / red / gray buckets so the audit-coverage strip mirrors the
-// Audit Trails tab's conclusion colouring without needing the full tone map.
-const AUDIT_CONCLUSION_TONE = {
-  // green — clean / reconciled
-  PAID: 'text-emerald-700',
-  PAID_IN_FULL: 'text-emerald-700',
-  RECONCILED: 'text-emerald-700',
-  POLICY_MET: 'text-emerald-700',
-  // red — issue
-  NOT_PAID: 'text-red-700',
-  UNDERPAID: 'text-red-700',
-  EXCESS_ACTIVATION: 'text-red-700',
-  POLICY_VIOLATED: 'text-red-700',
-  // amber — needs review
-  OVERPAID: 'text-amber-700',
-  DISPUTED_ROUNDING: 'text-amber-700',
-  MIXED_ATTRIBUTION: 'text-amber-700',
-  // gray — data gap
-  INSUFFICIENT_DATA: 'text-gray-600',
-};
+import { CONCLUSION_TEXT as AUDIT_CONCLUSION_TONE } from '../../lib/tones.js';
 
 const STATUS_TONE = {
   PASS: 'bg-emerald-100 text-emerald-800 border-emerald-200',
@@ -597,6 +578,7 @@ function FindingRow({ finding, onAsk, periodLabel, activation, dealer }) {
           <div className="mt-1 flex items-center gap-3">
             <button
               onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
               className="text-[10px] text-gray-600 hover:text-gray-900 hover:underline"
             >
               {open ? '▼ Hide verification' : '▶ Verify'}

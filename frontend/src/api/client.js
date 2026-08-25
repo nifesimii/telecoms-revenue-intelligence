@@ -60,6 +60,13 @@ export async function getDealers(mon_period = null) {
   return data;
 }
 
+export async function getDealerVerification(dealer_id, mon_period, signal) {
+  const { data } = await api.get(`/dealers/${encodeURIComponent(dealer_id)}/verification`, {
+    params: { mon_period }, signal,
+  });
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Phase 2 — Activation Intelligence endpoints
 // ---------------------------------------------------------------------------
@@ -131,6 +138,12 @@ export async function getInventoryComparison(
   return data;
 }
 
+/** Bounded Inventory collection for the server-driven table. */
+export async function getInventoryComparisonPage(params, signal) {
+  const { data } = await api.get('/inventory/comparison-page', { params, signal });
+  return data;
+}
+
 /**
  * GET /inventory/data-coverage-issues?mon_period=YYYYMM&source=ifs|usp|both
  * Returns the ServiceNow-ready ticket draft for data coverage gaps.
@@ -193,10 +206,18 @@ export async function getDealerStatement(dealer_id, mon_period) {
 // Audit trails (generic, module-aware)
 // ---------------------------------------------------------------------------
 
+// Module list never changes in a session — cache the promise so
+// AssuranceStatusPanel, AuditCoverageBand, and AuditTrailPanel
+// all share one request instead of firing three.
+let _auditModulesPromise = null;
 /** GET /assurance/audit/modules — registered audit modules for the dropdown. */
 export async function getAuditModules() {
-  const { data } = await api.get('/assurance/audit/modules');
-  return data;
+  if (!_auditModulesPromise) {
+    _auditModulesPromise = api.get('/assurance/audit/modules')
+      .then(({ data }) => data)
+      .catch((e) => { _auditModulesPromise = null; throw e; });
+  }
+  return _auditModulesPromise;
 }
 
 /** POST /assurance/audit/run?module=&mon_period= — generate + persist trails. */
@@ -247,6 +268,12 @@ export async function getPaymentSummary(mon_period = null) {
 export async function getPaymentExceptions(mon_period = null) {
   const params = mon_period ? { mon_period } : {};
   const { data } = await api.get('/payments/exceptions', { params });
+  return data;
+}
+
+/** Consolidated, bounded Payment collection. */
+export async function getPayments(params, signal) {
+  const { data } = await api.get('/payments', { params, signal });
   return data;
 }
 

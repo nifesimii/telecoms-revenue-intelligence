@@ -28,6 +28,21 @@ a fast and evidence-based process.
 - Notifications and alerts
 - Write-back to any production table
 
+### MVP-to-Platform Scalability Foundation
+
+- Inventory and Payment main tables use bounded collection responses; never
+  restore a bare unbounded-array UI path.
+- Maximum page size is 100. The backend owns search, filters, whitelisted
+  deterministic sorting, counts, and whole-filter-set aggregates.
+- Payment Exceptions and All Payments share `/payments`; do not add a duplicate
+  settlement read for a derived view.
+- Expanded verification evidence loads per dealer-period on demand.
+- TanStack Query owns bounded page caching/deduplication; inactive Payment
+  sub-tabs must not be mounted.
+- Post-MVP: move page/count/aggregate work into native Presto/Postgres queries
+  after live query plans are measurable. Redis and cursor pagination require
+  evidence, not speculation.
+
 ### Architecture
 ```
 Data Layer (Presto — development schema, read-only)

@@ -12,6 +12,7 @@ empty.
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -149,6 +150,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def performance_observability(request, call_next):
+    """Expose and log request duration without logging financial payloads."""
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+    logger.info(
+        "http_request method=%s path=%s status=%s duration_ms=%.1f content_length=%s",
+        request.method,
+        request.url.path,
+        response.status_code,
+        elapsed_ms,
+        response.headers.get("content-length", "streamed"),
+    )
+    return response
 
 # Basic Auth gate for the GM preview deploy. No-op locally unless
 # DEMO_USERNAME + DEMO_PASSWORD are set — production sets both as secrets.

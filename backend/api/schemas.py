@@ -227,6 +227,29 @@ class InventoryComparisonRecord(BaseModel):
     data_coverage_note: str
 
 
+class PaginationMeta(BaseModel):
+    """Bounded collection metadata shared by intelligence tables."""
+
+    limit: int
+    offset: int
+    returned: int
+    total: int
+    has_more: bool
+
+
+class InventoryComparisonSummary(BaseModel):
+    confirmed_mismatch_count: int
+    no_invoice_record_count: int
+    within_allocation_count: int
+    total_gap_units: float
+
+
+class InventoryComparisonPage(BaseModel):
+    items: list[InventoryComparisonRecord]
+    pagination: PaginationMeta
+    summary: InventoryComparisonSummary
+
+
 # ---------------------------------------------------------------------------
 # Phase 4 — Payment Intelligence
 # ---------------------------------------------------------------------------
@@ -279,6 +302,23 @@ class PaymentCoverageResponse(BaseModel):
     fully_paid_count: int
     data_source: str = "SIMULATED"
     records: list[PaymentSummaryRecord]
+
+
+class PaymentCollectionPage(BaseModel):
+    """Bounded payment collection plus whole-filter-set aggregates."""
+
+    period: str
+    items: list[PaymentSummaryRecord]
+    pagination: PaginationMeta
+    total_commission_owed: float
+    total_amount_paid: float
+    total_amount_unpaid: float
+    payment_coverage_pct: float
+    disputed_count: int
+    partially_paid_count: int
+    pending_count: int
+    fully_paid_count: int
+    data_source: str = "SIMULATED"
 
 
 # ---------------------------------------------------------------------------

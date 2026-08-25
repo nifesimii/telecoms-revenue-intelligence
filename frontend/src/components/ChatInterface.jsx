@@ -189,15 +189,21 @@ export default function ChatInterface({ pendingPrompt = '', onPromptConsumed } =
             />
           </div>
         </aside>
-        {/* Drag handle — 4px hit area, visual hover state, persists width. */}
+        {/* Drag handle — visible 8px gutter with grip dots, double-click resets. */}
         <div
           onMouseDown={startDrag}
           onDoubleClick={resetSidebar}
           role="separator"
           aria-orientation="vertical"
           title="Drag to resize · double-click to reset"
-          className="w-1 shrink-0 cursor-col-resize bg-gray-200 hover:bg-mtn-yellow transition-colors"
-        />
+          className="w-2 shrink-0 cursor-col-resize bg-gray-100 hover:bg-mtn-yellow transition-colors flex items-center justify-center group"
+        >
+          <div className="flex flex-col gap-[3px] pointer-events-none">
+            <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-gray-700 transition-colors" />
+            <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-gray-700 transition-colors" />
+            <span className="w-1 h-1 rounded-full bg-gray-400 group-hover:bg-gray-700 transition-colors" />
+          </div>
+        </div>
 
         <main className="flex-1 flex flex-col overflow-hidden">
           <div ref={threadRef} className="flex-1 overflow-y-auto px-6 py-4">

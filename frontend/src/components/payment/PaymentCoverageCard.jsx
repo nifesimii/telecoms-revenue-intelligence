@@ -67,9 +67,6 @@ export default function PaymentCoverageCard({ data, loading }) {
             tone="text-red-700"
           />
         </div>
-        <span className="absolute top-3 right-3 text-[10px] uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200 rounded-full px-2 py-0.5 font-semibold">
-          SIMULATED DATA
-        </span>
       </div>
     </div>
   );

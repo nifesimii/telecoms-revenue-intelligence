@@ -5,6 +5,37 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-08-25  (bounded intelligence-table foundation)
+
+Inventory and Payment tab latency was traced to unbounded payloads, thousands
+of DOM rows, duplicate Payment reads, hidden sub-tabs being rendered, and eager
+whole-period verification fetches. The data-table boundary is now bounded:
+
+- `GET /inventory/comparison-page` supports a hard maximum of 100 rows,
+  offset pagination, server-side text/finding filters, whitelisted stable
+  sorting, total count, and full-filter-set summary cards.
+- `GET /payments` replaces the Payment UI's summary + exceptions double read
+  with one filterable, bounded collection. Exceptions are a status-filtered
+  view of the same collection; legacy endpoints remain for internal/backward
+  compatibility.
+- Inventory and Payment use 25/50/100-row pagination, 300ms debounced search,
+  TanStack Query cancellation/deduplication with a bounded five-minute page
+  cache, and render only the active Payment sub-tab.
+- `GET /dealers/{id}/verification` plus `useLazyDealerVerification` loads and
+  deduplicates compact dealer evidence only after a Verify row is opened.
+- HTTP responses expose `Server-Timing`; structured request logs record path,
+  status, duration, and content length without payload/SQL data.
+- Compatibility and new bounded-contract tests pass in sample mode; the Vite
+  production build passes.
+
+Known boundary: sample pandas and the current APDP adapter still assemble a
+period result before applying the page. The browser/API contract is bounded,
+but native Presto/Postgres page/count/aggregate execution remains follow-up
+work once live Presto is implemented and production query plans can be
+measured. Redis and cursor pagination remain deliberately deferred.
+
+---
+
 ## Session — 2026-08-21  (APDP live-data sprint)
 
 The demo story added a new twist during manager review — "can you actually

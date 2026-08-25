@@ -99,19 +99,24 @@ Now trace live data through the layers, end to end.
 - Read [`backend/tests/test_zero_commission_audit.py`](../backend/tests/test_zero_commission_audit.py) —
   this is the test-shape template for every future audit module
 
-**Read one intelligence tab (pilot: Activation Intelligence)**
+**Read one bounded intelligence tab (pilot: Inventory or Payment)**
 
-- Read `frontend/src/components/activation/*.jsx`
+- Read `frontend/src/components/inventory/InventoryIntelligencePanel.jsx` or
+  `frontend/src/components/payment/PaymentIntelligencePanel.jsx`
 - Read [`frontend/src/api/client.js`](../frontend/src/api/client.js) —
   every backend call is centralised here
-- Find each endpoint's route in `backend/api/routes.py` and its handler in
-  `backend/db/queries.py`
-- Trace one dealer's "Total Activations" number from screen → CSV cell
+- Follow `/inventory/comparison-page` or `/payments` through
+  `backend/api/routes.py`, `backend/api/schemas.py`, and the data adapter
+- Observe the hard 100-row limit, pagination metadata, stable sorting,
+  debounced search, and TanStack Query key
+- Expand one Verify row and trace the separate on-demand
+  `/dealers/{id}/verification` request
 
 **Done when**
 
-You can walk any teammate through (a) one partner's audit trail step-by-step
-and (b) one activation number's full provenance.
+You can walk any teammate through (a) one partner's audit trail step-by-step,
+(b) one displayed number's provenance, and (c) why a table page never requires
+the complete dataset in browser memory.
 
 ---
 

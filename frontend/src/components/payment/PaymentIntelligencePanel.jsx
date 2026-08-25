@@ -4,8 +4,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import {
-  getPaymentSummary,
-  getPaymentExceptions,
+  getPayments,
   getPaymentVariance,
   getPartnerHealth,
 } from '../../api/client.js';
@@ -15,6 +14,9 @@ import PaymentCoverageCard from './PaymentCoverageCard.jsx';
 import PaymentSummaryTable from './PaymentSummaryTable.jsx';
 import PaymentExceptionsTable from './PaymentExceptionsTable.jsx';
 import PartnerHealthScorecard from './PartnerHealthScorecard.jsx';
+import PaginationControls from '../shared/PaginationControls.jsx';
+import useDebouncedValue from '../../hooks/useDebouncedValue.js';
+import { useQueryClient } from '@tanstack/react-query';
 
 const TABS = [
   { id: 'exceptions', label: 'Exceptions' },
@@ -22,6 +24,19 @@ const TABS = [
   { id: 'variance', label: 'Variance' },
   { id: 'health', label: 'Health' },
 ];
+
+function PaymentExceptionsWithVerification({ rows, loading, period, onAsk }) {
+  // Mounted only while Exceptions is visible, so supporting evidence is not
+  // loaded by All / Variance / Health views.
+  return (
+    <PaymentExceptionsTable
+      rows={rows}
+      loading={loading}
+      period={period}
+      onAsk={onAsk}
+    />
+  );
+}
 
 function VarianceTable({ rows = [], loading }) {
   if (loading) {
@@ -100,6 +115,7 @@ function VarianceTable({ rows = [], loading }) {
 }
 
 export default function PaymentIntelligencePanel({ onAsk } = {}) {
+  const queryClient = useQueryClient();
   const { periods, period, priorPeriod } = usePeriod();
   const [activeTab, setActiveTab] = useState('exceptions');
 
@@ -112,6 +128,9 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [pagination, setPagination] = useState(null);
+  const [offset, setOffset] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
 
   // Client-side dealer filter — persists across all three sub-tabs so
   // tracking one dealer's payment story (exception → summary row →
@@ -119,36 +138,53 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
   // API convention: dealer_id / dealer_name on the response side
   // (see ARCHITECTURE.md "Naming conventions").
   const [dealerQuery, setDealerQuery] = useState('');
+  const debouncedDealerQuery = useDebouncedValue(dealerQuery);
   const matchesDealer = (row) => {
     const q = dealerQuery.trim().toLowerCase();
     if (!q) return true;
     return String(row.dealer_id || '').toLowerCase().includes(q)
       || String(row.dealer_name || '').toLowerCase().includes(q);
   };
-  const filteredAll        = useMemo(() => allRows.filter(matchesDealer),    [allRows, dealerQuery]);
-  const filteredExceptions = useMemo(() => exceptions.filter(matchesDealer), [exceptions, dealerQuery]);
+  const filteredAll        = allRows;
+  const filteredExceptions = exceptions;
   const filteredVariance   = useMemo(() => variance.filter(matchesDealer),   [variance, dealerQuery]);
 
   useEffect(() => {
     if (!period) return;
-    let cancelled = false;
+    if (!['exceptions', 'all'].includes(activeTab)) return;
     setLoading(true);
     setError(null);
-    Promise.all([getPaymentSummary(period), getPaymentExceptions(period)])
-      .then(([summary, exc]) => {
-        if (cancelled) return;
-        setCoverage(summary);
-        setAllRows(summary?.records || []);
-        setExceptions(Array.isArray(exc) ? exc : []);
+    const params = {
+      mon_period: period,
+      limit: pageSize,
+      offset,
+      search: debouncedDealerQuery || undefined,
+      payment_status: activeTab === 'exceptions'
+        ? 'DISPUTED,PARTIALLY_PAID,PENDING'
+        : undefined,
+      sort_by: 'amount_unpaid',
+      sort_direction: 'desc',
+    };
+    let active = true;
+    queryClient.fetchQuery({
+      queryKey: ['payments-page', params],
+      queryFn: ({ signal }) => getPayments(params, signal),
+    })
+      .then((data) => {
+        if (!active) return;
+        setCoverage(data);
+        setPagination(data?.pagination || null);
+        if (activeTab === 'exceptions') setExceptions(data?.items || []);
+        else setAllRows(data?.items || []);
       })
       .catch((e) => {
-        if (!cancelled) setError(e?.response?.data?.detail || e?.message || String(e));
+        if (active && e?.code !== 'ERR_CANCELED') setError(e?.response?.data?.detail || e?.message || String(e));
       })
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [period]);
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [period, activeTab, pageSize, offset, debouncedDealerQuery, queryClient]);
+
+  useEffect(() => { setOffset(0); }, [period, activeTab, pageSize, debouncedDealerQuery]);
 
   useEffect(() => {
     if (activeTab !== 'variance') return;
@@ -250,18 +286,16 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
         </div>
 
         <div className="flex-1 min-h-[360px] bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
-          <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500 shrink-0 flex items-center justify-between">
+          <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500 shrink-0 flex items-center justify-between gap-3">
             <span>
               {activeTab === 'exceptions' && (
                 <>
-                  {filteredExceptions.length.toLocaleString()} exception{filteredExceptions.length === 1 ? '' : 's'}
-                  {dealerQuery && filteredExceptions.length !== exceptions.length && ` (of ${exceptions.length.toLocaleString()})`}
+                  {pagination?.total?.toLocaleString() || 0} exceptions
                 </>
               )}
               {activeTab === 'all' && (
                 <>
-                  {filteredAll.length.toLocaleString()} dealer{filteredAll.length === 1 ? '' : 's'}
-                  {dealerQuery && filteredAll.length !== allRows.length && ` (of ${allRows.length.toLocaleString()})`}
+                  {pagination?.total?.toLocaleString() || 0} dealers
                 </>
               )}
               {activeTab === 'variance' && (
@@ -276,6 +310,10 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
                 </>
               )}
             </span>
+            <div className="flex items-center gap-3">
+            {['exceptions', 'all'].includes(activeTab) && (
+              <PaginationControls pagination={pagination} pageSize={pageSize} onOffsetChange={setOffset} onPageSizeChange={setPageSize} />
+            )}
             {(activeTab === 'health'
               ? healthRows[0]?.data_source
               : coverage?.data_source) === 'APDP' ? (
@@ -283,25 +321,21 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
             ) : (
               <span className="text-amber-700 font-semibold">[SIMULATED]</span>
             )}
+            </div>
           </div>
           <div className="flex-1 min-h-0">
-            {activeTab === 'exceptions' && (
-              <PaymentExceptionsTable
-                rows={filteredExceptions}
-                loading={loading}
-                period={period}
-                onAsk={onAsk}
-              />
-            )}
-            {activeTab === 'all' && (
+            {activeTab === 'exceptions' && <div className="h-full">
+              <PaymentExceptionsWithVerification rows={filteredExceptions} loading={loading} period={period} onAsk={onAsk} />
+            </div>}
+            {activeTab === 'all' && <div className="h-full">
               <PaymentSummaryTable rows={filteredAll} loading={loading} period={period} />
-            )}
-            {activeTab === 'variance' && (
+            </div>}
+            {activeTab === 'variance' && <div className="h-full">
               <VarianceTable rows={filteredVariance} loading={false} />
-            )}
-            {activeTab === 'health' && (
+            </div>}
+            {activeTab === 'health' && <div className="h-full">
               <PartnerHealthScorecard rows={healthRows} loading={healthLoading} period={period} />
-            )}
+            </div>}
           </div>
         </div>
       </div>

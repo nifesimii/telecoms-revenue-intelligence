@@ -172,6 +172,25 @@ def test_inventory_api_endpoint(client: TestClient) -> None:
         assert row["gap_pct"] is None
 
 
+def test_inventory_page_is_bounded_and_filterable(client: TestClient) -> None:
+    r = client.get("/inventory/comparison-page", params={
+        "mon_period": "202603", "limit": 25, "offset": 0,
+        "finding_type": "CONFIRMED_MISMATCH",
+    })
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert len(body["items"]) <= 25
+    assert body["pagination"]["returned"] == len(body["items"])
+    assert body["pagination"]["total"] >= len(body["items"])
+    assert all(row["finding_type"] == "CONFIRMED_MISMATCH" for row in body["items"])
+    assert body["summary"]["confirmed_mismatch_count"] == body["pagination"]["total"]
+
+
+def test_inventory_page_rejects_unbounded_limit(client: TestClient) -> None:
+    r = client.get("/inventory/comparison-page", params={"mon_period": "202603", "limit": 1000})
+    assert r.status_code == 422
+
+
 # ---------------------------------------------------------------------------
 # Test 8 — query results never use fraud language; agent question check
 # ---------------------------------------------------------------------------

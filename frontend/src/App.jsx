@@ -7,7 +7,7 @@
 // Period state lives in <PeriodProvider> so switching tabs preserves the
 // user's selection — see context/PeriodContext.jsx.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import ChatInterface from './components/ChatInterface.jsx';
 import ActivationIntelligencePanel from './components/activation/ActivationIntelligencePanel.jsx';
 import AssuranceStatusPanel from './components/assurance/AssuranceStatusPanel.jsx';
@@ -100,21 +100,30 @@ function _writeViewToUrl(view) {
 }
 
 function Shell() {
-  // Overview is the default landing view — see CLAUDE.md mission. The other
-  // four tabs are deep-dives the Overview points at. URL takes precedence so
-  // shared links open straight on the right tab.
   const [view, setView] = useState(_readViewFromUrl);
+  // Track which panels have been visited. Once mounted, a panel stays in the
+  // DOM and is shown/hidden via CSS — preventing re-fetches on every tab switch.
+  const [mounted, setMounted] = useState(() => ({ [_readViewFromUrl()]: true }));
+  const [pendingPrompt, setPendingPrompt] = useState('');
+
+  const switchView = useCallback((v) => {
+    setMounted((m) => (m[v] ? m : { ...m, [v]: true }));
+    setView(v);
+    _writeViewToUrl(v);
+  }, []);
+
   useEffect(() => {
     _writeViewToUrl(view);
   }, [view]);
-  // One-shot prompt slot. The Overview's "Ask Claude" buttons push a string
-  // here and switch to Commission; ChatInterface consumes and clears it.
-  const [pendingPrompt, setPendingPrompt] = useState('');
 
   const askClaude = (text) => {
     setPendingPrompt(text);
-    setView('commission');
+    switchView('commission');
   };
+
+  // 'h-full' when active, 'hidden' (display:none) when not — sibling panels
+  // don't stack because display:none removes them from layout flow entirely.
+  const panelClass = (id) => (view === id ? 'h-full' : 'hidden');
 
   return (
     <div className="h-full flex flex-col">
@@ -127,7 +136,7 @@ function Shell() {
           {VIEWS.map((v) => (
             <button
               key={v.id}
-              onClick={() => setView(v.id)}
+              onClick={() => switchView(v.id)}
               className={`px-3 py-1.5 text-sm rounded-md transition ${
                 view === v.id
                   ? 'bg-white text-gray-900 shadow-sm font-semibold'
@@ -145,19 +154,39 @@ function Shell() {
       </div>
 
       <div className="flex-1 overflow-hidden">
-        {view === 'overview' && (
-          <AssuranceStatusPanel onNavigate={setView} onAsk={askClaude} />
+        {mounted.overview && (
+          <div className={panelClass('overview')}>
+            <AssuranceStatusPanel onNavigate={switchView} onAsk={askClaude} />
+          </div>
         )}
-        {view === 'commission' && (
-          <ChatInterface
-            pendingPrompt={pendingPrompt}
-            onPromptConsumed={() => setPendingPrompt('')}
-          />
+        {mounted.commission && (
+          <div className={panelClass('commission')}>
+            <ChatInterface
+              pendingPrompt={pendingPrompt}
+              onPromptConsumed={() => setPendingPrompt('')}
+            />
+          </div>
         )}
-        {view === 'activation' && <ActivationIntelligencePanel />}
-        {view === 'inventory' && <InventoryIntelligencePanel onAsk={askClaude} />}
-        {view === 'payment' && <PaymentIntelligencePanel onAsk={askClaude} />}
-        {view === 'audit' && <AuditTrailPanel />}
+        {mounted.activation && (
+          <div className={panelClass('activation')}>
+            <ActivationIntelligencePanel />
+          </div>
+        )}
+        {mounted.inventory && (
+          <div className={panelClass('inventory')}>
+            <InventoryIntelligencePanel onAsk={askClaude} />
+          </div>
+        )}
+        {mounted.payment && (
+          <div className={panelClass('payment')}>
+            <PaymentIntelligencePanel onAsk={askClaude} />
+          </div>
+        )}
+        {mounted.audit && (
+          <div className={panelClass('audit')}>
+            <AuditTrailPanel />
+          </div>
+        )}
       </div>
     </div>
   );

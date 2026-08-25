@@ -17,25 +17,7 @@ import {
   getAuditBreakdown,
 } from '../../api/client.js';
 
-const CONCLUSION_TONE = {
-  // zero_commission
-  NOT_PAID: 'bg-red-100 text-red-800 border-red-200',
-  PAID: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  // inventory_mismatch
-  EXCESS_ACTIVATION: 'bg-red-100 text-red-800 border-red-200',
-  RECONCILED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  // payment_reconciliation
-  PAID_IN_FULL: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  UNDERPAID: 'bg-red-100 text-red-800 border-red-200',
-  OVERPAID: 'bg-amber-100 text-amber-800 border-amber-200',
-  DISPUTED_ROUNDING: 'bg-amber-100 text-amber-800 border-amber-200',
-  // eligibility_window
-  POLICY_MET: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  POLICY_VIOLATED: 'bg-red-100 text-red-800 border-red-200',
-  MIXED_ATTRIBUTION: 'bg-amber-100 text-amber-800 border-amber-200',
-  // shared
-  INSUFFICIENT_DATA: 'bg-gray-100 text-gray-700 border-gray-200',
-};
+import { CONCLUSION_BADGE as CONCLUSION_TONE } from '../../lib/tones.js';
 const CONFIDENCE_TONE = {
   HIGH: 'text-emerald-700',
   MEDIUM: 'text-amber-700',
@@ -93,7 +75,15 @@ function TrailRow({ trail, expanded, onToggle }) {
         className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer align-top"
         onClick={onToggle}
       >
-        <td className="px-2 py-1.5 text-gray-400 select-none w-6">{expanded ? '▼' : '▶'}</td>
+        <td className="px-2 py-1.5 w-6">
+          <button
+            aria-expanded={expanded}
+            aria-label={expanded ? 'Collapse' : 'Expand'}
+            className="text-gray-400 hover:text-gray-700 select-none"
+          >
+            {expanded ? '▼' : '▶'}
+          </button>
+        </td>
         <td className="px-2 py-1.5">
           <div className="text-sm text-gray-800 truncate max-w-[220px]" title={trail.partner_name}>
             {trail.partner_name}

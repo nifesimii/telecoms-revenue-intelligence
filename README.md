@@ -15,10 +15,10 @@ telecoms-revenue-intelligence/
 ```
 
 The FBB layer is what finance/RA users see. APDP is the data infrastructure
-that feeds it — once approval lands to read live partner-transaction data,
-APDP normalises everything into the canonical v1.3.0 shape and the FBB
-Payment Intelligence view consumes it directly. Until then, FBB runs on
-sample CSVs.
+that feeds it. The deployed demo can read the APDP
+`normalized.partner_settlements` view; commission, activation, and inventory
+development paths can still run from sample CSVs until live source access and
+the Presto service account are provisioned.
 
 ---
 
@@ -30,7 +30,7 @@ volumes, inventory mismatches, and partner payments.
 
 ### Stack
 - **Backend:** FastAPI + Anthropic Claude (tool use), Presto (live) or pandas/CSV (sample mode)
-- **Frontend:** React + Vite + Tailwind
+- **Frontend:** React + Vite + Tailwind + TanStack Query
 
 ### Five integrated views
 | Phase | View | What it does |
@@ -38,8 +38,22 @@ volumes, inventory mismatches, and partner payments.
 | — | **Overview** *(landing)* | Cross-module triage: posture band, dealers appearing in multiple module findings, per-finding Ask-Claude shortcuts, period-delta vs prior month, CSV export. |
 | 1 | **Commission Intelligence** | Claude tool-use chat agent + ranked dealer summary sidebar. Answers monthly summaries, month-on-month variance, zero-commission root-cause classification, ORSC summaries. |
 | 2 | **Activation Intelligence** | Period selector with summary, variance, and exceptions tabs. |
-| 3 | **Inventory Intelligence** | Dealer × product activation-vs-purchase comparison with `CONFIRMED_MISMATCH` / `NO_INVOICE_RECORD` findings. |
-| 4 | **Payment Intelligence** | Coverage card + summary, exceptions, variance tabs. *(Simulated until APDP's telecom feed is wired live — clearly labelled.)* |
+| 3 | **Inventory Intelligence** | Bounded dealer × product activation-vs-purchase table with server-side search, pagination, aggregates, and `CONFIRMED_MISMATCH` / `NO_INVOICE_RECORD` findings. |
+| 4 | **Payment Intelligence** | Consolidated bounded payment collection with coverage, exceptions, variance, and health views; supports APDP or clearly labelled simulated data. |
+
+### Scalable table foundation
+
+Inventory and Payment do not download complete datasets into the browser.
+Their main collection APIs return at most 100 rows with pagination metadata,
+stable sorting, server-side filters, and whole-filter-set aggregates. TanStack
+Query deduplicates requests and keeps a bounded five-minute page cache. Only
+the active Payment sub-tab is mounted, and dealer verification evidence loads
+only when a user expands a row.
+
+This is the MVP-to-platform boundary: the browser/API contract is ready for
+larger datasets, while native Presto/Postgres page/count/aggregate execution is
+post-MVP work once live query plans and volumes can be measured. Redis and
+cursor pagination are intentionally deferred until measurements justify them.
 
 ### Layout
 ```
@@ -55,8 +69,10 @@ backend/
 frontend/src/
   App.jsx                  Shell + global period selector + data-mode badge
   context/PeriodContext    App-wide period state
+  hooks/useDebouncedValue  Debounced server-side table search
+  hooks/useLazyDealerVerification  On-demand dealer evidence cache
   lib/format.js            Shared NGN / period formatters
-  api/client.js            Axios wrapper for the 9 backend endpoints
+  api/client.js            Central Axios wrapper for backend endpoints
   hooks/useChat.js         Chat state + message threading
   components/
     ChatInterface, MessageBubble, DealerSummaryTable, VarianceCard
@@ -120,8 +136,8 @@ raw.telecom.* (Kafka)
 normalized.transactions (Kafka)
     ↓  apdp/services/postgres_sink
 Postgres: normalized.transactions + normalized.partner_settlements view
-    ↓  backend/db/queries.py reads view behind PAYMENT_SOURCE=apdp flag (TODO)
-FBB Payment Intelligence — [SIMULATED] banner flips off
+    ↓  backend/db/apdp.py reads view behind PAYMENT_SOURCE=apdp
+FBB Payment Intelligence — Live · APDP data-source badge
 ```
 
 ### Quick start

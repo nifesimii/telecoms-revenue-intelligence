@@ -37,7 +37,11 @@ from backend.api.schemas import (
     DisputeDraftRequest,
     DisputeDraftResponse,
     InventoryComparisonRecord,
+    InventoryComparisonPage,
+    InventoryComparisonSummary,
+    PaginationMeta,
     PartnerHealthRecord,
+    PaymentCollectionPage,
     PaymentCoverageResponse,
     PaymentSummaryRecord,
     PaymentVarianceRecord,
@@ -53,6 +57,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 CHAT_FAILURE_MESSAGE = "I was unable to process that request. Please try again."
+
+_INVENTORY_SORTS = {
+    "activation_count": "activation_count",
+    "inventory_gap": "inventory_gap",
+    "dealer_name": "dealer_name",
+    "product_code": "product_code",
+}
+_PAYMENT_SORTS = {
+    "amount_unpaid": "amount_unpaid",
+    "commission_owed": "commission_owed",
+    "amount_paid": "amount_paid",
+    "dealer_name": "dealer_name",
+    "payment_status": "payment_status",
+}
+
+
+def _bounded_page(df: pd.DataFrame, limit: int, offset: int) -> pd.DataFrame:
+    """Return a defensive bounded slice; never expose an unbounded collection."""
+    return df.iloc[offset : offset + limit].copy()
 
 
 # ---------------------------------------------------------------------------
@@ -142,6 +165,35 @@ def get_dealer_statement(
     # Drop the internal ``found`` flag before Pydantic validation.
     result.pop("found", None)
     return DealerStatementResponse(**result)
+
+
+@router.get("/dealers/{dealer_id}/verification")
+def get_dealer_verification(
+    dealer_id: str,
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+) -> dict[str, Any]:
+    """Small on-demand evidence payload for expandable table rows."""
+    df = execute_query(
+        "get_dealer_summary",
+        {"mon_period": mon_period, "distributor_code": dealer_id},
+    )
+    if df.empty:
+        raise HTTPException(status_code=404, detail="Dealer verification data not found")
+    row = df.iloc[0]
+    total = int(row.get("total_activations") or 0)
+    zero = int(row.get("zero_commission_count") or 0)
+    qualified = max(0, total - zero)
+    return {
+        "dealer_id": str(row.get("dealer_id") or dealer_id),
+        "dealer_name": str(row.get("dealer_name") or dealer_id),
+        "account_profile_class": str(row.get("account_profile_class") or ""),
+        "activation_count": total,
+        "qualified_activation_count": qualified,
+        "non_qualified_activation_count": zero,
+        "qualification_rate_pct": round(qualified / total * 100.0, 1) if total else 0.0,
+        "activation_commission_amount": float(row.get("total_commission_ngn") or 0),
+        "zero_commission_count": zero,
+    }
 
 
 @router.get("/dealers", response_model=list[DealerSummary])
@@ -403,6 +455,64 @@ def list_inventory_comparison(
     ]
 
 
+@router.get("/inventory/comparison-page", response_model=InventoryComparisonPage)
+def get_inventory_comparison_page(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    search: str | None = Query(None, max_length=100),
+    finding_type: str | None = Query(
+        None,
+        pattern=r"^(CONFIRMED_MISMATCH|NO_INVOICE_RECORD|WITHIN_ALLOCATION)$",
+    ),
+    include_within_allocation: bool = Query(False),
+    sort_by: str = Query("activation_count"),
+    sort_direction: str = Query("desc", pattern=r"^(asc|desc)$"),
+) -> InventoryComparisonPage:
+    """Bounded, server-filtered Inventory collection for the web table."""
+    if sort_by not in _INVENTORY_SORTS:
+        raise HTTPException(status_code=422, detail="Unsupported inventory sort field")
+
+    df = execute_query("get_inventory_comparison", {"mon_period": mon_period})
+    if not include_within_allocation:
+        df = df[df["finding_type"] != "WITHIN_ALLOCATION"]
+    if finding_type:
+        df = df[df["finding_type"] == finding_type]
+    if search and search.strip():
+        q = search.strip().lower()
+        mask = pd.Series(False, index=df.index)
+        for column in ("dealer_id", "dealer_name", "product_code", "product_name"):
+            mask |= df[column].fillna("").astype(str).str.lower().str.contains(q, regex=False)
+        df = df[mask]
+
+    summary = InventoryComparisonSummary(
+        confirmed_mismatch_count=int((df["finding_type"] == "CONFIRMED_MISMATCH").sum()),
+        no_invoice_record_count=int((df["finding_type"] == "NO_INVOICE_RECORD").sum()),
+        within_allocation_count=int((df["finding_type"] == "WITHIN_ALLOCATION").sum()),
+        total_gap_units=float(
+            df.loc[df["finding_type"] == "CONFIRMED_MISMATCH", "inventory_gap"]
+            .fillna(0).astype(float).sum()
+        ),
+    )
+    total = len(df)
+    column = _INVENTORY_SORTS[sort_by]
+    df = df.sort_values(
+        [column, "dealer_id", "product_code"],
+        ascending=[sort_direction == "asc", True, True],
+        na_position="last",
+    )
+    page = _bounded_page(df, limit, offset)
+    items = [InventoryComparisonRecord(**row) for row in page.to_dict(orient="records")]
+    return InventoryComparisonPage(
+        items=items,
+        pagination=PaginationMeta(
+            limit=limit, offset=offset, returned=len(items), total=total,
+            has_more=offset + len(items) < total,
+        ),
+        summary=summary,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Data coverage ticket compiler (Stage 1 — no live ServiceNow submission)
 # ---------------------------------------------------------------------------
@@ -606,6 +716,68 @@ def get_payment_summary(
         fully_paid_count=int(status_counts.get("FULLY_PAID", 0)),
         data_source="SIMULATED",
         records=records,
+    )
+
+
+@router.get("/payments", response_model=PaymentCollectionPage)
+def list_payments(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    search: str | None = Query(None, max_length=100),
+    payment_status: str | None = Query(None, max_length=100),
+    sort_by: str = Query("amount_unpaid"),
+    sort_direction: str = Query("desc", pattern=r"^(asc|desc)$"),
+) -> PaymentCollectionPage:
+    """Single bounded Payment collection used by All and Exceptions views."""
+    if sort_by not in _PAYMENT_SORTS:
+        raise HTTPException(status_code=422, detail="Unsupported payment sort field")
+
+    summary = _apdp_summary_response(mon_period) if config.PAYMENT_SOURCE == "apdp" else get_payment_summary(mon_period)
+    records = summary.records
+    df = pd.DataFrame([r.model_dump() for r in records])
+    if df.empty:
+        df = pd.DataFrame(columns=list(PaymentSummaryRecord.model_fields))
+
+    if payment_status:
+        statuses = {s.strip().upper() for s in payment_status.split(",") if s.strip()}
+        allowed = set(_STATUS_RANK)
+        if not statuses or not statuses <= allowed:
+            raise HTTPException(status_code=422, detail="Unsupported payment status")
+        df = df[df["payment_status"].isin(statuses)]
+    if search and search.strip():
+        q = search.strip().lower()
+        mask = (
+            df["dealer_id"].fillna("").astype(str).str.lower().str.contains(q, regex=False)
+            | df["dealer_name"].fillna("").astype(str).str.lower().str.contains(q, regex=False)
+        )
+        df = df[mask]
+
+    total = len(df)
+    column = _PAYMENT_SORTS[sort_by]
+    df = df.sort_values(
+        [column, "dealer_id"],
+        ascending=[sort_direction == "asc", True],
+        na_position="last",
+    )
+    page = _bounded_page(df, limit, offset)
+    items = [_row_to_payment_record(row) for row in page.to_dict(orient="records")]
+    return PaymentCollectionPage(
+        period=mon_period,
+        items=items,
+        pagination=PaginationMeta(
+            limit=limit, offset=offset, returned=len(items), total=total,
+            has_more=offset + len(items) < total,
+        ),
+        total_commission_owed=summary.total_commission_owed,
+        total_amount_paid=summary.total_amount_paid,
+        total_amount_unpaid=summary.total_amount_unpaid,
+        payment_coverage_pct=summary.payment_coverage_pct,
+        disputed_count=summary.disputed_count,
+        partially_paid_count=summary.partially_paid_count,
+        pending_count=summary.pending_count,
+        fully_paid_count=summary.fully_paid_count,
+        data_source=summary.data_source,
     )
 
 

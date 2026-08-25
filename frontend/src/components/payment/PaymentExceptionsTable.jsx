@@ -11,12 +11,12 @@
 
 import { useMemo, useState } from 'react';
 import { formatNGN } from '../../lib/format.js';
-import useDealerVerification from '../../hooks/useDealerVerification.js';
 import HelpIcon, {
   LEAKAGE_HELP,
   QUALIFICATION_HELP,
 } from '../shared/HelpIcon.jsx';
 import DisputeDraftModal from './DisputeDraftModal.jsx';
+import useLazyDealerVerification from '../../hooks/useLazyDealerVerification.js';
 
 const STATUS_TONE = {
   PARTIALLY_PAID: 'bg-amber-100 text-amber-800 border-amber-200',
@@ -236,6 +236,30 @@ function AskButton({ onAsk, row, period, zeroCount = 0 }) {
 }
 
 // ---------------------------------------------------------------------------
+// Collapsed-row verdict chip — shows the verification conclusion without
+// requiring the user to expand the panel first.
+// ---------------------------------------------------------------------------
+
+function verdictForRow(row, activation) {
+  if (!activation) return { label: 'No activation data', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
+  const earned  = Number(activation.activation_commission_amount || 0);
+  const claimed = Number(row.commission_owed || 0);
+  const variance = earned - claimed;
+  if (Math.abs(variance) <= 1) return { label: '✓ Matches', tone: 'bg-emerald-100 text-emerald-800 border-emerald-200' };
+  if (variance > 1)            return { label: '⚠ Under-claimed', tone: 'bg-amber-100 text-amber-800 border-amber-200' };
+  return { label: '✗ Exceeds activations', tone: 'bg-red-100 text-red-800 border-red-200' };
+}
+
+function VerificationChip({ row, activation }) {
+  const { label, tone } = verdictForRow(row, activation);
+  return (
+    <span className={`inline-block px-2 py-0.5 text-[10px] font-semibold border rounded-full ${tone}`}>
+      {label}
+    </span>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main table
 // ---------------------------------------------------------------------------
 
@@ -245,9 +269,9 @@ export default function PaymentExceptionsTable({
   period = null,
   onAsk = null,
 }) {
-  const { activationByDealer, dealerByCode } = useDealerVerification(period);
   const [expanded, setExpanded] = useState({}); // { dealer_id: bool }
   const [disputeRow, setDisputeRow] = useState(null);
+  const { records: verificationByDealer, loading: verificationLoading, load } = useLazyDealerVerification(period);
 
   if (loading) {
     return (
@@ -264,8 +288,11 @@ export default function PaymentExceptionsTable({
     );
   }
 
-  const toggle = (code) =>
+  const toggle = (code) => {
+    const opening = !expanded[code];
     setExpanded((e) => ({ ...e, [code]: !e[code] }));
+    if (opening) load(code).catch(() => {});
+  };
 
   return (
     <div className="overflow-auto h-full">
@@ -297,16 +324,20 @@ export default function PaymentExceptionsTable({
           {rows.map((r, i) => {
             const code     = r.dealer_id;
             const isOpen   = !!expanded[code];
-            const arrow    = isOpen ? '▼' : '▶';
             return [
               <tr
                 key={`${code}-${i}`}
                 className="hover:bg-gray-50 border-b border-gray-100 align-top"
               >
-                <td className="px-2 py-1.5 text-gray-400 cursor-pointer select-none"
+                <td className="px-2 py-1.5 w-6">
+                  <button
                     onClick={() => toggle(code)}
-                    title={isOpen ? 'Collapse' : 'Expand verification'}>
-                  {arrow}
+                    aria-expanded={isOpen}
+                    aria-label={isOpen ? 'Collapse verification' : 'Expand verification'}
+                    className="text-gray-400 hover:text-gray-700 select-none"
+                  >
+                    {isOpen ? '▼' : '▶'}
+                  </button>
                 </td>
                 <td
                   className="px-2 py-1.5 text-gray-800 truncate max-w-[180px]"
@@ -327,21 +358,29 @@ export default function PaymentExceptionsTable({
                   <FlagBadge flag={r.exception_flag} />
                 </td>
                 <td className="px-2 py-1.5">
-                  <button
-                    onClick={() => toggle(code)}
-                    className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded px-2 py-0.5 hover:bg-yellow-50 hover:border-mtn-yellow transition"
-                  >
-                    {isOpen ? 'Hide' : 'Verify'}
-                  </button>
+                  <div className="flex flex-col gap-1 items-start">
+                    {!isOpen && (
+                      <VerificationChip row={r} activation={verificationByDealer[code]} />
+                    )}
+                    <button
+                      onClick={() => toggle(code)}
+                      className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded px-2 py-0.5 hover:bg-yellow-50 hover:border-mtn-yellow transition"
+                    >
+                      {isOpen ? 'Hide' : 'Verify'}
+                    </button>
+                  </div>
                 </td>
               </tr>,
-              isOpen && (
+              isOpen && verificationLoading[code] && (
+                <tr key={`${code}-loading`}><td colSpan={7} className="p-3 text-xs text-gray-500 italic">Loading verification evidence…</td></tr>
+              ),
+              isOpen && !verificationLoading[code] && (
                 <tr key={`${code}-${i}-detail`} className="bg-gray-50">
                   <td colSpan={7} className="p-0">
                     <VerificationPanel
                       row={r}
-                      activation={activationByDealer[code]}
-                      dealer={dealerByCode[code]}
+                      activation={verificationByDealer[code]}
+                      dealer={verificationByDealer[code]}
                       onAsk={onAsk}
                       onDispute={setDisputeRow}
                       period={period}

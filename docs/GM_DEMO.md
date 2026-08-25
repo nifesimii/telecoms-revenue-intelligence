@@ -50,7 +50,9 @@ Exceptions) with a search filter that persists across sub-tabs.
 **Inventory Intelligence** — Activations vs IFS invoiced purchases,
 per (dealer, product). Flags `CONFIRMED_MISMATCH` (activations exceed
 purchases), `NO_INVOICE_RECORD` (activations with no matching invoice —
-possibly outside the data window), or `WITHIN_ALLOCATION` (fine).
+possibly outside the data window), or `WITHIN_ALLOCATION` (fine). The table
+is server-paginated; search and summary cards apply to the complete matching
+result, not only the visible page.
 
 **Payment Intelligence** — Coverage card + per-dealer payment table +
 period-over-period variance. Runs on APDP settlement data by default
@@ -58,6 +60,8 @@ period-over-period variance. Runs on APDP settlement data by default
 that opens the per-period Finance/RA internal statement — commission
 expected vs settled, variance, Position headline, linked audit trails,
 copy-as-markdown / download-as-`.md`.
+Exceptions and All Payments are filtered views of one bounded collection, so
+switching views does not render or download both complete tables.
 
 **Audit Trails** — The verification-chain browser. Pick a module + a
 period + click **Run**. Every "Partner X was/wasn't paid" claim gets a
@@ -156,6 +160,8 @@ means read the step-by-step before acting.
   this as a data-coverage caveat, not a mismatch.
 - **The chat can be slow** — the Anthropic API is on the hot path and a
   multi-tool answer can take 20–30 seconds. Normal.
+- **Inventory and Payment tables are intentionally paginated.** Use search or
+  Next/Previous rather than expecting every dealer row in the DOM at once.
 
 ---
 

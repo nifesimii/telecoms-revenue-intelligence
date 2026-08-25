@@ -83,36 +83,36 @@ export default function ActivationIntelligencePanel() {
   const filteredVariance   = useMemo(() => variance.filter(matchesDealer),   [variance, dealerQuery]);
   const filteredExceptions = useMemo(() => exceptions.filter(matchesDealer), [exceptions, dealerQuery]);
 
+  // Prefetch all three datasets in parallel so tab switching is instant.
+  // activeTab is intentionally NOT a dependency — it's a display toggle,
+  // not a data trigger. Variance re-fetches when priorPeriod changes.
   useEffect(() => {
     if (!period) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
-
-    const work = async () => {
-      try {
-        if (activeTab === 'summary') {
-          const data = await getActivationSummary(period);
-          if (!cancelled) setSummary(Array.isArray(data) ? data : []);
-        } else if (activeTab === 'variance') {
-          const a = priorPeriod || period;
-          const data = await getActivationVariance(a, period);
-          if (!cancelled) setVariance(Array.isArray(data) ? data : []);
-        } else if (activeTab === 'exceptions') {
-          const data = await getActivationExceptions(period);
-          if (!cancelled) setExceptions(Array.isArray(data) ? data : []);
-        }
-      } catch (e) {
+    const prior = priorPeriod || period;
+    Promise.all([
+      getActivationSummary(period).catch(() => []),
+      getActivationVariance(prior, period).catch(() => []),
+      getActivationExceptions(period).catch(() => []),
+    ])
+      .then(([s, v, e]) => {
+        if (cancelled) return;
+        setSummary(Array.isArray(s) ? s : []);
+        setVariance(Array.isArray(v) ? v : []);
+        setExceptions(Array.isArray(e) ? e : []);
+      })
+      .catch((e) => {
         if (!cancelled) setError(e?.response?.data?.detail || e?.message || String(e));
-      } finally {
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    };
-    work();
+      });
     return () => {
       cancelled = true;
     };
-  }, [period, priorPeriod, activeTab]);
+  }, [period, priorPeriod]);
 
   const exceptionCounts = useMemo(() => {
     const counts = { ALL_UNQUALIFIED: 0, HIGH_UNQUALIFIED_RATE: 0, UNUSUAL_VOLUME: 0 };
@@ -279,10 +279,16 @@ export default function ActivationIntelligencePanel() {
               </>
             )}
           </div>
-          <div className="flex-1 min-h-0">
-            {activeTab === 'summary' && <ActivationSummaryTable rows={filteredSummary} loading={loading} />}
-            {activeTab === 'variance' && <ActivationVarianceTable rows={filteredVariance} loading={loading} />}
-            {activeTab === 'exceptions' && <ActivationExceptionsTable rows={filteredExceptions} loading={loading} />}
+          <div className="flex-1 min-h-0 relative">
+            <div className={activeTab === 'summary' ? 'h-full' : 'hidden'}>
+              <ActivationSummaryTable rows={filteredSummary} loading={loading} />
+            </div>
+            <div className={activeTab === 'variance' ? 'h-full' : 'hidden'}>
+              <ActivationVarianceTable rows={filteredVariance} loading={loading} />
+            </div>
+            <div className={activeTab === 'exceptions' ? 'h-full' : 'hidden'}>
+              <ActivationExceptionsTable rows={filteredExceptions} loading={loading} />
+            </div>
           </div>
         </div>
       </div>

@@ -5,11 +5,14 @@
 // Period comes from the global PeriodProvider.
 
 import { useEffect, useMemo, useState } from 'react';
-import { getInventoryComparison } from '../../api/client.js';
+import { getInventoryComparisonPage } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatPeriod } from '../../lib/format.js';
 import InventoryComparisonTable from './InventoryComparisonTable.jsx';
 import DataCoverageTicketModal from './DataCoverageTicketModal.jsx';
+import PaginationControls from '../shared/PaginationControls.jsx';
+import useDebouncedValue from '../../hooks/useDebouncedValue.js';
+import { useQueryClient } from '@tanstack/react-query';
 
 function SummaryCard({ label, count, sub, tone, accent }) {
   return (
@@ -23,9 +26,14 @@ function SummaryCard({ label, count, sub, tone, accent }) {
 }
 
 export default function InventoryIntelligencePanel({ onAsk } = {}) {
+  const queryClient = useQueryClient();
   const { period } = usePeriod();
   const [includeWithin, setIncludeWithin] = useState(false);
   const [rows, setRows] = useState([]);
+  const [pagination, setPagination] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [offset, setOffset] = useState(0);
+  const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [ticketOpen, setTicketOpen] = useState(false);
@@ -33,43 +41,57 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
   // Client-side substring filter — searches dealer AND product fields
   // (both are meaningful here; e.g. "hynex" to isolate the alias split).
   const [query, setQuery] = useState('');
-  const filteredRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return rows;
-    return rows.filter((r) =>
-      String(r.dealer_id || '').toLowerCase().includes(q)
-      || String(r.dealer_name || '').toLowerCase().includes(q)
-      || String(r.product_code || '').toLowerCase().includes(q)
-      || String(r.product_name || '').toLowerCase().includes(q)
-    );
-  }, [rows, query]);
+  const debouncedQuery = useDebouncedValue(query);
 
   useEffect(() => {
     if (!period) return;
-    let cancelled = false;
     setLoading(true);
     setError(null);
-    getInventoryComparison(period, includeWithin)
-      .then((data) => !cancelled && setRows(Array.isArray(data) ? data : []))
-      .catch((e) => {
-        if (!cancelled) setError(e?.response?.data?.detail || e?.message || String(e));
-      })
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
+    const params = {
+      mon_period: period,
+      include_within_allocation: includeWithin,
+      search: debouncedQuery || undefined,
+      limit: pageSize,
+      offset,
+      sort_by: 'activation_count',
+      sort_direction: 'desc',
     };
-  }, [period, includeWithin]);
+    let active = true;
+    queryClient.fetchQuery({
+      queryKey: ['inventory-page', params],
+      queryFn: ({ signal }) => getInventoryComparisonPage(params, signal),
+    })
+      .then((data) => {
+        if (!active) return;
+        setRows(Array.isArray(data?.items) ? data.items : []);
+        setPagination(data?.pagination || null);
+        setSummary(data?.summary || null);
+      })
+      .catch((e) => {
+        if (active && e?.code !== 'ERR_CANCELED') setError(e?.response?.data?.detail || e?.message || String(e));
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [period, includeWithin, debouncedQuery, pageSize, offset, queryClient]);
+
+  useEffect(() => { setOffset(0); }, [period, includeWithin, debouncedQuery, pageSize]);
 
   // Summary cards reflect the filtered view — "confirmed mismatches on
   // Hynex products" is a natural drill-down to want cards for.
   const counts = useMemo(() => {
+    if (summary) return {
+      CONFIRMED_MISMATCH: summary.confirmed_mismatch_count,
+      NO_INVOICE_RECORD: summary.no_invoice_record_count,
+      WITHIN_ALLOCATION: summary.within_allocation_count,
+      total_gap_units: summary.total_gap_units,
+    };
     const c = {
       CONFIRMED_MISMATCH: 0,
       NO_INVOICE_RECORD: 0,
       WITHIN_ALLOCATION: 0,
       total_gap_units: 0,
     };
-    for (const r of filteredRows) {
+    for (const r of rows) {
       c[r.finding_type] = (c[r.finding_type] || 0) + 1;
       if (
         r.finding_type === 'CONFIRMED_MISMATCH' &&
@@ -80,7 +102,7 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
       }
     }
     return c;
-  }, [filteredRows]);
+  }, [rows, summary]);
 
   return (
     <div className="h-full flex flex-col bg-gray-50 text-gray-800">
@@ -171,11 +193,23 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
 
         <div className="flex-1 min-h-[360px] bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
           <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500 shrink-0">
-            {filteredRows.length.toLocaleString()} record{filteredRows.length === 1 ? '' : 's'}
-            {query && filteredRows.length !== rows.length && ` (of ${rows.length.toLocaleString()})`}
+            <div className="flex items-center justify-between gap-3">
+              <span>{pagination?.total?.toLocaleString() || 0} matching records</span>
+              <PaginationControls
+                pagination={pagination}
+                pageSize={pageSize}
+                onOffsetChange={setOffset}
+                onPageSizeChange={setPageSize}
+              />
+            </div>
           </div>
           <div className="flex-1 min-h-0">
-            <InventoryComparisonTable rows={filteredRows} loading={loading} period={period} onAsk={onAsk} />
+            <InventoryComparisonTable
+              rows={rows}
+              loading={loading}
+              period={period}
+              onAsk={onAsk}
+            />
           </div>
         </div>
       </div>
