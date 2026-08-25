@@ -214,6 +214,11 @@ def test_agent_activation_exceptions_question(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.live_agent
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_AGENT_TESTS") != "1",
+    reason="live agent tests are opt-in (set RUN_LIVE_AGENT_TESTS=1)",
+)
 def test_kb_activation_rules_grounded() -> None:
     """Asks a question that requires Rule 4 + 6-month eligibility window
     knowledge. Confirms the answer cites both and avoids the word 'fraud'."""

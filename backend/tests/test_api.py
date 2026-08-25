@@ -94,6 +94,11 @@ def test_dealers_returns_list_of_dealer_summary(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.live_agent
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_AGENT_TESTS") != "1",
+    reason="live agent tests are opt-in (set RUN_LIVE_AGENT_TESTS=1)",
+)
 def test_chat_summary_question_returns_response_and_tool(
     client: TestClient,
 ) -> None:

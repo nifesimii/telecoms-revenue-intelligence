@@ -152,6 +152,11 @@ def test_agent_inventory_question(monkeypatch: pytest.MonkeyPatch) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.live_agent
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_AGENT_TESTS") != "1",
+    reason="live agent tests are opt-in (set RUN_LIVE_AGENT_TESTS=1)",
+)
 def test_kb_inventory_rules_grounded() -> None:
     """Real API call. Confirms the KB Section 12 rules are reaching the model:
     answer cites CONFIRMED_MISMATCH or 'confirmed mismatch', recommends

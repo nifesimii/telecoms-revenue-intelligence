@@ -34,6 +34,12 @@ but native Presto/Postgres page/count/aggregate execution remains follow-up
 work once live Presto is implemented and production query plans can be
 measured. Redis and cursor pagination remain deliberately deferred.
 
+**CI follow-up:** GitHub Actions previously supplied a fake non-empty
+`ANTHROPIC_API_KEY`, which accidentally activated five live-agent tests and
+failed with Anthropic 401 responses. Live tests now carry the `live_agent`
+marker and require `RUN_LIVE_AGENT_TESTS=1`; the normal sample-data workflow
+runs without any Anthropic key. CI-equivalent result: 215 passed, 28 skipped.
+
 ---
 
 ## Session — 2026-08-21  (APDP live-data sprint)

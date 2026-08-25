@@ -451,6 +451,11 @@ def test_conversation_history_is_threaded(monkeypatch: pytest.MonkeyPatch) -> No
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.live_agent
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_AGENT_TESTS") != "1",
+    reason="live agent tests are opt-in (set RUN_LIVE_AGENT_TESTS=1)",
+)
 def test_kb_grounding_returns_5g_router_commission_rate() -> None:
     """Real API call. Confirms the KB is reaching Claude via the system prompt.
 

@@ -96,6 +96,9 @@ cd frontend && npm install && npm run dev  # http://localhost:5173
 
 # 4. Tests
 pytest backend/tests
+
+# Optional billed/network KB-grounding tests (requires a real key)
+RUN_LIVE_AGENT_TESTS=1 pytest backend/tests -m live_agent
 ```
 
 See [`CLAUDE.md`](CLAUDE.md) for FBB architecture rules, SQL boundaries, tool

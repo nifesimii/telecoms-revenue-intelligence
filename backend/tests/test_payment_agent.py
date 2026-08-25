@@ -193,6 +193,11 @@ def test_agent_payment_exceptions_question(monkeypatch: pytest.MonkeyPatch) -> N
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.live_agent
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_AGENT_TESTS") != "1",
+    reason="live agent tests are opt-in (set RUN_LIVE_AGENT_TESTS=1)",
+)
 def test_kb_payment_transparency() -> None:
     """Real API call. Response must disclose simulated status, cite a ₦
     coverage amount, and mention disputed dealers."""

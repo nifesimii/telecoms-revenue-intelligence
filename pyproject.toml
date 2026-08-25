@@ -14,3 +14,6 @@ filterwarnings = [
 # opt-in eval suite (backend/tests/test_evals.py) gates itself on
 # RUN_EVALS=1.
 testpaths = ["backend/tests"]
+markers = [
+  "live_agent: makes a billed network call to Anthropic; requires RUN_LIVE_AGENT_TESTS=1",
+]

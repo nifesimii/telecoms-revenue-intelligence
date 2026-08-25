@@ -18,8 +18,8 @@ jobs:
 
     env:
       USE_SAMPLE_DATA: "true"
-      # Required for module imports during test collection; never used.
-      ANTHROPIC_API_KEY: "test-key-not-used"
+      # Live Anthropic tests are a separate, explicitly opt-in suite.
+      RUN_LIVE_AGENT_TESTS: "0"
 
     steps:
       - name: Checkout
