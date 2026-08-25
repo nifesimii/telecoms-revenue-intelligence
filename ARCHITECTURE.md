@@ -37,11 +37,12 @@ CSVs → pure-Python `normalizer_core` → direct psycopg2 INSERT into
 works exactly the same as the eventual live path.
 
 The two layers meet at one seam: `normalized.partner_settlements`. FBB
-reads that view when `PAYMENT_SOURCE=apdp` is set. **This is the
-default on Render today** — every intelligence tab, every audit module,
-the Current Position card on Overview, and the Dealer Statement all
-run against APDP-normalised data. Flip to `simulated` for the CSV
-fallback.
+reads that view when `PAYMENT_SOURCE=apdp` is set. APDP is an opt-in
+integration mode. **Localhost and the Render GM preview both use
+`PAYMENT_SOURCE=simulated`** so they return the same deterministic
+`payment_simulation.csv` records, totals, dealer names, and exception
+flags. A dedicated APDP environment can enable the Postgres path without
+changing the preview contract.
 
 The APDP fixture generator now samples from the FBB dealer roster
 (`data/samples/fbb_comm_dev_act_<period>.csv`) rather than 5 hardcoded
@@ -473,7 +474,7 @@ not a source of truth; the backend remains authoritative.
 a `Server-Timing` duration and emits a payload-free structured timing log. The
 middleware intentionally logs no SQL or financial record contents.
 
-**APDP seed loading (`backend/main.py::_seed_apdp_if_empty` +
+**Optional APDP seed loading (`backend/main.py::_seed_apdp_if_empty` +
 `infra/postgres/apdp_seed.sql`).** On backend startup, when
 `PAYMENT_SOURCE=apdp` and `normalized.transactions` is empty (or the
 table is missing entirely), the FBB backend applies the packaged seed
@@ -482,7 +483,8 @@ via psycopg2. Idempotent (COUNT-and-skip on subsequent boots), non-fatal
 state with the Live·APDP badge rather than a 500). *Why:* Render's
 managed Postgres has no way to inject fixture data at provision time;
 this hook is how the demo gets ~23k transaction rows into the DB on
-first boot without an operator running `psql` by hand. First boot pays
+first boot without an operator running `psql` by hand. This path is disabled
+in the localhost-aligned Render preview. An APDP-enabled environment's first boot pays
 ~30-60s for the load; every boot after is ~50ms.
 
 **Dealer-statement composer (`backend/db/dealer_statement.py`).** A

@@ -29,12 +29,11 @@ services:
       # ── Sample-data mode (no live Presto) ────────────────────────────
       - key: USE_SAMPLE_DATA
         value: "true"
-      # PAYMENT_SOURCE=apdp reads normalized.partner_settlements. The
-      # APDP schema + fixture data is packaged in infra/postgres/apdp_seed.sql
-      # and loaded once on backend startup if the target DB is empty.
-      # Flip back to "simulated" if you want to demo the CSV path instead.
+      # Keep the hosted GM preview identical to localhost: both read the
+      # deterministic payment_simulation.csv fixture. APDP remains an opt-in
+      # integration mode for dedicated end-to-end testing.
       - key: PAYMENT_SOURCE
-        value: apdp
+        value: simulated
 
       # ── Same-origin deploy: SPA and API share the host, so CORS is a
       # no-op. Kept explicit so a future split-origin change is a one-line

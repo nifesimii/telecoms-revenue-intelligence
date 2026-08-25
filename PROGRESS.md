@@ -139,21 +139,19 @@ Payment tab. Best-effort load — a missing payment source degrades to
 "nothing rendered" rather than blanking the whole Overview.
 
 **Deploy**
-`render.yaml` — `PAYMENT_SOURCE=apdp` by default, `APDP_PG_*` env vars
-wired to the same managed fbb-audit-pg Postgres. `.dockerignore`
+`render.yaml` — `PAYMENT_SOURCE=simulated`, matching localhost exactly for
+the GM preview. `APDP_PG_*` env vars remain wired to the same managed
+fbb-audit-pg Postgres so APDP can still be enabled explicitly. `.dockerignore`
 excludes `apdp/` (deliberately — the runtime path doesn't need Flink or
 Kafka) but includes `infra/` where the seed lives. Dockerfile already
 COPYs `infra/` so the seed lands in the image.
 
 **Next — before GM demo**
-1. Watch the Render redeploy — expect ~2 min build + ~60s first-boot
-   seed apply. Once Live, `/health` should return
-   `payment_source: "apdp"`.
-2. Open the live URL: Overview → Current Position band should badge
-   Live·APDP with real totals; Payment tab → All Payments should show
-   939 dealers reconciled against APDP data; open a dealer's Statement
-   → should show Position headline + Live·APDP badge + linked audit
-   trails.
+1. Watch the Render redeploy. Once Live, `/health` should return
+   `payment_source: "simulated"` and the same revision as GitHub.
+2. Open localhost and Render for Feb 2026. Both should show the Simulated
+   badge, NGN 41,649,665.49 owed, NGN 36,403,291.00 paid,
+   NGN 5,246,374.49 outstanding, 12 disputed, and 912 exceptions.
 3. Punch-list items after that: Statement button on Activation +
    Commission tab dealer rows, address the pre-existing live-LLM
    flake, second APDP dealer story ("this dealer was Overpaid — here's
@@ -284,11 +282,11 @@ boundary.
 
 ## Current phase
 **GM preview is LIVE at https://fbb-preview.onrender.com** (Basic-Auth
-gated). The demo now runs on **live APDP payment data**, not simulated —
-`PAYMENT_SOURCE=apdp` is the default on Render, `normalized.partner_settlements`
-is populated with 939 dealer-settlement rows for Feb 2026 and 922 for
-Mar 2026, all keyed to real FBB dealer IDs so the same partner joins
-across both sides of the reconciliation.
+gated). The hosted preview and localhost now both use the deterministic
+simulated payment dataset (`PAYMENT_SOURCE=simulated`). This deliberately
+keeps screenshots, totals, dealer names, statuses, and exception counts
+identical across both environments. APDP/Postgres remains implemented and
+can be enabled in a dedicated integration environment.
 
 Four audit modules registered (`zero_commission`, `inventory_mismatch`,
 `payment_reconciliation`, `eligibility_window`) and the payment audit

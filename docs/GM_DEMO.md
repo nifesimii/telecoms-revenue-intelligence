@@ -55,8 +55,8 @@ is server-paginated; search and summary cards apply to the complete matching
 result, not only the visible page.
 
 **Payment Intelligence** — Coverage card + per-dealer payment table +
-period-over-period variance. Runs on APDP settlement data by default
-(green Live · APDP banner). Every dealer row has a **Statement** button
+period-over-period variance. Runs on the deterministic simulated payment
+fixture in both localhost and Render (amber Simulated banner). Every dealer row has a **Statement** button
 that opens the per-period Finance/RA internal statement — commission
 expected vs settled, variance, Position headline, linked audit trails,
 copy-as-markdown / download-as-`.md`.
@@ -139,13 +139,12 @@ means read the step-by-step before acting.
 ## Sample-data caveats (be honest with viewers)
 
 - **All numbers are fictional.** No customer PII, no real dealer names.
-- **Payment side is `Live · APDP`.** `PAYMENT_SOURCE=apdp` is the default —
-  every settlement, reconciliation status, and Position headline is
-  computed from `normalized.partner_settlements`, not from a static
-  CSV. On the tabs and the Statement modal you'll see a green
-  **Live · APDP** badge. It's still fictional data (fixture-seeded,
-  ~23k transaction rows across two periods) — but it flows through
-  the full APDP shape so the plumbing story is real.
+- **Payment side is simulated and environment-matched.** Localhost and Render
+  both use `PAYMENT_SOURCE=simulated`, so the Payment tab, Overview position,
+  dealer names, totals, and exception counts are deterministic and identical.
+  On the tabs and Statement modal you'll see the amber **Simulated** badge.
+  APDP remains available as an opt-in integration environment, but is not the
+  data source for the GM preview.
 - **`Zero-Commission` module reads LOW confidence everywhere.** Legit:
   sample USP codes don't overlap activation codes (trips step 2) and
   sample payments are adjacent-period partials (trips step 5). This is
@@ -168,16 +167,15 @@ means read the step-by-step before acting.
 ## What to look at first (3-min GM tour)
 
 1. **Overview** — read the Posture band + the new **Current Position**
-   band (Owed / Settled / Outstanding / Exceptions with a Live · APDP
+   band (Owed / Settled / Outstanding / Exceptions with a Simulated
    badge) + the Audit Coverage tiles
 2. Change the period to **Feb 2026** if it's not already there
 3. **Payment Intelligence** → **All Payments** sub-tab → click
    **Statement** on any dealer row → walk the modal:
    - Position headline (PAID_IN_FULL / UNDERPAID / OVERPAID)
    - Commission-side card (what we owe them)
-   - Payment-side card with Live · APDP badge + APDP detail
-     (sale count, statement count, settlement count, reconciliation
-     status)
+   - Payment-side card with the Simulated badge and deterministic
+     settlement figures matching the Payment tab
    - Linked audit trails at the bottom
    - Hit **Download .md** to see the Finance-ready snapshot
 4. **Audit Trails** → **Payment Reconciliation** → **Run** for Feb 2026
