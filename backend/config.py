@@ -42,21 +42,38 @@ if PAYMENT_SOURCE not in ("simulated", "apdp"):
     PAYMENT_SOURCE = "simulated"
 
 # --- APDP Postgres (only used when PAYMENT_SOURCE=apdp) ---
-APDP_PG_HOST: str = os.getenv("APDP_PG_HOST", "localhost")
-APDP_PG_PORT: int = int(os.getenv("APDP_PG_PORT", "5432"))
-APDP_PG_DB: str = os.getenv("APDP_PG_DB", "payment_platform")
-APDP_PG_USER: str = os.getenv("APDP_PG_USER", "platform_user")
-APDP_PG_PASSWORD: str = os.getenv("APDP_PG_PASSWORD", "platform_pass")
+# Keep the raw explicit values so the audit connection can distinguish a real
+# deployment binding from the local APDP defaults below.
+_APDP_PG_HOST_ENV = os.getenv("APDP_PG_HOST")
+_APDP_PG_PORT_ENV = os.getenv("APDP_PG_PORT")
+_APDP_PG_DB_ENV = os.getenv("APDP_PG_DB")
+_APDP_PG_USER_ENV = os.getenv("APDP_PG_USER")
+_APDP_PG_PASSWORD_ENV = os.getenv("APDP_PG_PASSWORD")
+
+APDP_PG_HOST: str = _APDP_PG_HOST_ENV or "localhost"
+APDP_PG_PORT: int = int(_APDP_PG_PORT_ENV or "5432")
+APDP_PG_DB: str = _APDP_PG_DB_ENV or "payment_platform"
+APDP_PG_USER: str = _APDP_PG_USER_ENV or "platform_user"
+APDP_PG_PASSWORD: str = _APDP_PG_PASSWORD_ENV or "platform_pass"
 
 # --- FBB audit Postgres (dedicated, separate from APDP) ---
 # Holds the zero-commission verification trails. See docker-compose.yml
 # (fbb-postgres) and infra/postgres/audit_init.sql. Host port defaults to
 # 5544 to avoid clashing with APDP's 5432 / a local Postgres.
-FBB_AUDIT_PG_HOST: str = os.getenv("FBB_AUDIT_PG_HOST", "localhost")
-FBB_AUDIT_PG_PORT: int = int(os.getenv("FBB_AUDIT_PG_PORT", "5544"))
-FBB_AUDIT_PG_DB: str = os.getenv("FBB_AUDIT_PG_DB", "fbb_audit")
-FBB_AUDIT_PG_USER: str = os.getenv("FBB_AUDIT_PG_USER", "fbb_audit")
-FBB_AUDIT_PG_PASSWORD: str = os.getenv("FBB_AUDIT_PG_PASSWORD", "fbb_audit_pass")
+# Render's demo intentionally stores the ``audit`` and ``normalized`` schemas
+# in one managed database. A service created outside the Blueprint may have
+# only APDP_PG_* linked; in that case reuse those *explicit* bindings instead
+# of silently trying the container's localhost:5544. With no explicit APDP
+# binding, local development retains the dedicated Docker defaults.
+FBB_AUDIT_PG_HOST: str = os.getenv("FBB_AUDIT_PG_HOST") or _APDP_PG_HOST_ENV or "localhost"
+FBB_AUDIT_PG_PORT: int = int(os.getenv("FBB_AUDIT_PG_PORT") or _APDP_PG_PORT_ENV or "5544")
+FBB_AUDIT_PG_DB: str = os.getenv("FBB_AUDIT_PG_DB") or _APDP_PG_DB_ENV or "fbb_audit"
+FBB_AUDIT_PG_USER: str = os.getenv("FBB_AUDIT_PG_USER") or _APDP_PG_USER_ENV or "fbb_audit"
+FBB_AUDIT_PG_PASSWORD: str = (
+    os.getenv("FBB_AUDIT_PG_PASSWORD")
+    or _APDP_PG_PASSWORD_ENV
+    or "fbb_audit_pass"
+)
 
 # --- CORS ---
 CORS_ORIGINS: list[str] = [

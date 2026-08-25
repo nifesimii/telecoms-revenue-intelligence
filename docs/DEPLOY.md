@@ -46,6 +46,14 @@ Save. Render redeploys automatically.
 **If either `DEMO_*` is blank the gate is disabled and the app is public.**
 Both must be set.
 
+The Blueprint also links `FBB_AUDIT_PG_*` and `APDP_PG_*` to the managed
+`fbb-audit-pg` database automatically. If the web service was created manually
+instead of through the Blueprint, verify those variables under **Environment**.
+An Audit Trails error mentioning `localhost:5544` means the database binding
+is missing—not that Postgres should be running inside the web container.
+For the demo, the backend can fall back from missing `FBB_AUDIT_PG_*` values to
+explicit `APDP_PG_*` values because both schemas intentionally share one DB.
+
 ## 4. Smoke test
 
 Once the deploy shows **Live**:

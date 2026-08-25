@@ -47,6 +47,14 @@ React types) before the Vite build. The lockfile was regenerated inside the
 exact Render image, `packageManager` now pins npm 10.9.8, and CI now runs
 `npm ci` + `npm run build` under Node 22 so lockfile drift fails before deploy.
 
+**Render audit connection follow-up:** an Audit Trails screenshot showed the
+deployed backend attempting local Docker's `localhost:5544`, proving that the
+service lacked `FBB_AUDIT_PG_*` bindings. The demo config now safely falls back
+to explicitly configured `APDP_PG_*` credentials (the Render design already
+shares one managed DB for `audit` + `normalized` schemas), while local dev with
+no APDP binding retains `localhost:5544`. Deployment docs now call out the
+dashboard configuration check explicitly.
+
 ---
 
 ## Session — 2026-08-21  (APDP live-data sprint)
