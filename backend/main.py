@@ -43,6 +43,20 @@ _APDP_REPAIR_PATH = (
     / "postgres"
     / "apdp_schema_repair.sql"
 )
+_PAYMENT_BOOTSTRAP_STAGE = "not_started"
+_PAYMENT_BOOTSTRAP_ERROR: str | None = None
+
+
+def _record_bootstrap_error(stage: str, exc: Exception) -> None:
+    """Record a credential-free diagnostic for the public readiness probe."""
+    global _PAYMENT_BOOTSTRAP_STAGE, _PAYMENT_BOOTSTRAP_ERROR
+    _PAYMENT_BOOTSTRAP_STAGE = stage
+    pgcode = getattr(exc, "pgcode", None) or "none"
+    primary = getattr(getattr(exc, "diag", None), "message_primary", None)
+    message = primary or str(exc).splitlines()[0]
+    _PAYMENT_BOOTSTRAP_ERROR = (
+        f"{type(exc).__name__} pgcode={pgcode}: {message[:240]}"
+    )
 
 
 def _seed_apdp_if_empty() -> bool:
@@ -61,12 +75,17 @@ def _seed_apdp_if_empty() -> bool:
     'Live · APDP' badge). Rendering an empty tab is a better demo
     posture than a 500 wall.
     """
+    global _PAYMENT_BOOTSTRAP_STAGE, _PAYMENT_BOOTSTRAP_ERROR
+    _PAYMENT_BOOTSTRAP_STAGE = "disabled"
+    _PAYMENT_BOOTSTRAP_ERROR = None
     if config.PAYMENT_SOURCE != "apdp":
         return True
     if not _APDP_SEED_PATH.is_file():
+        _PAYMENT_BOOTSTRAP_STAGE = "seed_file_missing"
         logger.info("APDP seed file not present at %s — skipping.", _APDP_SEED_PATH)
         return False
     try:
+        _PAYMENT_BOOTSTRAP_STAGE = "connecting"
         import psycopg2
         conn = psycopg2.connect(
             host=config.APDP_PG_HOST, port=config.APDP_PG_PORT,
@@ -74,6 +93,7 @@ def _seed_apdp_if_empty() -> bool:
             password=config.APDP_PG_PASSWORD, connect_timeout=10,
         )
     except Exception as exc:
+        _record_bootstrap_error("connect_failed", exc)
         logger.warning("APDP seed skipped — Postgres unreachable: %s", exc)
         return False
 
@@ -83,6 +103,7 @@ def _seed_apdp_if_empty() -> bool:
         # checks raises ProgrammingError and previously prevented both the
         # seed and partial-schema repair from ever running on Render.
         conn.autocommit = True
+        _PAYMENT_BOOTSTRAP_STAGE = "inspecting"
         with conn.cursor() as cur:
             cur.execute(
                 "SELECT to_regclass('normalized.transactions') IS NOT NULL"
@@ -98,6 +119,7 @@ def _seed_apdp_if_empty() -> bool:
                 cur.execute("SELECT COUNT(*) FROM normalized.transactions")
                 row_count = int(cur.fetchone()[0])
             if row_count > 0 and has_view:
+                _PAYMENT_BOOTSTRAP_STAGE = "ready"
                 logger.info(
                     "APDP bootstrap skipped — normalized.transactions has "
                     "%d rows and partner_settlements exists.", row_count,
@@ -105,6 +127,7 @@ def _seed_apdp_if_empty() -> bool:
                 return True
             if row_count > 0 and not has_view:
                 if not _APDP_REPAIR_PATH.is_file():
+                    _PAYMENT_BOOTSTRAP_STAGE = "repair_file_missing"
                     logger.warning(
                         "APDP schema repair file not present at %s.",
                         _APDP_REPAIR_PATH,
@@ -115,6 +138,7 @@ def _seed_apdp_if_empty() -> bool:
                     "exist but partner_settlements is missing. Repairing schema.",
                     row_count,
                 )
+                _PAYMENT_BOOTSTRAP_STAGE = "repairing"
                 with conn.cursor() as repair_cur:
                     repair_cur.execute(_APDP_REPAIR_PATH.read_text())
                     repair_cur.execute(
@@ -127,9 +151,11 @@ def _seed_apdp_if_empty() -> bool:
                             "normalized.partner_settlements"
                         )
                 logger.info("APDP partner_settlements view repaired.")
+                _PAYMENT_BOOTSTRAP_STAGE = "ready_after_repair"
                 return True
         # Empty (or table missing) — apply the seed.
         logger.info("Applying APDP seed from %s …", _APDP_SEED_PATH)
+        _PAYMENT_BOOTSTRAP_STAGE = "seeding"
         sql = _APDP_SEED_PATH.read_text()
         with conn.cursor() as cur:
             cur.execute(sql)
@@ -138,8 +164,10 @@ def _seed_apdp_if_empty() -> bool:
             cur.execute("SELECT COUNT(*) FROM normalized.transactions")
             n = int(cur.fetchone()[0])
         logger.info("APDP seed applied — %d transactions loaded.", n)
+        _PAYMENT_BOOTSTRAP_STAGE = "ready_after_seed"
         return True
-    except Exception:
+    except Exception as exc:
+        _record_bootstrap_error(f"{_PAYMENT_BOOTSTRAP_STAGE}_failed", exc)
         logger.exception("APDP seed failed — Payment tab will read empty results.")
         return False
     finally:
@@ -235,6 +263,8 @@ def health() -> dict:
             app.state, "payment_ready", config.PAYMENT_SOURCE != "apdp"
         ),
         "revision": os.getenv("RENDER_GIT_COMMIT", "local")[:7],
+        "payment_bootstrap_stage": _PAYMENT_BOOTSTRAP_STAGE,
+        "payment_bootstrap_error": _PAYMENT_BOOTSTRAP_ERROR,
     }
 
 
