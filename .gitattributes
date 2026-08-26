@@ -1,0 +1,15 @@
+# Force LF line endings for shell scripts regardless of OS checkout settings.
+# Without this, Windows checkouts (core.autocrlf=true) convert .sh files to
+# CRLF, which breaks them inside Linux containers (e.g. Alpine's /bin/sh),
+# causing errors like "illegal option -" or ": not found".
+*.sh text eol=lf
+
+# SQL and Python files: keep consistent LF too, since they're also read
+# inside Linux containers / by tools that assume Unix line endings.
+*.sql text eol=lf
+*.py text eol=lf
+
+# Config/text files generally normalize to LF unless you have a reason not to.
+*.yml text eol=lf
+*.yaml text eol=lf
+*.md text eol=lf
