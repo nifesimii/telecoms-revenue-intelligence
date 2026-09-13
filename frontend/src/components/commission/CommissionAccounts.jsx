@@ -2,13 +2,13 @@ import { formatNGN } from '../../lib/format.js';
 import { MoneyChange } from './CommissionSummary.jsx';
 import PaginationControls from '../shared/PaginationControls.jsx';
 
-export default function CommissionAccounts({ data, busy, filters, onFilter, onSelect, onPage, rowRefs }) {
+export default function CommissionAccounts({ data, busy, filters, onFilter, onSelect, onPage, rowRefs, headingRef }) {
   const orsc = data.stream === 'orsc';
   const activeFilters = filters.search || filters.partner_class || filters.status !== 'all';
   return <section className="overview-surface min-w-0 overflow-hidden" aria-label="Dealer accounts" aria-busy={busy}>
     <div className="p-5 space-y-4">
       <div className="flex flex-wrap justify-between gap-2">
-        <div><h2 className="text-lg font-semibold">Dealer accounts</h2><p className="mt-1 text-sm text-gray-600">Select an account to inspect its {orsc ? 'revenue' : 'commission'} and evidence.</p></div>
+        <div><h2 ref={headingRef} tabIndex={-1} className="text-lg font-semibold">Dealer accounts</h2><p className="mt-1 text-sm text-gray-600">Select an account to inspect its {orsc ? 'revenue' : 'commission'} and evidence.</p></div>
         <p className="text-sm text-gray-600">{data.total.toLocaleString()} matching accounts</p>
       </div>
       <div className="flex flex-wrap gap-3">

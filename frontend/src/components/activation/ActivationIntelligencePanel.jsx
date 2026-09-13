@@ -1,306 +1,80 @@
-// Phase 2 panel — Activation Intelligence.
-// Period selector lives in the global header (PeriodProvider). This panel
-// owns only the "compare against" prior-period dropdown for the variance tab.
-
-import { useEffect, useMemo, useState } from 'react';
-import {
-  getActivationSummary,
-  getActivationVariance,
-  getActivationExceptions,
-} from '../../api/client.js';
+import { useEffect, useRef, useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { getActivationAccounts, getActivationExport } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatPeriod } from '../../lib/format.js';
-import { exportCsv } from '../../lib/csv.js';
-import ActivationSummaryTable from './ActivationSummaryTable.jsx';
-import ActivationVarianceTable from './ActivationVarianceTable.jsx';
-import ActivationExceptionsTable from './ActivationExceptionsTable.jsx';
+import { downloadCsv } from '../../lib/csv.js';
+import useDebouncedValue from '../../hooks/useDebouncedValue.js';
+import ActivationSummary from './ActivationSummary.jsx';
+import ActivationAccounts from './ActivationAccounts.jsx';
+import ActivationDetail from './ActivationDetail.jsx';
+import { VIEWS } from './ActivationFilters.jsx';
 
-const TABS = [
-  { id: 'summary', label: 'Summary' },
-  { id: 'variance', label: 'Variance' },
-  { id: 'exceptions', label: 'Exceptions' },
-];
+const DEFAULT_FILTERS = { view: 'accounts', search: '', partner_class: '', finding: 'all', sort_by: 'activation_count', direction: 'desc', limit: 25, offset: 0 };
+const navigationView = (tab) => tab === 'variance' ? 'comparison' : VIEWS.some(([id]) => id === tab) ? tab : 'accounts';
 
-// Column descriptors per tab — keep these next to the table components so
-// the export matches what the user sees on screen.
-const CSV_COLUMNS = {
-  summary: [
-    { key: 'dealer_id',                       header: 'Dealer ID' },
-    { key: 'dealer_name',                     header: 'Dealer Name' },
-    { key: 'account_profile_class',           header: 'Profile Class' },
-    { key: 'activation_count',                header: 'Total Activations' },
-    { key: 'qualified_activation_count',      header: 'Qualified' },
-    { key: 'non_qualified_activation_count',  header: 'Unqualified' },
-    { key: 'qualification_rate_pct',          header: 'Qualification Rate %' },
-    { key: 'activation_commission_amount',    header: 'Commission (NGN)' },
-  ],
-  variance: [
-    { key: 'dealer_id',                  header: 'Dealer ID' },
-    { key: 'dealer_name',                header: 'Dealer Name' },
-    { key: 'activation_count_a',         header: 'Activations (period A)' },
-    { key: 'activation_count_b',         header: 'Activations (period B)' },
-    { key: 'delta_activations',          header: 'Δ Activations' },
-    { key: 'delta_commission_ngn',       header: 'Δ Commission (NGN)' },
-    { key: 'delta_qualification_rate',   header: 'Δ Qual Rate %' },
-  ],
-  exceptions: [
-    { key: 'dealer_id',                       header: 'Dealer ID' },
-    { key: 'dealer_name',                     header: 'Dealer Name' },
-    { key: 'account_profile_class',           header: 'Profile Class' },
-    { key: 'exception_type',                  header: 'Exception' },
-    { key: 'activation_count',                header: 'Total Activations' },
-    { key: 'qualified_activation_count',      header: 'Qualified' },
-    { key: 'qualification_rate_pct',          header: 'Qualification Rate %' },
-    { key: 'activation_commission_amount',    header: 'Commission (NGN)' },
-  ],
-};
-
-export default function ActivationIntelligencePanel({ navigation } = {}) {
-  const { periods, period, priorPeriod, setPriorPeriod } = usePeriod();
-  const [activeTab, setActiveTab] = useState(navigation?.tab || 'summary');
-
-  const [summary, setSummary] = useState([]);
-  const [variance, setVariance] = useState([]);
-  const [exceptions, setExceptions] = useState([]);
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  // Client-side dealer filter — applies across all three sub-tabs so the
-  // search sticks when the user switches Summary ↔ Variance ↔ Exceptions
-  // for the same dealer. Case-insensitive substring on dealer_id OR
-  // dealer_name; rows are already loaded so this is a pure display filter.
-  const [dealerQuery, setDealerQuery] = useState(navigation?.search || '');
-
-  const matchesDealer = (row) => {
-    const q = dealerQuery.trim().toLowerCase();
-    if (!q) return true;
-    return String(row.dealer_id || '').toLowerCase().includes(q)
-      || String(row.dealer_name || '').toLowerCase().includes(q);
-  };
-
-  const filteredSummary    = useMemo(() => summary.filter(matchesDealer),    [summary, dealerQuery]);
-  const filteredVariance   = useMemo(() => variance.filter(matchesDealer),   [variance, dealerQuery]);
-  const filteredExceptions = useMemo(() => exceptions.filter(matchesDealer), [exceptions, dealerQuery]);
-
-  // Prefetch all three datasets in parallel so tab switching is instant.
-  // activeTab is intentionally NOT a dependency — it's a display toggle,
-  // not a data trigger. Variance re-fetches when priorPeriod changes.
-  useEffect(() => {
-    if (!period) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const prior = priorPeriod || period;
-    Promise.all([
-      getActivationSummary(period).catch(() => []),
-      getActivationVariance(prior, period).catch(() => []),
-      getActivationExceptions(period).catch(() => []),
-    ])
-      .then(([s, v, e]) => {
-        if (cancelled) return;
-        setSummary(Array.isArray(s) ? s : []);
-        setVariance(Array.isArray(v) ? v : []);
-        setExceptions(Array.isArray(e) ? e : []);
-      })
-      .catch((e) => {
-        if (!cancelled) setError(e?.response?.data?.detail || e?.message || String(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [period, priorPeriod]);
-
-  const exceptionCounts = useMemo(() => {
-    const counts = { ALL_UNQUALIFIED: 0, HIGH_UNQUALIFIED_RATE: 0, UNUSUAL_VOLUME: 0 };
-    for (const e of filteredExceptions) counts[e.exception_type] = (counts[e.exception_type] || 0) + 1;
-    return counts;
-  }, [filteredExceptions]);
-
-  return (
-    <div className="h-full flex flex-col bg-gray-50 text-gray-800">
-      <div className="px-5 py-3 bg-white border-b border-gray-200 flex flex-wrap items-end gap-4">
-        <div className="text-sm font-semibold text-gray-800">
-          Activation Intelligence
-          <span className="ml-2 text-xs font-normal text-gray-500">
-            · {formatPeriod(period) || '—'}
-          </span>
-        </div>
-
-        {activeTab === 'variance' && (
-          <div>
-            <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-              Compare against
-            </label>
-            <select
-              value={priorPeriod}
-              onChange={(e) => setPriorPeriod(e.target.value)}
-              className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow focus:border-mtn-yellow"
-            >
-              {periods.map((p) => (
-                <option key={p} value={p}>
-                  {formatPeriod(p)}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div>
-          <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-            Dealer search
-          </label>
-          <input
-            type="search"
-            value={dealerQuery}
-            onChange={(e) => setDealerQuery(e.target.value)}
-            placeholder="code or name…"
-            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow focus:border-mtn-yellow w-52"
-          />
-        </div>
-
-        <div className="flex-1" />
-
-        <button
-          onClick={() => {
-            // Export what the user actually sees — the filtered rows.
-            const rows = activeTab === 'summary' ? filteredSummary
-              : activeTab === 'variance' ? filteredVariance
-              : filteredExceptions;
-            if (!rows.length) return;
-            const filename = `activation_${activeTab}_${period || 'all'}.csv`;
-            exportCsv(CSV_COLUMNS[activeTab], rows, filename);
-          }}
-          disabled={
-            (activeTab === 'summary' && !filteredSummary.length) ||
-            (activeTab === 'variance' && !filteredVariance.length) ||
-            (activeTab === 'exceptions' && !filteredExceptions.length)
-          }
-          className="text-xs text-gray-700 hover:text-gray-900 font-medium border border-gray-200 rounded-md px-2 py-1 hover:bg-yellow-50 hover:border-mtn-yellow transition disabled:opacity-40 disabled:hover:bg-white disabled:hover:border-gray-200"
-          title="Download the current tab as CSV"
-        >
-          ⬇ Export CSV
-        </button>
-
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => setActiveTab(t.id)}
-              className={`px-3 py-1.5 text-sm rounded-md transition ${
-                activeTab === t.id
-                  ? 'bg-white text-gray-900 shadow-sm font-semibold'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="px-5 py-3 bg-white border-b border-gray-100 flex flex-wrap items-center gap-6 text-xs">
-        {activeTab === 'summary' && filteredSummary.length > 0 && (
-          <>
-            <Stat label="Dealers" value={filteredSummary.length.toLocaleString()} />
-            <Stat
-              label="Total activations"
-              value={filteredSummary
-                .reduce((a, b) => a + (b.activation_count || 0), 0)
-                .toLocaleString()}
-            />
-            <Stat
-              label="Qualified"
-              value={filteredSummary
-                .reduce((a, b) => a + (b.qualified_activation_count || 0), 0)
-                .toLocaleString()}
-            />
-            <Stat
-              label="Non-qualified"
-              value={filteredSummary
-                .reduce((a, b) => a + (b.non_qualified_activation_count || 0), 0)
-                .toLocaleString()}
-              tone="text-amber-600"
-            />
-          </>
-        )}
-        {activeTab === 'variance' && filteredVariance.length > 0 && (
-          <>
-            <Stat label="Dealers in both" value={filteredVariance.length.toLocaleString()} />
-            <Stat
-              label="Growing"
-              value={filteredVariance.filter((r) => r.delta_activations > 0).length}
-              tone="text-emerald-600"
-            />
-            <Stat
-              label="Declining"
-              value={filteredVariance.filter((r) => r.delta_activations < 0).length}
-              tone="text-red-600"
-            />
-          </>
-        )}
-        {activeTab === 'exceptions' && filteredExceptions.length > 0 && (
-          <>
-            <Stat label="ALL_UNQUALIFIED" value={exceptionCounts.ALL_UNQUALIFIED} tone="text-red-600" />
-            <Stat label="HIGH_UNQUALIFIED_RATE" value={exceptionCounts.HIGH_UNQUALIFIED_RATE} tone="text-amber-600" />
-            <Stat label="UNUSUAL_VOLUME" value={exceptionCounts.UNUSUAL_VOLUME} tone="text-blue-600" />
-          </>
-        )}
-      </div>
-
-      {error && (
-        <div className="mx-5 mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
-
-      <div className="flex-1 min-h-0 p-5 flex flex-col overflow-hidden">
-        <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden flex flex-col">
-          <div className="px-3 py-2 border-b border-gray-100 text-[11px] text-gray-500 shrink-0">
-            {activeTab === 'summary' && (
-              <>
-                {filteredSummary.length.toLocaleString()} dealer{filteredSummary.length === 1 ? '' : 's'}
-                {dealerQuery && filteredSummary.length !== summary.length && ` (of ${summary.length.toLocaleString()})`}
-              </>
-            )}
-            {activeTab === 'variance' && (
-              <>
-                {filteredVariance.length.toLocaleString()} dealer{filteredVariance.length === 1 ? '' : 's'} present in both periods
-                {dealerQuery && filteredVariance.length !== variance.length && ` (of ${variance.length.toLocaleString()})`}
-              </>
-            )}
-            {activeTab === 'exceptions' && (
-              <>
-                {filteredExceptions.length.toLocaleString()} exception{filteredExceptions.length === 1 ? '' : 's'}
-                {dealerQuery && filteredExceptions.length !== exceptions.length && ` (of ${exceptions.length.toLocaleString()})`}
-              </>
-            )}
-          </div>
-          <div className="flex-1 min-h-0 relative">
-            <div className={activeTab === 'summary' ? 'h-full' : 'hidden'}>
-              <ActivationSummaryTable rows={filteredSummary} loading={loading} />
-            </div>
-            <div className={activeTab === 'variance' ? 'h-full' : 'hidden'}>
-              <ActivationVarianceTable rows={filteredVariance} loading={loading} />
-            </div>
-            <div className={activeTab === 'exceptions' ? 'h-full' : 'hidden'}>
-              <ActivationExceptionsTable rows={filteredExceptions} loading={loading} />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+export default function ActivationIntelligencePanel(props) {
+  const { period, error, loading } = usePeriod();
+  if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
+  return <ActivationWorkspace key={period} period={period} {...props} />;
 }
 
-function Stat({ label, value, tone = 'text-gray-900' }) {
-  return (
-    <div className="flex flex-col">
-      <span className="text-[10px] uppercase tracking-wide text-gray-500">{label}</span>
-      <span className={`text-sm font-semibold tabular-nums ${tone}`}>{value}</span>
+function ActivationWorkspace({ period, navigation, onNavigate }) {
+  const { periods } = usePeriod();
+  const earlier = periods.filter((p) => p < period).sort().reverse();
+  const [comparison, setComparison] = useState(() => navigation?.prior_period === '' || earlier.includes(navigation?.prior_period) ? navigation.prior_period : earlier[0] || '');
+  const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, view: navigationView(navigation?.tab), search: navigation?.search || '', sort_by: navigation?.tab === 'exceptions' ? 'severity' : 'activation_count' }));
+  const [selected, setSelected] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
+  const rowRefs = useRef({});
+  const returnFocus = useRef(null);
+  const previousNavigation = useRef(navigation);
+  const search = useDebouncedValue(filters.search);
+  const params = { ...filters, search, mon_period: period, prior_period: comparison || undefined };
+  const query = useQuery({ queryKey: ['activation-accounts', params], queryFn: ({ signal }) => getActivationAccounts(params, signal), placeholderData: keepPreviousData });
+  const data = query.data;
+  const busy = query.isFetching || search !== filters.search;
+  useEffect(() => {
+    if (navigation === previousNavigation.current) return;
+    previousNavigation.current = navigation;
+    if (!navigation) return;
+    setSelected(null);
+    setFilters({ ...DEFAULT_FILTERS, view: navigationView(navigation.tab), search: navigation.search || '', sort_by: navigation.tab === 'exceptions' ? 'severity' : 'activation_count' });
+    if (navigation.prior_period === '' || earlier.includes(navigation.prior_period)) setComparison(navigation.prior_period);
+  }, [navigation, earlier]);
+  useEffect(() => {
+    if (!selected && returnFocus.current && !busy) {
+      rowRefs.current[returnFocus.current]?.focus();
+      returnFocus.current = null;
+    }
+  }, [selected, busy]);
+  function updateFilter(key, value) {
+    setExportError('');
+    setFilters((current) => key === 'reset' ? { ...DEFAULT_FILTERS, view: current.view, sort_by: current.view === 'exceptions' ? 'severity' : 'activation_count' } : { ...current, [key]: value, offset: 0, ...(key === 'view' ? { sort_by: value === 'exceptions' ? 'severity' : 'activation_count', direction: 'desc' } : {}) });
+  }
+  function changeComparison(value) { setComparison(value); setSelected(null); setFilters((current) => ({ ...current, offset: 0 })); setExportError(''); }
+  async function exportMatching() {
+    setExporting(true); setExportError('');
+    try { downloadCsv(await getActivationExport(params), `activation_${filters.view}_${period}_matching_accounts.csv`); }
+    catch { setExportError('The matching-account export is unavailable. Please retry.'); }
+    finally { setExporting(false); }
+  }
+  return <main className="overview commission-workspace h-full overflow-y-auto bg-gray-50" aria-label="Activation intelligence">
+    <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6">
+      <header className="flex flex-wrap justify-between items-start gap-4"><div><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">Finance & revenue assurance</p><h1 className="text-2xl font-semibold tracking-tight mt-1">Activation Intelligence</h1><p className="text-sm text-gray-600 mt-2">Track activation volume. Understand qualification. Investigate the evidence.</p></div>
+        <label className="text-sm text-gray-600 flex flex-wrap items-center gap-3">Compare {formatPeriod(period)} with<select className="overview-select max-w-full" value={comparison} onChange={(e) => changeComparison(e.target.value)}><option value="">No comparison</option>{earlier.map((p) => <option key={p} value={p}>{formatPeriod(p)}</option>)}</select></label>
+      </header>
+      {selected ? <ActivationDetail key={`${selected.dealer_id}:${comparison}`} account={selected} period={period} comparison={comparison} onBack={() => { returnFocus.current = selected.dealer_id; setSelected(null); }} onNavigate={onNavigate} /> : <>
+        <div className="flex flex-wrap justify-between gap-3"><p className="text-sm text-gray-500">{formatPeriod(period)} · Activation volume and qualification</p><div className="flex flex-wrap gap-2"><button className="overview-button" onClick={() => query.refetch()} disabled={busy}>Refresh</button><button className="overview-button" onClick={exportMatching} disabled={!data || busy || query.isError || exporting}>{exporting ? 'Exporting…' : 'Export matching accounts ↓'}</button></div></div>
+        {exportError && <p role="alert" className="text-sm text-red-800">{exportError}</p>}
+        {query.isError && <div role="alert" className="overview-notice text-red-800">Activation data unavailable. {data ? 'Figures below are the last successful result and have not been refreshed.' : 'No activation position can be established.'} <button className="underline" onClick={() => query.refetch()}>Retry</button></div>}
+        {data && <ActivationSummary summary={data.summary} onFilter={(finding) => { updateFilter('view', 'accounts'); updateFilter('finding', finding); }} />}
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Activation views">{VIEWS.map(([id, label]) => <button key={id} className={`overview-button ${filters.view === id ? 'overview-primary' : ''}`} aria-pressed={filters.view === id} onClick={() => updateFilter('view', id)}>{label}</button>)}</div>
+        {!data && query.isPending && <div role="status" aria-label="Loading activation workspace" className="space-y-5 animate-pulse">{!data && <div className="h-56 bg-gray-200 rounded-lg" />}<div className="h-80 bg-gray-200 rounded-lg" /></div>}
+        {data && <ActivationAccounts data={data} busy={busy || query.isError} filters={filters} onFilter={updateFilter} onSelect={setSelected} rowRefs={rowRefs} onPage={(offset) => setFilters((current) => ({ ...current, offset }))} />}
+        {data && <footer className="text-xs text-gray-500 flex flex-wrap gap-3 justify-between border-t border-gray-200 pt-4"><span>{data.source} · Retrieved {new Date(data.generated_at).toLocaleString()}</span><span>Recorded figures follow existing source calculations.</span></footer>}
+      </>}
     </div>
-  );
+  </main>;
 }

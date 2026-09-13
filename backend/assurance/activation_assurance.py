@@ -24,13 +24,13 @@ from backend.assurance.base import AssuranceResult, BaseAssuranceService
 from backend.db.connection import execute_query
 
 
-_SEVERITY_BY_EXCEPTION: dict[str, str] = {
+SEVERITY_BY_EXCEPTION: dict[str, str] = {
     "ALL_UNQUALIFIED": "HIGH",
     "HIGH_UNQUALIFIED_RATE": "MEDIUM",
     "UNUSUAL_VOLUME": "LOW",
 }
 
-_ACTION_BY_EXCEPTION: dict[str, str] = {
+ACTION_BY_EXCEPTION: dict[str, str] = {
     "ALL_UNQUALIFIED": (
         "Verify product codes against USP dimension for this period"
     ),
@@ -64,8 +64,8 @@ class ActivationAssuranceService(BaseAssuranceService):
         findings: list[dict[str, Any]] = []
         for _, row in df.iterrows():
             exception_type = str(row["exception_type"])
-            severity = _SEVERITY_BY_EXCEPTION.get(exception_type, "MEDIUM")
-            action = _ACTION_BY_EXCEPTION.get(exception_type, "Investigate")
+            severity = SEVERITY_BY_EXCEPTION.get(exception_type, "MEDIUM")
+            action = ACTION_BY_EXCEPTION.get(exception_type, "Investigate")
             findings.append(
                 {
                     "type": exception_type,

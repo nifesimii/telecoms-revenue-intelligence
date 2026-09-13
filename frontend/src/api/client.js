@@ -345,3 +345,19 @@ export async function getPartnerHealth(period, prior_period) {
 }
 
 export default api;
+
+
+export async function getActivationAccounts(params, signal) {
+  const { data } = await api.get('/activations/accounts', { params, signal });
+  return data;
+}
+
+export async function getActivationDetail(dealerId, params, signal) {
+  const { data } = await api.get(`/activations/accounts/${encodeURIComponent(dealerId)}/detail`, { params, signal });
+  return data;
+}
+
+export async function getActivationExport(params) {
+  const { data } = await api.get('/activations/accounts/export', { params, responseType: 'text' });
+  return data;
+}

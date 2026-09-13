@@ -252,7 +252,8 @@ frontend/src/
     │                      on-demand evidence and contextual assistant.
     ├── MessageBubble.jsx  Shared explanation rendering (legacy ChatInterface
     │                      and DealerSummaryTable remain unused by the shell).
-    ├── activation/         Activation Intelligence tab (summary/variance/exceptions).
+    ├── activation/         Bounded activation accounts, comparisons, findings,
+    │                       full-period summary and on-demand account evidence.
     ├── inventory/          Inventory Intelligence tab + DataCoverageTicketModal.
     ├── payment/            Payment Intelligence tab + DisputeDraftModal.
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).
@@ -309,6 +310,28 @@ responsive return path to the filtered table. Saved audit evidence loads only
 on request. AI conversations are scoped by account, period, comparison and
 stream; a subscription-backed store persists answers even if a component
 unmounts while a request is pending. No question is automatically sent.
+
+### Activation workspace — activity, qualification and evidence
+
+`api/activation_workspace_routes.py` exposes `/activations/accounts`, its matching
+CSV `/export`, and `/{dealer_id}/detail`. Typed contracts live in
+`api/activation_workspace_schemas.py`; `db/activation_workspace.py` composes the
+existing named activation queries and shared assurance finding metadata. Legacy
+activation APIs remain available. No new SQL or commission calculation is added.
+
+The full-period summary stays independent of search, class and finding filters.
+The backend groups findings per account and computes both finding and distinct
+account counts before sorting and paging (maximum 100). Comparison is explicitly
+limited to accounts present in both periods; missing prior records stay null,
+and qualification-rate movement is expressed in percentage points.
+
+The frontend mounts one bounded account view at a time with TanStack Query.
+Account evidence reuses the existing paginated zero-commission reads and saved
+verification only when requested. Navigation to Commission preserves the exact
+account and comparison. Source failures remain errors, not empty successes.
+Like existing collection adapters, sample processing still assembles a period
+in pandas before paging; native engine paging awaits measured production plans.
+See `docs/ACTIVATION_WORKSPACE.md` for the acceptance and verification record.
 
 ### Flow A — a chat question ("why did dealer 74050 earn zero commission?")
 ```

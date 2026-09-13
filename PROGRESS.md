@@ -5,6 +5,23 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-13 (Activation investigation workspace)
+
+- Activation now shares Overview/Commission hierarchy: full-period activation
+  summary, readable bounded accounts, explicit comparison scope and grouped findings.
+- Additive `/activations/accounts` supports max100 paging, backend filters/stable
+  sorting, matching totals/export and exact detail. Legacy agent reads are unchanged.
+- Account detail loads zero-commission evidence only on request; Commission
+  navigation preserves exact account/comparison and list return restores focus.
+- Source errors never become empty data. Failure/retry, search, comparison,
+  evidence and responsive 320–1440px browser checks passed.
+- Full backend suite: 232 passed, 28 skipped. Production build passed (existing
+  chunk warning). Independent standards/spec navigation finding fixed and cleared.
+  No new automated tests while proposed TDD boundary confirmation remains pending.
+  See `docs/ACTIVATION_WORKSPACE.md` for scope and verification details.
+
+---
+
 ## Session — 2026-09-13 (Commission investigation workspace)
 
 - Commission Intelligence now leads with recorded commission, prior-period

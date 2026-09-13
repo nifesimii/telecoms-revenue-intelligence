@@ -172,6 +172,8 @@ function Shell() {
         {mounted.commission && (
           <div className={panelClass('commission')}>
             <CommissionWorkspace
+              key={navigation.commission?.revision}
+              navigation={navigation.commission}
               onNavigate={switchView}
               pendingPrompt={pendingPrompt}
               onPromptConsumed={() => setPendingPrompt('')}
@@ -180,7 +182,7 @@ function Shell() {
         )}
         {mounted.activation && (
           <div className={panelClass('activation')}>
-            <ActivationIntelligencePanel key={navigation.activation?.revision} navigation={navigation.activation} />
+            <ActivationIntelligencePanel key={navigation.activation?.revision} navigation={navigation.activation} onNavigate={switchView} />
           </div>
         )}
         {mounted.inventory && (
