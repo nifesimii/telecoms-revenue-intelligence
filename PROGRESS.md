@@ -5,6 +5,30 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-13 (finance Overview)
+
+- Overview leads with outstanding, owed, settled and an explicit comparison
+  against an earlier available period. Missing sources never become zero balances.
+- `GET /assurance/overview` computes full-period findings and distinct dealer
+  overlap before a ranked bounded queue (maximum 100). The UI displays five
+  accounts per page with backend search and severity/module filters.
+- `GET /assurance/overview/export` exports every finding, rejects incomplete
+  assessments, and escapes formula-leading text. Legacy previews expose total
+  counts and truncation. `GET /payments/position` is aggregate-only.
+- Queue amounts and financial totals share one source-aware payment snapshot.
+  Overview no longer fetches whole-period dealer verification collections.
+- Evidence navigation preserves dealer/module context and resets the payment
+  destination tab. Inactive Audit Trails releases its large table DOM. Mobile
+  has a workspace selector and visible period control.
+- Missing invoice evidence, findings and saved audit trails are separate;
+  audit errors are distinct from not-run states. No audits run on navigation.
+- Scope/design and review baseline: `docs/OVERVIEW_REDESIGN.md`.
+- Independent standards/spec review findings resolved. Final verification:
+  232 backend tests passed, 28 skipped; production frontend build passed;
+  browser journeys and responsive checks passed at 320–1440 pixels.
+
+---
+
 ## Session — 2026-08-25  (bounded intelligence-table foundation)
 
 Inventory and Payment tab latency was traced to unbounded payloads, thousands

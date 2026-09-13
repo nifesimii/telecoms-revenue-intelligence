@@ -15,10 +15,13 @@ from __future__ import annotations
 
 import json
 import logging
+import csv
+import io
 from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 
 from backend.agent.agent import run_agent
 from backend.agent import tool_executor
@@ -46,6 +49,8 @@ from backend.api.schemas import (
     PaymentSummaryRecord,
     PaymentVarianceRecord,
     PeriodList,
+    OverviewResponse,
+    OverviewPayment,
 )
 from backend import config
 from backend.assurance.registry import ASSURANCE_REGISTRY, is_implemented
@@ -382,6 +387,8 @@ async def get_assurance_status(
             "summary": result.summary,
         }
         if implemented:
+            kwargs["finding_count"] = len(result.findings or [])
+            kwargs["findings_truncated"] = len(result.findings or []) > 50
             kwargs["high_count"] = int(result.metadata.get("high_count", 0))
             kwargs["medium_count"] = int(result.metadata.get("medium_count", 0))
             kwargs["low_count"] = int(result.metadata.get("low_count", 0))
@@ -406,6 +413,56 @@ async def get_assurance_status(
     # of registry insertion order.
     modules.sort(key=lambda m: m.phase)
     return AssuranceStatusResponse(period=period, modules=modules)
+
+
+async def _overview_snapshot(period: str, module=None, severity=None):
+    from backend.assurance.overview import collect_overview
+
+    if period not in queries.get_available_periods():
+        raise HTTPException(status_code=404, detail="No data for this reporting period")
+    try:
+        payment = get_payment_summary(period)
+    except Exception:
+        logger.exception("Overview payment source unavailable")
+        payment = None
+    return await collect_overview(period, payment, module, severity)
+
+
+@router.get("/assurance/overview", response_model=OverviewResponse)
+async def get_overview(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    search: str = Query("", max_length=100),
+    severity: str | None = Query(None, pattern=r"^(HIGH|MEDIUM|LOW)$"),
+    module: str | None = Query(None, pattern=r"^(commission|activation|inventory|payment)$"),
+) -> OverviewResponse:
+    """Full-period totals with a bounded, deterministically ranked dealer queue."""
+    summary, queue, _ = await _overview_snapshot(mon_period, module, severity)
+    term = search.strip().casefold()
+    filtered = [r for r in queue if
+                (not term or term in r["dealer_id"].casefold() or term in r["dealer_name"].casefold())]
+    return OverviewResponse(**summary, items=filtered[offset:offset + limit],
+                            total=len(filtered), limit=limit, offset=offset)
+
+
+@router.get("/assurance/overview/export")
+async def export_overview(mon_period: str = Query(..., pattern=r"^\d{6}$")):
+    """Export the full period, never a bounded UI preview or partial run."""
+    summary, _, findings = await _overview_snapshot(mon_period)
+    if not summary["complete"]:
+        raise HTTPException(status_code=503, detail="Full export unavailable: one or more modules could not be checked.")
+    output = io.StringIO()
+    fields = ["period", "module", "severity", "dealer_id", "dealer_name", "type", "description", "recommended_action"]
+    writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for finding in findings:
+        # Spreadsheet applications must not interpret source text as formulas.
+        row = {k: ("'" + str(v) if str(v).lstrip().startswith(("=", "+", "-", "@")) else v)
+               for k, v in finding.items()}
+        writer.writerow({**row, "period": mon_period})
+    return Response(output.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="assurance_findings_{mon_period}.csv"'})
 
 
 # ---------------------------------------------------------------------------
@@ -717,6 +774,13 @@ def get_payment_summary(
         data_source="SIMULATED",
         records=records,
     )
+
+
+@router.get("/payments/position", response_model=OverviewPayment)
+def get_payment_position(mon_period: str = Query(..., pattern=r"^\d{6}$")):
+    """Aggregate-only view of the same source-aware payment snapshot."""
+    summary = get_payment_summary(mon_period)
+    return {**summary.model_dump(exclude={"records"}), "record_count": len(summary.records)}
 
 
 @router.get("/payments", response_model=PaymentCollectionPage)

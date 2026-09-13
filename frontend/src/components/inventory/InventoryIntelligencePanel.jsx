@@ -25,7 +25,7 @@ function SummaryCard({ label, count, sub, tone, accent }) {
   );
 }
 
-export default function InventoryIntelligencePanel({ onAsk } = {}) {
+export default function InventoryIntelligencePanel({ onAsk, navigation } = {}) {
   const queryClient = useQueryClient();
   const { period } = usePeriod();
   const [includeWithin, setIncludeWithin] = useState(false);
@@ -40,7 +40,7 @@ export default function InventoryIntelligencePanel({ onAsk } = {}) {
 
   // Client-side substring filter — searches dealer AND product fields
   // (both are meaningful here; e.g. "hynex" to isolate the alias split).
-  const [query, setQuery] = useState('');
+  const [query, setQuery] = useState(navigation?.search || '');
   const debouncedQuery = useDebouncedValue(query);
 
   useEffect(() => {

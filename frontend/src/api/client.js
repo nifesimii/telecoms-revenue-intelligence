@@ -118,6 +118,23 @@ export async function getAssuranceStatus(mon_period = null) {
   return data;
 }
 
+export async function getOverview(params, signal) {
+  const { data } = await api.get('/assurance/overview', { params, signal });
+  return data;
+}
+
+export async function getPaymentPosition(mon_period, signal) {
+  const { data } = await api.get('/payments/position', { params: { mon_period }, signal });
+  return data;
+}
+
+export async function getOverviewExport(mon_period) {
+  const { data } = await api.get('/assurance/overview/export', {
+    params: { mon_period }, responseType: 'text',
+  });
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Phase 3 — Inventory Assurance endpoint
 // ---------------------------------------------------------------------------
@@ -236,6 +253,13 @@ export async function getAuditTrails(module, mon_period, caveat_step = null) {
   const params = { module, mon_period };
   if (caveat_step) params.caveat_step = caveat_step;
   const { data } = await api.get('/assurance/audit/trails', { params });
+  return data;
+}
+
+export async function getAuditTrail(subject, module, mon_period, signal) {
+  const { data } = await api.get(`/assurance/audit/trails/${encodeURIComponent(subject)}`, {
+    params: { module, mon_period }, signal,
+  });
   return data;
 }
 

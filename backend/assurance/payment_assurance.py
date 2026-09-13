@@ -39,6 +39,12 @@ def _ngn(value: float) -> str:
     return f"₦{value:,.2f}"
 
 
+def classify_payment_status(status: str) -> tuple[str, str]:
+    """Shared status classification for assurance and the source-aware Overview."""
+    return (_SEVERITY_BY_STATUS.get(status, "MEDIUM"),
+            _FINDING_TYPE_BY_STATUS.get(status, "PAYMENT_EXCEPTION"))
+
+
 class PaymentAssuranceService(BaseAssuranceService):
     """Phase 4 — to be implemented when UDDM payment data is wired up."""
 
@@ -78,8 +84,7 @@ class PaymentAssuranceService(BaseAssuranceService):
         findings: list[dict[str, Any]] = []
         for _, row in exc_df.iterrows():
             status = str(row["payment_status"])
-            severity = _SEVERITY_BY_STATUS.get(status, "MEDIUM")
-            finding_type = _FINDING_TYPE_BY_STATUS.get(status, "PAYMENT_EXCEPTION")
+            severity, finding_type = classify_payment_status(status)
             dealer_name = str(row["dealer_name"])
             amount_unpaid = float(row["amount_unpaid"])
             exception_flag = (

@@ -114,10 +114,10 @@ function VarianceTable({ rows = [], loading }) {
   );
 }
 
-export default function PaymentIntelligencePanel({ onAsk } = {}) {
+export default function PaymentIntelligencePanel({ onAsk, navigation } = {}) {
   const queryClient = useQueryClient();
   const { periods, period, priorPeriod } = usePeriod();
-  const [activeTab, setActiveTab] = useState('exceptions');
+  const [activeTab, setActiveTab] = useState(navigation?.tab || 'exceptions');
 
   const [coverage, setCoverage] = useState(null);
   const [allRows, setAllRows] = useState([]);
@@ -137,7 +137,7 @@ export default function PaymentIntelligencePanel({ onAsk } = {}) {
   // MoM change) doesn't need re-typing the query. Uses the platform
   // API convention: dealer_id / dealer_name on the response side
   // (see ARCHITECTURE.md "Naming conventions").
-  const [dealerQuery, setDealerQuery] = useState('');
+  const [dealerQuery, setDealerQuery] = useState(navigation?.search || '');
   const debouncedDealerQuery = useDebouncedValue(dealerQuery);
   const matchesDealer = (row) => {
     const q = dealerQuery.trim().toLowerCase();

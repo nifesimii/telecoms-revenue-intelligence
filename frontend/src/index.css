@@ -24,3 +24,23 @@ body {
 .bubble-bounce {
   animation: bubble-bounce 1.2s infinite ease-in-out;
 }
+
+@layer components {
+  .overview { @apply text-gray-900; }
+  .overview-surface { @apply bg-white border border-gray-200 rounded-lg; }
+  .overview-button { @apply text-sm font-medium border border-gray-300 rounded-md px-3 py-2 bg-white hover:bg-gray-50 transition disabled:opacity-50 disabled:cursor-not-allowed; }
+  .overview-primary { @apply bg-mtn-yellow border-mtn-yellow text-gray-900 hover:bg-yellow-400; }
+  .overview-select { @apply text-sm border border-gray-300 rounded-md px-3 py-2 bg-white; }
+  .overview-notice { @apply border rounded-lg bg-white p-4 text-sm; }
+  .overview-headline { font-size: clamp(1.25rem, 3vw, 2.25rem); }
+  .overview-amount { @apply text-base xl:text-lg; }
+  .overview :is(button, input, select):focus-visible,
+  .app-header :is(button, select):focus-visible {
+    outline: 2px solid #854d0e;
+    outline-offset: 3px;
+  }
+  .overview-progress { @apply h-2 rounded overflow-hidden; accent-color: #ca8a04; }
+  .overview-progress::-webkit-progress-bar { @apply bg-gray-100 rounded; }
+  .overview-progress::-webkit-progress-value { @apply bg-yellow-500 rounded; }
+  .overview-progress::-moz-progress-bar { @apply bg-yellow-500 rounded; }
+}

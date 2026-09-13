@@ -85,6 +85,7 @@ class InventoryAssuranceService(BaseAssuranceService):
                     "severity": severity,
                     "dealer_id": str(row["dealer_id"]),
                     "dealer_name": str(row["dealer_name"]),
+                    "product_code": str(row["product_code"]),
                     "description": (
                         f"Product {row['product_code']}: "
                         f"{activation_count} activations, "

@@ -55,9 +55,9 @@ const CSV_COLUMNS = {
   ],
 };
 
-export default function ActivationIntelligencePanel() {
+export default function ActivationIntelligencePanel({ navigation } = {}) {
   const { periods, period, priorPeriod, setPriorPeriod } = usePeriod();
-  const [activeTab, setActiveTab] = useState('summary');
+  const [activeTab, setActiveTab] = useState(navigation?.tab || 'summary');
 
   const [summary, setSummary] = useState([]);
   const [variance, setVariance] = useState([]);
@@ -70,7 +70,7 @@ export default function ActivationIntelligencePanel() {
   // search sticks when the user switches Summary ↔ Variance ↔ Exceptions
   // for the same dealer. Case-insensitive substring on dealer_id OR
   // dealer_name; rows are already loaded so this is a pure display filter.
-  const [dealerQuery, setDealerQuery] = useState('');
+  const [dealerQuery, setDealerQuery] = useState(navigation?.search || '');
 
   const matchesDealer = (row) => {
     const q = dealerQuery.trim().toLowerCase();

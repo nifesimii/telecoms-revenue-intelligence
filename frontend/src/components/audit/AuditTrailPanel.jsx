@@ -7,13 +7,14 @@
 // Nothing is written on view. The explicit "Run" button triggers the run
 // job; GET endpoints just read what's persisted.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 import {
   getAuditModules,
   runAuditModule,
   getAuditTrails,
+  getAuditTrail,
   getAuditBreakdown,
 } from '../../api/client.js';
 
@@ -122,12 +123,14 @@ function TrailRow({ trail, expanded, onToggle }) {
   );
 }
 
-export default function AuditTrailPanel() {
+export default function AuditTrailPanel({ navigation } = {}) {
   const { period } = usePeriod();
   const [modules, setModules] = useState([]);
-  const [module, setModule] = useState('zero_commission');
+  const [module, setModule] = useState(navigation?.module || 'zero_commission');
   const [caveatFilter, setCaveatFilter] = useState('');
-  const [partnerQuery, setPartnerQuery] = useState('');
+  const [partnerQuery, setPartnerQuery] = useState(navigation?.search || '');
+  const [subject, setSubject] = useState(navigation?.subject || '');
+  const requestVersion = useRef(0);
   const [trails, setTrails] = useState([]);
   const [breakdown, setBreakdown] = useState([]);
   const [expanded, setExpanded] = useState({});
@@ -151,26 +154,38 @@ export default function AuditTrailPanel() {
 
   const load = () => {
     if (!period || !module) return;
+    const version = ++requestVersion.current;
     setLoading(true);
     setError(null);
+    setTrails([]);
+    setBreakdown([]);
     Promise.all([
-      getAuditTrails(module, period, caveatFilter || null),
+      subject
+        ? getAuditTrail(subject, module, period).then((trail) =>
+            !caveatFilter || (trail.caveat_steps || []).includes(caveatFilter) ? [trail] : []
+          ).catch((e) => {
+            if (e?.response?.status === 404) return [];
+            throw e;
+          })
+        : getAuditTrails(module, period, caveatFilter || null),
       getAuditBreakdown(module, period),
     ])
       .then(([ts, bd]) => {
+        if (version !== requestVersion.current) return;
         setTrails(Array.isArray(ts) ? ts : []);
         setBreakdown(Array.isArray(bd) ? bd : []);
       })
       .catch((e) => {
+        if (version !== requestVersion.current) return;
         setTrails([]);
         setBreakdown([]);
         setError(e?.response?.data?.detail || e?.message || String(e));
       })
-      .finally(() => setLoading(false));
+      .finally(() => { if (version === requestVersion.current) setLoading(false); });
   };
 
   // Reload trails whenever module / period / filter changes.
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [module, period, caveatFilter]);
+  useEffect(() => { load(); return () => { requestVersion.current++; }; /* eslint-disable-next-line */ }, [module, period, caveatFilter, subject]);
 
   const runJob = () => {
     if (!period || !module) return;
@@ -216,7 +231,7 @@ export default function AuditTrailPanel() {
           <span className="text-[11px] uppercase tracking-wide text-gray-500">Module</span>
           <select
             value={module}
-            onChange={(e) => { setModule(e.target.value); setExpanded({}); }}
+            onChange={(e) => { setModule(e.target.value); setExpanded({}); setSubject(''); }}
             className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow"
           >
             {modules.map((m) => (
@@ -244,7 +259,7 @@ export default function AuditTrailPanel() {
           <input
             type="search"
             value={partnerQuery}
-            onChange={(e) => setPartnerQuery(e.target.value)}
+            onChange={(e) => { setPartnerQuery(e.target.value); setSubject(''); }}
             placeholder="code or name…"
             className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow w-52"
           />

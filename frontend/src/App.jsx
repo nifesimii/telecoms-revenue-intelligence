@@ -105,8 +105,11 @@ function Shell() {
   // DOM and is shown/hidden via CSS — preventing re-fetches on every tab switch.
   const [mounted, setMounted] = useState(() => ({ [_readViewFromUrl()]: true }));
   const [pendingPrompt, setPendingPrompt] = useState('');
+  const [navigation, setNavigation] = useState({});
 
-  const switchView = useCallback((v) => {
+  const switchView = useCallback((v, context) => {
+    if (context) setNavigation((current) => ({ ...current,
+      [v]: { ...context, revision: (current[v]?.revision || 0) + 1 } }));
     setMounted((m) => (m[v] ? m : { ...m, [v]: true }));
     setView(v);
     _writeViewToUrl(v);
@@ -127,16 +130,27 @@ function Shell() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-gray-200 bg-white">
-        <div className="w-1.5 h-7 bg-mtn-yellow rounded-sm mr-1" />
-        <span className="text-sm font-semibold tracking-tight text-gray-800 mr-3">
+      <div className="app-header flex flex-wrap items-center gap-3 px-4 py-3 border-b border-gray-200 bg-white">
+        <div className="w-1.5 h-7 bg-mtn-yellow rounded-sm shrink-0" />
+        <span className="text-sm font-semibold tracking-tight text-gray-800 mr-auto">
           FBB Trade Partner Intelligence
         </span>
-        <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+        <div className="flex items-center gap-3">
+          <GlobalPeriodSelect />
+          <span className="hidden sm:inline"><DataModeBadge /></span>
+        </div>
+        <label className="flex items-center gap-3 w-full lg:hidden text-sm text-gray-600">
+          Workspace
+          <select className="flex-1 min-w-0 border border-gray-300 rounded-md px-3 py-2 bg-white" value={view} onChange={(e) => switchView(e.target.value)}>
+            {VIEWS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}
+          </select>
+        </label>
+        <nav aria-label="Workspace" className="hidden lg:flex w-full items-center gap-1">
           {VIEWS.map((v) => (
             <button
               key={v.id}
               onClick={() => switchView(v.id)}
+              aria-current={view === v.id ? 'page' : undefined}
               className={`px-3 py-1.5 text-sm rounded-md transition ${
                 view === v.id
                   ? 'bg-white text-gray-900 shadow-sm font-semibold'
@@ -146,11 +160,7 @@ function Shell() {
               {v.label}
             </button>
           ))}
-        </div>
-        <div className="ml-auto flex items-center gap-4">
-          <GlobalPeriodSelect />
-          <DataModeBadge />
-        </div>
+        </nav>
       </div>
 
       <div className="flex-1 overflow-hidden">
@@ -169,22 +179,22 @@ function Shell() {
         )}
         {mounted.activation && (
           <div className={panelClass('activation')}>
-            <ActivationIntelligencePanel />
+            <ActivationIntelligencePanel key={navigation.activation?.revision} navigation={navigation.activation} />
           </div>
         )}
         {mounted.inventory && (
           <div className={panelClass('inventory')}>
-            <InventoryIntelligencePanel onAsk={askClaude} />
+            <InventoryIntelligencePanel key={navigation.inventory?.revision} navigation={navigation.inventory} onAsk={askClaude} />
           </div>
         )}
         {mounted.payment && (
           <div className={panelClass('payment')}>
-            <PaymentIntelligencePanel onAsk={askClaude} />
+            <PaymentIntelligencePanel key={navigation.payment?.revision} navigation={navigation.payment} onAsk={askClaude} />
           </div>
         )}
-        {mounted.audit && (
+        {view === 'audit' && (
           <div className={panelClass('audit')}>
-            <AuditTrailPanel />
+            <AuditTrailPanel key={navigation.audit?.revision} navigation={navigation.audit} />
           </div>
         )}
       </div>

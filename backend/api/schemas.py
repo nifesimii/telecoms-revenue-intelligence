@@ -196,6 +196,8 @@ class AssuranceModuleStatus(BaseModel):
     medium_count: int | None = None
     low_count: int | None = None
     findings: list[AssuranceFinding] = []
+    finding_count: int = 0
+    findings_truncated: bool = False
 
 
 class AssuranceStatusResponse(BaseModel):
@@ -203,6 +205,63 @@ class AssuranceStatusResponse(BaseModel):
 
     period: str
     modules: list[AssuranceModuleStatus]
+
+
+class OverviewModule(BaseModel):
+    module: str
+    status: str
+    finding_count: int
+    affected_dealers: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    missing_invoice_count: int
+
+
+class OverviewFinding(AssuranceFinding):
+    module: str
+    product_code: str | None = None
+
+
+class OverviewDealer(BaseModel):
+    dealer_id: str
+    dealer_name: str
+    severity: str
+    lead_finding: OverviewFinding
+    module_findings: dict[str, OverviewFinding]
+    modules: list[str]
+    finding_count: int
+    amount_outstanding: float | None
+    payment_status: str | None
+
+
+class OverviewPayment(BaseModel):
+    period: str
+    total_commission_owed: float
+    total_amount_paid: float
+    total_amount_unpaid: float
+    payment_coverage_pct: float
+    disputed_count: int
+    partially_paid_count: int
+    pending_count: int
+    fully_paid_count: int
+    data_source: str
+    record_count: int
+
+
+class OverviewResponse(BaseModel):
+    period: str
+    checked_at: str
+    complete: bool
+    modules: list[OverviewModule]
+    finding_count: int
+    affected_dealers: int
+    cross_module_dealers: int
+    payment: OverviewPayment | None
+    items: list[OverviewDealer]
+    total: int
+    limit: int
+    offset: int
 
 
 # ---------------------------------------------------------------------------

@@ -396,14 +396,26 @@ statement and the audit trail never contradict each other on the same
 
 ### Flow F — Current Position card on Overview
 ```
-Overview panel → api/client.js GET /payments/summary?mon_period=…
-  → returns PaymentCoverageResponse with owed/paid/unpaid/coverage
-    + disputed/partial/pending counts + data_source ("APDP" | "SIMULATED")
-← CurrentPositionBand renders 4 tiles + a Live·APDP or Simulated badge.
+Overview → GET /assurance/overview?mon_period=…&limit=5&offset=…
+  → full-period finding/unique-dealer/module counts + compact payment totals
+    + bounded dealer queue (severity, outstanding amount, dealer code order)
+Comparison → GET /payments/position?mon_period=… (aggregate-only)
+Full export → GET /assurance/overview/export?mon_period=… (CSV)
 ```
-Same endpoint that powers Payment Intelligence's coverage card, wired
-into a compact 4-tile summary on the landing page. The Exceptions tile
-is clickable → deep-links into the Payment tab.
+`assurance/overview.py` aggregates complete registered findings before filtering
+or pagination. Payment findings and amounts are derived from the same
+source-aware payment summary used by Payments, without a second exception read.
+Amounts are joined once per dealer, never summed across module findings.
+Partial source failures are explicit and block a supposedly complete export.
+The legacy `/assurance/status` still provides previews, now with total/truncation
+metadata; it does not power the new Overview. The UI caches bounded queue pages
+with TanStack Query and resets period-specific state to avoid stale labels.
+Evidence links carry module/dealer intent; payment links explicitly choose
+Exceptions. Existing module-specific audit chains provide evidence on demand.
+Inventory uses the exact dealer/product subject; commission uses its saved
+dealer chain, activation uses compact dealer verification, and payment uses
+the dealer statement. Persisted evidence retains its own source and timestamp.
+Database-native paging remains deferred pending measured live query plans.
 
 ---
 
