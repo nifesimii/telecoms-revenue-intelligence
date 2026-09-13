@@ -60,6 +60,26 @@ export async function getDealers(mon_period = null) {
   return data;
 }
 
+export async function getCommissionAccounts(params, signal) {
+  const { data } = await api.get('/commissions', { params, signal });
+  return data;
+}
+
+export async function getCommissionDetail(dealerId, params, signal) {
+  const { data } = await api.get(`/commissions/${encodeURIComponent(dealerId)}/detail`, { params, signal });
+  return data;
+}
+
+export async function getCommissionZeroRecords(dealerId, params, signal) {
+  const { data } = await api.get(`/commissions/${encodeURIComponent(dealerId)}/zero-records`, { params, signal });
+  return data;
+}
+
+export async function getCommissionExport(params) {
+  const { data } = await api.get('/commissions/export', { params, responseType: 'text' });
+  return data;
+}
+
 export async function getDealerVerification(dealer_id, mon_period, signal) {
   const { data } = await api.get(`/dealers/${encodeURIComponent(dealer_id)}/verification`, {
     params: { mon_period }, signal,

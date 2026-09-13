@@ -240,15 +240,18 @@ frontend/src/
 │                           the frontend can do.
 ├── context/PeriodContext.jsx  Selected reporting month, shared app-wide, URL-synced.
 ├── hooks/
-│   ├── useChat.js          Chat state + localStorage persistence.
+│   ├── useChat.js          Scoped conversation store + localStorage persistence;
+│   │                      in-flight answers survive workspace navigation.
 │   ├── useDebouncedValue.js       Debounces server-side table search.
 │   └── useLazyDealerVerification.js  Fetches/caches evidence only for rows opened.
 ├── lib/
 │   ├── format.js           NGN + period (YYYYMM → "Feb 2026") formatting.
 │   └── csv.js              CSV export helper.
 └── components/
-    ├── ChatInterface.jsx / MessageBubble.jsx / DealerSummaryTable.jsx / VarianceCard.jsx
-    │                       Commission Intelligence tab (the Claude chat + sidebar).
+    ├── commission/         CommissionWorkspace, account table, summary, detail,
+    │                      on-demand evidence and contextual assistant.
+    ├── MessageBubble.jsx  Shared explanation rendering (legacy ChatInterface
+    │                      and DealerSummaryTable remain unused by the shell).
     ├── activation/         Activation Intelligence tab (summary/variance/exceptions).
     ├── inventory/          Inventory Intelligence tab + DataCoverageTicketModal.
     ├── payment/            Payment Intelligence tab + DisputeDraftModal.
@@ -287,9 +290,29 @@ apdp/
 
 ## 4. Data Flow
 
+### Commission workspace — recorded figures before explanation
+
+`api/commission_routes.py` adds `/commissions` (bounded accounts), `/export`
+(all matching accounts), `/{dealer_id}/detail` (one exact account), and
+`/{dealer_id}/zero-records` (bounded raw activation evidence). Contracts live
+in `api/commission_schemas.py`. `db/commission_workspace.py` composes existing
+named queries without new SQL, recalculation, payment reads or audit execution.
+Search, class/zero filters, stable sorting and full-filter totals precede paging;
+the hard collection limit is 100. Existing `/dealers` and agent tools are unchanged.
+Activation commission and ORSC subscription revenue have separate semantics.
+Absent comparison records do not become verified zero balances. Denomination
+amounts reconcile to the recorded total, including unattributed amounts.
+
+The frontend uses TanStack Query for account pages and on-demand evidence.
+Selecting a dealer opens a code-and-period-anchored investigation, with a
+responsive return path to the filtered table. Saved audit evidence loads only
+on request. AI conversations are scoped by account, period, comparison and
+stream; a subscription-backed store persists answers even if a component
+unmounts while a request is pending. No question is automatically sent.
+
 ### Flow A — a chat question ("why did dealer 74050 earn zero commission?")
 ```
-Browser (ChatInterface) → api/client.js POST /chat
+Browser (CommissionAssistant) → api/client.js POST /chat
   → routes.py → agent.run_agent()
     → Claude decides to call a tool (e.g. get_zero_commission_records)
       → tool_executor routes it → db/connection.execute_query()

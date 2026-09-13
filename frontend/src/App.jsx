@@ -8,7 +8,7 @@
 // user's selection — see context/PeriodContext.jsx.
 
 import { useCallback, useEffect, useState } from 'react';
-import ChatInterface from './components/ChatInterface.jsx';
+import CommissionWorkspace from './components/commission/CommissionWorkspace.jsx';
 import ActivationIntelligencePanel from './components/activation/ActivationIntelligencePanel.jsx';
 import AssuranceStatusPanel from './components/assurance/AssuranceStatusPanel.jsx';
 import InventoryIntelligencePanel from './components/inventory/InventoryIntelligencePanel.jsx';
@@ -171,7 +171,8 @@ function Shell() {
         )}
         {mounted.commission && (
           <div className={panelClass('commission')}>
-            <ChatInterface
+            <CommissionWorkspace
+              onNavigate={switchView}
               pendingPrompt={pendingPrompt}
               onPromptConsumed={() => setPendingPrompt('')}
             />

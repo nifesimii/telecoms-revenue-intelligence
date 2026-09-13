@@ -5,6 +5,25 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-13 (Commission investigation workspace)
+
+- Commission Intelligence now leads with recorded commission, prior-period
+  change, account counts and zero-record counts, followed by a bounded table.
+- New additive `/commissions` API supports backend search, partner-class and
+  zero-amount filters, stable sorting, full matching CSV export and max100 pages.
+- Exact-code account detail shows denomination comparisons and bounded raw
+  evidence independently of payment availability. Saved audits load on demand.
+- ORSC is a separate subscription-revenue view. No source records, missing
+  comparison accounts and recorded zero balances remain distinct.
+- Contextual AI is account/period/comparison/stream scoped; conversations
+  persist even when a response finishes after navigating away.
+- Existing backend suite: 232 passed, 28 skipped; frontend build passed;
+  API/browser checks and independent standards/spec reviews completed.
+  New automated regression tests await confirmation of the proposed TDD seams;
+  live AI generation and Presto were not tested. See `docs/COMMISSION_WORKSPACE.md`.
+
+---
+
 ## Session — 2026-09-13 (finance Overview)
 
 - Overview leads with outstanding, owed, settled and an explicit comparison
