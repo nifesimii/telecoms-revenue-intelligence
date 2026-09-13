@@ -56,10 +56,13 @@ from backend import config
 from backend.assurance.registry import ASSURANCE_REGISTRY, is_implemented
 from backend.db import queries
 from backend.db.connection import execute_query
+from backend.api.commission_routes import router as commission_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+router.include_router(commission_router)
 
 CHAT_FAILURE_MESSAGE = "I was unable to process that request. Please try again."
 
