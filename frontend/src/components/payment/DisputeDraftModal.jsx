@@ -10,7 +10,7 @@
 // before composing — it's included in the letter so the recipient sees
 // exactly what we're responding to.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { draftDisputeResponse } from '../../api/client.js';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 
@@ -29,6 +29,10 @@ const CAUSE_LABEL = {
 };
 
 export default function DisputeDraftModal({ open, onClose, row, period }) {
+  const dialogRef = useRef(null);
+  useEffect(() => {
+    if (open) dialogRef.current?.querySelector('button')?.focus();
+  }, [open]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -100,7 +104,17 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
+      aria-label="Prepare dispute response"
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') { event.stopPropagation(); onClose?.(); }
+        if (event.key !== 'Tab') return;
+        const controls = [...dialogRef.current.querySelectorAll('button:not(:disabled), textarea:not(:disabled), input:not(:disabled), a[href]')];
+        const first = controls[0], last = controls[controls.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }}
       aria-modal="true"
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
       onClick={(e) => e.target === e.currentTarget && onClose?.()}

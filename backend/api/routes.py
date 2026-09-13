@@ -17,6 +17,7 @@ import json
 import logging
 import csv
 import io
+from datetime import datetime, timezone
 from typing import Any
 
 import pandas as pd
@@ -45,6 +46,8 @@ from backend.api.schemas import (
     PaginationMeta,
     PartnerHealthRecord,
     PaymentCollectionPage,
+    PaymentAccountDetail,
+    PaymentAnalyticsPage,
     PaymentCoverageResponse,
     PaymentSummaryRecord,
     PaymentVarianceRecord,
@@ -788,21 +791,18 @@ def get_payment_position(mon_period: str = Query(..., pattern=r"^\d{6}$")):
     return {**summary.model_dump(exclude={"records"}), "record_count": len(summary.records)}
 
 
-@router.get("/payments", response_model=PaymentCollectionPage)
-def list_payments(
-    mon_period: str = Query(..., pattern=r"^\d{6}$"),
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-    search: str | None = Query(None, max_length=100),
-    payment_status: str | None = Query(None, max_length=100),
-    sort_by: str = Query("amount_unpaid"),
-    sort_direction: str = Query("desc", pattern=r"^(asc|desc)$"),
-) -> PaymentCollectionPage:
-    """Single bounded Payment collection used by All and Exceptions views."""
+def _payment_collection(mon_period, search, payment_status, sort_by, sort_direction):
+    """One source snapshot; identical filtering and ordering for page and export."""
     if sort_by not in _PAYMENT_SORTS:
         raise HTTPException(status_code=422, detail="Unsupported payment sort field")
 
-    summary = _apdp_summary_response(mon_period) if config.PAYMENT_SOURCE == "apdp" else get_payment_summary(mon_period)
+    try:
+        summary = _apdp_summary_response(mon_period) if config.PAYMENT_SOURCE == "apdp" else get_payment_summary(mon_period)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Payment source unavailable")
+        raise HTTPException(503, "Payment source unavailable. Retry later.") from None
     records = summary.records
     df = pd.DataFrame([r.model_dump() for r in records])
     if df.empty:
@@ -822,17 +822,34 @@ def list_payments(
         )
         df = df[mask]
 
-    total = len(df)
     column = _PAYMENT_SORTS[sort_by]
     df = df.sort_values(
         [column, "dealer_id"],
         ascending=[sort_direction == "asc", True],
         na_position="last",
     )
+    return summary, df
+
+
+@router.get("/payments", response_model=PaymentCollectionPage)
+def list_payments(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    search: str | None = Query(None, max_length=100),
+    payment_status: str | None = Query(None, max_length=100),
+    sort_by: str = Query("amount_unpaid"),
+    sort_direction: str = Query("desc", pattern=r"^(asc|desc)$"),
+) -> PaymentCollectionPage:
+    """Single bounded Payment collection used by All and Exceptions views."""
+    summary, df = _payment_collection(mon_period, search, payment_status, sort_by, sort_direction)
+    total = len(df)
     page = _bounded_page(df, limit, offset)
     items = [_row_to_payment_record(row) for row in page.to_dict(orient="records")]
     return PaymentCollectionPage(
         period=mon_period,
+        record_count=len(summary.records),
+        generated_at=datetime.now(timezone.utc).isoformat(),
         items=items,
         pagination=PaginationMeta(
             limit=limit, offset=offset, returned=len(items), total=total,
@@ -848,6 +865,39 @@ def list_payments(
         fully_paid_count=summary.fully_paid_count,
         data_source=summary.data_source,
     )
+
+
+@router.get("/payments/export")
+def export_payments(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    search: str | None = Query(None, max_length=100),
+    payment_status: str | None = Query(None, max_length=100),
+    sort_by: str = Query("amount_unpaid"),
+    sort_direction: str = Query("desc", pattern=r"^(asc|desc)$"),
+):
+    summary, frame = _payment_collection(mon_period, search, payment_status, sort_by, sort_direction)
+    generated = datetime.now(timezone.utc).isoformat()
+    columns = ["dealer_id", "dealer_name", "commission_owed", "amount_paid", "amount_unpaid", "payment_status", "exception_flag"]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["period", "source", "retrieved_at", *columns])
+    for row in frame.to_dict(orient="records"):
+        values = [mon_period, summary.data_source, generated, *[row.get(c) for c in columns]]
+        writer.writerow([("'" + v if v.lstrip().startswith(("=", "+", "-", "@")) else v)
+                         if isinstance(v, str) else v for v in values])
+    return Response(output.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="payment-accounts-{mon_period}.csv"'})
+
+
+@router.get("/payments/accounts/{dealer_id}", response_model=PaymentAccountDetail)
+def payment_account(dealer_id: str, mon_period: str = Query(..., pattern=r"^\d{6}$")):
+    summary, frame = _payment_collection(mon_period, None, None, "dealer_name", "asc")
+    frame = frame[frame["dealer_id"].astype(str) == dealer_id]
+    if frame.empty:
+        raise HTTPException(status_code=404, detail="No payment account recorded for this period")
+    return {"period": mon_period, "data_source": summary.data_source,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "account": _row_to_payment_record(frame.iloc[0].to_dict())}
 
 
 @router.get(
@@ -992,6 +1042,37 @@ def get_partner_health(
             )
         )
     return records
+
+
+@router.get("/payments/analytics", response_model=PaymentAnalyticsPage)
+def payment_analytics(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    prior_period: str | None = Query(None, pattern=r"^\d{6}$"),
+    view: str = Query("comparison", pattern=r"^(comparison|health)$"),
+    search: str | None = Query(None, max_length=100),
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Bounded secondary views; calculations retain their existing semantics."""
+    if prior_period and prior_period >= mon_period:
+        raise HTTPException(status_code=422, detail="Comparison must precede reporting period")
+    if view == "comparison":
+        records = list_payment_variance(prior_period, mon_period) if prior_period else []
+        records.sort(key=lambda r: (-abs(r.delta_paid), r.dealer_id))
+    else:
+        records = get_partner_health(mon_period, prior_period or "")
+        records.sort(key=lambda r: (r.health_score, r.dealer_id))
+    total_accounts = len(records)
+    q = (search or "").strip().lower()
+    if q:
+        records = [r for r in records if q in r.dealer_id.lower() or q in r.dealer_name.lower()]
+    items = records[offset:offset + limit]
+    return {"period": mon_period, "prior_period": prior_period, "view": view,
+            "source": "APDP" if config.PAYMENT_SOURCE == "apdp" else "SIMULATED",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "account_count": total_accounts, "items": items,
+            "pagination": {"limit": limit, "offset": offset, "returned": len(items),
+                           "total": len(records), "has_more": offset + len(items) < len(records)}}
 
 
 # ---------------------------------------------------------------------------

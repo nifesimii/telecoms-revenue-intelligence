@@ -1,73 +1,22 @@
-// Big headline coverage card with four sub-stats.
-// Coverage tone:
-//   >= 85%  → emerald
-//   60-84%  → amber
-//   < 60%   → red
-
 import { formatNGN, formatPeriod } from '../../lib/format.js';
+import { money, percent } from './paymentPresentation.js';
 
-function coverageTone(pct) {
-  if (pct >= 85) return 'text-emerald-700 bg-emerald-50 border-emerald-200';
-  if (pct >= 60) return 'text-amber-700 bg-amber-50 border-amber-200';
-  return 'text-red-700 bg-red-50 border-red-200';
-}
-
-function SubStat({ label, value, tone = 'text-gray-900' }) {
-  return (
-    <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-wide text-gray-500">
-        {label}
-      </span>
-      <span className={`text-base font-semibold tabular-nums ${tone}`}>
-        {value}
-      </span>
-    </div>
-  );
-}
-
-export default function PaymentCoverageCard({ data, loading }) {
-  const pct = Number(data?.payment_coverage_pct) || 0;
-  const tone = coverageTone(pct);
-
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-5 relative overflow-hidden">
-      <div className="absolute top-0 left-0 h-full w-1 bg-mtn-yellow" />
-      <div className="flex items-start gap-4">
-        <div
-          className={`px-5 py-4 rounded-lg border ${tone} flex flex-col items-center`}
-        >
-          <span className="text-[10px] uppercase tracking-wide opacity-80">
-            Commission coverage
-          </span>
-          <span className="text-4xl font-bold tabular-nums">
-            {loading ? '…' : `${pct.toFixed(1)}%`}
-          </span>
-          <span className="text-[10px] uppercase tracking-wide opacity-80">
-            for {formatPeriod(data?.period) || '—'}
-          </span>
-        </div>
-        <div className="flex-1 grid grid-cols-2 sm:grid-cols-4 gap-4 pl-4 border-l border-gray-100">
-          <SubStat
-            label="Total owed"
-            value={loading ? '…' : formatNGN(data?.total_commission_owed)}
-          />
-          <SubStat
-            label="Total paid"
-            value={loading ? '…' : formatNGN(data?.total_amount_paid)}
-            tone="text-emerald-700"
-          />
-          <SubStat
-            label="Outstanding"
-            value={loading ? '…' : formatNGN(data?.total_amount_unpaid)}
-            tone="text-amber-700"
-          />
-          <SubStat
-            label="Disputed"
-            value={loading ? '…' : Number(data?.disputed_count || 0).toLocaleString()}
-            tone="text-red-700"
-          />
-        </div>
-      </div>
-    </div>
-  );
+export default function PaymentCoverageCard({ data, loading, prior, comparison, comparisonError }) {
+  if (loading && !data) return <div role="status" className="overview-surface p-6 h-48 animate-pulse bg-gray-100">Loading full-period figures…</div>;
+  if (!data) return <p className="overview-notice">Payment totals unavailable. This is not a zero balance.</p>;
+  const empty = data.record_count === 0;
+  const comparable = !empty && prior?.record_count > 0 && !comparisonError;
+  const coverage = data.total_commission_owed > 0 ? data.payment_coverage_pct : null;
+  const coverageDelta = comparable && coverage != null && prior.total_commission_owed > 0 ? coverage - prior.payment_coverage_pct : null;
+  const change = comparable ? data.total_amount_unpaid - prior.total_amount_unpaid : null;
+  return <section className="overview-surface p-5 sm:p-6" aria-label="Full-period payment totals">
+    <p className="text-sm text-gray-600">Outstanding to partners · {formatPeriod(data.period)}</p>
+    <p className="overview-headline mt-2 font-semibold tabular-nums">{empty ? 'No source records' : money(data.total_amount_unpaid)}</p>
+    <p className="text-sm text-gray-600 mt-3">Full-period totals · independent of account search and filters.</p>
+    {comparison && <p className="text-sm mt-3">Compared with {formatPeriod(comparison)}: outstanding {change == null ? 'change unavailable' : `${change > 0 ? '+' : change < 0 ? '−' : ''}${formatNGN(Math.abs(change))}`} · coverage {coverageDelta == null ? 'change unavailable' : `${coverageDelta > 0 ? '+' : ''}${coverageDelta.toFixed(1)} percentage points`}.</p>}
+    <dl className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mt-6 pt-5 border-t border-gray-200 text-sm">
+      {[['Commission owed', empty ? 'No records' : money(data.total_commission_owed)], ['Amount settled', empty ? 'No records' : money(data.total_amount_paid)], ['Settlement coverage', empty ? 'No records' : percent(coverage)], ['Disputed accounts', empty ? 'No records' : data.disputed_count?.toLocaleString() ?? 'Unavailable']].map(([label, value]) => <div key={label}><dt className="text-gray-600">{label}</dt><dd className="font-semibold tabular-nums mt-2">{value}</dd></div>)}
+    </dl>
+    {data.total_commission_owed === 0 && !empty && <p className="text-sm mt-4 text-gray-600">Coverage is undefined when recorded commission owed is zero.</p>}
+  </section>;
 }

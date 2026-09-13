@@ -715,3 +715,21 @@ The app runs fully on sample data without Docker or Presto — only the Audit
 Trails tab and `PAYMENT_SOURCE=apdp` need Postgres. Step 6 is what the Render
 deploy does automatically via the packaged `infra/postgres/apdp_seed.sql`. APDP
 has its own setup; see `apdp/README.md` and `apdp/CLAUDE.md`.
+
+
+## Payment investigation workspace (September 13)
+
+Payment uses full-period financial totals above a bounded account collection and
+an exact dealer-period detail view. Exceptions and All Payments share `/payments`.
+`/payments/export` uses the same filters and deterministic ordering over one source
+snapshot, exporting all matching accounts. `/payments/accounts/{dealer_id}` resolves
+an exact account; `/payments/analytics` bounds existing comparison/Health results.
+The existing legacy endpoints remain compatible. Native source query pagination
+remains deferred pending measured query plans.
+
+Activation verification uses dealer-period TanStack Query state; saved payment
+reconciliation trails load on request without initiating audits. Payment-scoped AI
+threads reuse the Commission assistant lifecycle. Exact Activation navigation now
+opens account detail rather than a substring-search list. Source selection,
+retrieval time and saved assessment provenance remain distinct. Full contract,
+limitations and verification: `docs/PAYMENT_WORKSPACE.md`.

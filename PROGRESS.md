@@ -662,3 +662,25 @@ curl -X POST "localhost:8000/assurance/audit/run?module=zero_commission&mon_peri
 # Tests
 .venv/bin/python -m pytest backend/tests -q          # RUN_EVALS=1 to include evals
 ```
+
+
+## Session — 2026-09-13 (Payment investigation workspace)
+
+- Implemented the Payment handoff: full-period outstanding summary and explicit
+  comparison, bounded account filters/sorting/paging, complete matching CSV export,
+  exact dealer detail and scoped commission/activation navigation.
+- Verification starts Not checked. Missing/failed evidence and retry are distinct;
+  dealer-period queries replace the obsolete lazy hook. Saved reconciliation loads
+  only on request; aggregate differences no longer imply undocumented causes.
+- Period comparison and Health are bounded and have explicit request states;
+  Health formula and limitations are visible. Period changes reset evidence while
+  retaining the active view. List return restores filters/page/focus.
+- Verification: 232 backend tests passed, 28 skipped; 17 focused payment tests
+  passed; production frontend build passed with existing bundle-size warning.
+  HTTP checks cover export scope, exact identity, limits/filters and APDP failure.
+  Browser checks cover responsive widths 320/768/1024/1440, navigation, missing
+  trail, filtered empty state, failed requests and successful retry.
+- Standards/spec reviews completed; navigation/focus and cached-summary timestamp
+  findings fixed. Proposed new test seams remained unconfirmed; no new regression
+  tests were authored. No live AI/Presto, deployment or audit run.
+- Contract and verification: `docs/PAYMENT_WORKSPACE.md`.

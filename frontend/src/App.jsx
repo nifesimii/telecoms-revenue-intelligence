@@ -192,7 +192,7 @@ function Shell() {
         )}
         {mounted.payment && (
           <div className={panelClass('payment')}>
-            <PaymentIntelligencePanel key={navigation.payment?.revision} navigation={navigation.payment} onAsk={askClaude} />
+            <PaymentIntelligencePanel key={navigation.payment?.revision} navigation={navigation.payment} onNavigate={switchView} onAsk={askClaude} />
           </div>
         )}
         {view === 'audit' && (

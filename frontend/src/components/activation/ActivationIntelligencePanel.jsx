@@ -15,8 +15,12 @@ const navigationView = (tab) => tab === 'variance' ? 'comparison' : VIEWS.some((
 
 export default function ActivationIntelligencePanel(props) {
   const { period, error, loading } = usePeriod();
+  const initialPeriod = useRef(null);
+  const navigationConsumed = useRef(false);
+  if (period && !initialPeriod.current) initialPeriod.current = period;
+  if (initialPeriod.current && period !== initialPeriod.current) navigationConsumed.current = true;
   if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
-  return <ActivationWorkspace key={period} period={period} {...props} />;
+  return <ActivationWorkspace key={period} period={period} {...props} navigation={!navigationConsumed.current ? props.navigation : undefined} />;
 }
 
 function ActivationWorkspace({ period, navigation, onNavigate }) {
@@ -24,7 +28,8 @@ function ActivationWorkspace({ period, navigation, onNavigate }) {
   const earlier = periods.filter((p) => p < period).sort().reverse();
   const [comparison, setComparison] = useState(() => navigation?.prior_period === '' || earlier.includes(navigation?.prior_period) ? navigation.prior_period : earlier[0] || '');
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, view: navigationView(navigation?.tab), search: navigation?.search || '', sort_by: navigation?.tab === 'exceptions' ? 'severity' : 'activation_count' }));
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(() => navigation?.dealer_id ? { dealer_id: navigation.dealer_id, dealer_name: navigation.dealer_name || `Account ${navigation.dealer_id}` } : null);
+  const workspaceRef = useRef(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const rowRefs = useRef({});
@@ -45,7 +50,7 @@ function ActivationWorkspace({ period, navigation, onNavigate }) {
   }, [navigation, earlier]);
   useEffect(() => {
     if (!selected && returnFocus.current && !busy) {
-      rowRefs.current[returnFocus.current]?.focus();
+      (rowRefs.current[returnFocus.current] || workspaceRef.current)?.focus();
       returnFocus.current = null;
     }
   }, [selected, busy]);
@@ -60,7 +65,7 @@ function ActivationWorkspace({ period, navigation, onNavigate }) {
     catch { setExportError('The matching-account export is unavailable. Please retry.'); }
     finally { setExporting(false); }
   }
-  return <main className="overview commission-workspace h-full overflow-y-auto bg-gray-50" aria-label="Activation intelligence">
+  return <main ref={workspaceRef} tabIndex={-1} className="overview commission-workspace h-full overflow-y-auto bg-gray-50" aria-label="Activation intelligence">
     <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6">
       <header className="flex flex-wrap justify-between items-start gap-4"><div><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">Finance & revenue assurance</p><h1 className="text-2xl font-semibold tracking-tight mt-1">Activation Intelligence</h1><p className="text-sm text-gray-600 mt-2">Track activation volume. Understand qualification. Investigate the evidence.</p></div>
         <label className="text-sm text-gray-600 flex flex-wrap items-center gap-3">Compare {formatPeriod(period)} with<select className="overview-select max-w-full" value={comparison} onChange={(e) => changeComparison(e.target.value)}><option value="">No comparison</option>{earlier.map((p) => <option key={p} value={p}>{formatPeriod(p)}</option>)}</select></label>

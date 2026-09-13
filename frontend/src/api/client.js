@@ -361,3 +361,18 @@ export async function getActivationExport(params) {
   const { data } = await api.get('/activations/accounts/export', { params, responseType: 'text' });
   return data;
 }
+
+export async function getPaymentExport(params, signal) {
+  const { data } = await api.get('/payments/export', { params, signal, responseType: 'text' });
+  return data;
+}
+
+export async function getPaymentAccount(dealerId, period, signal) {
+  const { data } = await api.get(`/payments/accounts/${encodeURIComponent(dealerId)}`, { params: { mon_period: period }, signal });
+  return data;
+}
+
+export async function getPaymentAnalytics(params, signal) {
+  const { data } = await api.get('/payments/analytics', { params, signal });
+  return data;
+}

@@ -364,7 +364,10 @@ class PaymentCoverageResponse(BaseModel):
 
 
 class PaymentCollectionPage(BaseModel):
-    """Bounded payment collection plus whole-filter-set aggregates."""
+    """Bounded matching accounts plus full-period financial totals."""
+
+    record_count: int = 0
+    generated_at: str = ""
 
     period: str
     items: list[PaymentSummaryRecord]
@@ -569,3 +572,21 @@ class PaymentVarianceRecord(BaseModel):
     payment_status_b: str
     delta_paid: float
     status_changed: bool
+
+
+class PaymentAccountDetail(BaseModel):
+    period: str
+    data_source: str
+    generated_at: str
+    account: PaymentSummaryRecord
+
+
+class PaymentAnalyticsPage(BaseModel):
+    period: str
+    prior_period: str | None
+    view: str
+    source: str
+    generated_at: str
+    account_count: int
+    items: list[PaymentVarianceRecord | PartnerHealthRecord]
+    pagination: PaginationMeta
