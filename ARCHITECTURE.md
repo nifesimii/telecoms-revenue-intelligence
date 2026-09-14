@@ -291,6 +291,23 @@ apdp/
 
 ## 4. Data Flow
 
+### Shared shell navigation
+
+The two-row header uses the same max-width and responsive gutters as all six
+workspaces. Public view IDs remain `overview`, `commission`, `activation`,
+`inventory`, `payment` and `audit`; labels are shorter in the header only.
+
+Workspace switches push history entries; initial URL normalization and period
+changes replace the current entry. `popstate` restores the URL view and month.
+Period validation waits for the available-month list. Serializable investigation
+context/revisions live in each entry's `fbbWorkspace` history state; restoring a
+revision remounts that contextual workspace when necessary. Context is not added
+to the shareable URL. DOM focus targets for Audit returns remain in memory.
+Ordinary same-period switches retain visited panels, including Audit, preserving
+current filters and detail state. Explicit new investigation contexts and month
+changes retain the existing scoped reset behavior. Payment sub-tabs continue to
+mount only their active content, and bounded TanStack Query caching is unchanged.
+
 ### Commission workspace — recorded figures before explanation
 
 `api/commission_routes.py` adds `/commissions` (bounded accounts), `/export`

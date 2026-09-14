@@ -5,6 +5,30 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-14 (shared header and workspace history)
+
+- Aligned both header rows with the existing six-workspace content gutters;
+  shortened navigation labels and added bold active text with a yellow underline.
+  Reporting period and data mode remain visible at phone widths, with stable
+  control sizing and explicit loading, unavailable and empty period labels.
+- Workspace switches now create browser history entries. Back/Forward restores
+  view, linked month and contextual investigation revision; Audit remains mounted
+  on ordinary navigation to preserve filters. Existing evidence return focus is
+  retained. Period changes retain the existing period-scoped reset behavior.
+- Verified all six workspaces at 320/768/1024/1440px with no page overflow;
+  direct links, filters, period continuity, detail navigation, Audit return focus,
+  history context, delayed periods and reload/Forward context restoration checked.
+  Status failure/empty/live states used browser response overrides. Live saved
+  Audit reads currently fail locally; no audit was run or evidence replaced.
+- Validation: 246 backend tests passed, 28 skipped; 3 existing frontend report
+  tests passed; production build passed with the existing chunk-size warning.
+  No TypeScript check is configured. Standards/spec findings were corrected.
+  New automated navigation tests remain pending test-seam confirmation; runtime
+  inspection found no page exceptions or non-GET requests in the main journeys.
+  No deployment. Existing unrelated workspace work was preserved.
+
+---
+
 ## Session — 2026-09-13 (Activation investigation workspace)
 
 - Activation now shares Overview/Commission hierarchy: full-period activation
