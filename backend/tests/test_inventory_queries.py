@@ -99,19 +99,19 @@ def test_within_allocation_has_zero_or_negative_gap() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Test 5 — deduplication: Tivos Technology Ltd on product 1283279 = 60 units
+# Test 5 — deduplication: Laurel Light Ventures on product 1283279 = 60 units
 # ---------------------------------------------------------------------------
 
 
 def test_deduplication_applied() -> None:
     df = execute_query("get_inventory_comparison", {"mon_period": "202603"})
-    tivos = df[
-        (df["dealer_name"].str.contains("Tivos", case=False, na=False))
+    dealer = df[
+        (df["dealer_id"].astype(str) == "409091")
         & (df["product_code"].astype(str) == "1283279")
         & (df["total_units_purchased"].notna())
     ]
-    assert len(tivos) >= 1, "Tivos dedup baseline row not found"
-    assert int(tivos.iloc[0]["total_units_purchased"]) == 60
+    assert len(dealer) >= 1, "Dealer 409091 dedup baseline row not found"
+    assert int(dealer.iloc[0]["total_units_purchased"]) == 60
 
 
 # ---------------------------------------------------------------------------

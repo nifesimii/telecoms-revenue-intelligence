@@ -121,7 +121,7 @@ def test_agent_inventory_question(monkeypatch: pytest.MonkeyPatch) -> None:
             content=[
                 _FakeTextBlock(
                     "Found 24 CONFIRMED_MISMATCH records; top dealer is "
-                    "Tivos Technology Ltd at 118 activations vs 60 purchased."
+                    "Laurel Light Ventures at 118 activations vs 60 purchased."
                 )
             ],
             stop_reason="end_turn",

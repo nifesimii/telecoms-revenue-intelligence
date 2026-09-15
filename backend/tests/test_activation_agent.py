@@ -125,7 +125,7 @@ def test_agent_activation_summary_question(monkeypatch: pytest.MonkeyPatch) -> N
             content=[
                 _FakeTextBlock(
                     "Total activations in 202603: 30,892 across 922 dealers. "
-                    "Top dealer is Nestobar Nigeria Ltd at 806 activations."
+                    "Top dealer is Stone Light Networks at 806 activations."
                 )
             ],
             stop_reason="end_turn",
@@ -142,7 +142,7 @@ def test_agent_activation_summary_question(monkeypatch: pytest.MonkeyPatch) -> N
                 "rows": [
                     {
                         "dealer_id": "74050",
-                        "dealer_name": "Nestobar Nigeria Ltd",
+                        "dealer_name": "Stone Light Networks",
                         "activation_count": 806,
                         "qualified_activation_count": 713,
                         "qualification_rate_pct": 88.46,

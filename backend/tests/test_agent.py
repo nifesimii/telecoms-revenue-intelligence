@@ -270,7 +270,7 @@ def test_multi_tool_chain(monkeypatch: pytest.MonkeyPatch) -> None:
         _FakeResponse(
             content=[
                 _FakeTextBlock(
-                    "CCA Links Ltd has 3 zero-commission records, all classified "
+                    "River Isle Ventures has 3 zero-commission records, all classified "
                     "as USP snapshot miss (KB Issue 1)."
                 )
             ],
