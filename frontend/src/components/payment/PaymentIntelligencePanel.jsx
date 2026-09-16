@@ -10,17 +10,16 @@ import PaymentCoverageCard from './PaymentCoverageCard.jsx';
 import PaymentSummaryTable from './PaymentSummaryTable.jsx';
 import PaymentDetail from './PaymentDetail.jsx';
 import PaymentComparison from './PaymentComparison.jsx';
-import PartnerHealthScorecard from './PartnerHealthScorecard.jsx';
 import './payment.css';
 
-const VIEWS = [['exceptions', 'Exceptions'], ['all', 'All Payments'], ['comparison', 'Period comparison'], ['health', 'Health']];
+const VIEWS = [['exceptions', 'Exceptions'], ['all', 'All Payments'], ['comparison', 'Period comparison']];
 const DEFAULTS = { search: '', status: '', sort_by: 'amount_unpaid', sort_direction: 'desc', limit: 25, offset: 0 };
 
 export default function PaymentIntelligencePanel(props) {
   const { period, loading, error } = usePeriod();
   const initialPeriod = useRef(null);
   const navigationConsumed = useRef(false);
-  const [view, setView] = useState(props.navigation?.tab === 'variance' ? 'comparison' : props.navigation?.tab || 'exceptions');
+  const [view, setView] = useState(props.navigation?.tab === 'variance' ? 'comparison' : VIEWS.some(([id]) => id === props.navigation?.tab) ? props.navigation.tab : 'exceptions');
   if (period && !initialPeriod.current) initialPeriod.current = period;
   if (initialPeriod.current && period !== initialPeriod.current) navigationConsumed.current = true;
   if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
@@ -116,7 +115,6 @@ function PaymentWorkspace({ period, navigation, onNavigate, view, setView }) {
           {data && !noComparison && (data.items.length ? <>
             {main && <PaymentSummaryTable rows={data.items} rowRefs={rowRefs} period={period} onSelect={setSelected} />}
             {view === 'comparison' && <PaymentComparison rows={data.items} period={period} comparison={comparison} rowRefs={rowRefs} onSelect={setSelected} />}
-            {view === 'health' && <PartnerHealthScorecard rows={data.items} rowRefs={rowRefs} onSelect={setSelected} />}
           </> : <p className="p-5 text-sm" role="status">{filters.search || filters.status ? 'No matching accounts. Adjust the search or payment status, or Reset filters above.' : main && data.record_count === 0 ? 'No payment source records for this period.' : view === 'exceptions' ? 'No outstanding payment exceptions recorded for this period.' : view === 'comparison' ? 'No accounts recorded in both selected periods.' : 'No accounts recorded for this view.'}</p>)}
           {data && !noComparison && <div className="payment-pagination p-5 border-t border-gray-200"><PaginationControls pagination={data.pagination} pageSize={filters.limit} onOffsetChange={(offset) => setFilters((f) => ({ ...f, offset }))} onPageSizeChange={(limit) => update({ limit })} /></div>}
         </section>
