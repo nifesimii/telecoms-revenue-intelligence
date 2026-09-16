@@ -108,6 +108,8 @@ SAMPLE_DATA_PATHS: dict[str, Path | dict[str, Path]] = {
         "202602": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202602.csv",
     },
     "fbb_comm_orsc": {
+        # Synthetic March demo fixture; see data/samples/README.md.
+        "202603": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202603.csv",
         "202602": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_sample.csv",
     },
     "usp_dimension": PROJECT_ROOT / "data" / "samples" / "usp_dimension_sample.csv",

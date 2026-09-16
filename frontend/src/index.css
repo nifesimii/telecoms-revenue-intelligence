@@ -46,6 +46,7 @@ body {
   .commission-table th { @apply bg-gray-50 text-xs font-medium text-gray-600 px-4 py-3 border-y border-gray-200; }
   .commission-table td { @apply px-4 py-4 border-b border-gray-100 align-top; }
   .commission-table tbody tr:hover { @apply bg-yellow-50; }
+  .inventory-table th[scope="row"] { @apply bg-transparent text-sm text-gray-900 font-normal px-4 py-4 border-t-0 border-b border-gray-100 align-top; }
   .commission-pagination > div { @apply flex-wrap gap-y-3; }
   .commission-workspace :is(textarea, [tabindex]):focus-visible { outline: 2px solid #854d0e; outline-offset: 3px; }
   .commission-conversation { overflow-wrap: anywhere; }

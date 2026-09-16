@@ -11,8 +11,11 @@ STREAMS = {
 }
 
 
-def provenance() -> dict:
-    return {'source': 'Sample CSVs' if config.USE_SAMPLE_DATA else 'Presto · development',
+def provenance(period: str | None = None, stream: str | None = None) -> dict:
+    source = 'Sample CSVs' if config.USE_SAMPLE_DATA else 'Presto · development'
+    if config.USE_SAMPLE_DATA and stream == 'orsc' and period == '202603':
+        source = 'Sample CSVs · synthetic March 2026 ORSC demo data'
+    return {'source': source,
             'generated_at': datetime.now(timezone.utc).isoformat()}
 
 
@@ -73,7 +76,7 @@ def collection(period: str, prior_period: str | None, stream: str, search: str,
     absent = [r for r in filtered if r.get(sort_by) is None]
     present.sort(key=lambda r: r[sort_by], reverse=direction == 'desc')
     return {'mon_period': period, 'prior_period': prior_period, 'stream': stream,
-            **provenance(), 'summary': summary,
+            **provenance(period, stream), 'summary': summary,
             'filtered_summary': totals(filtered, matching_prior),
             'partner_classes': classes, 'items': present + absent, 'total': len(filtered)}
 
@@ -100,5 +103,5 @@ def detail(period: str, prior_period: str | None, stream: str, dealer_id: str) -
                           'prior_amount_ngn': prior_unassigned,
                           'delta_ngn': round(unassigned - prior_unassigned, 2) if prior_unassigned is not None else None})
     return {'mon_period': period, 'prior_period': prior_period, 'stream': stream,
-            **provenance(), 'account': row, 'denominations': breakdown,
+            **provenance(period, stream), 'account': row, 'denominations': breakdown,
             'unattributed_amount_ngn': unassigned if stream == 'activation' else 0}

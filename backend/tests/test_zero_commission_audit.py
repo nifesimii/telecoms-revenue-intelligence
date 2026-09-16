@@ -200,7 +200,8 @@ def test_run_endpoint_503_when_audit_db_down():
         c = TestClient(app)
         r = c.post("/assurance/zero-commission/run?mon_period=202602")
     assert r.status_code == 503
-    assert "audit Postgres unreachable" in r.json()["detail"]
+    assert r.json()["detail"] == "Saved audit evidence is unavailable. Please retry."
+    assert "connection refused" not in r.text
 
 
 def test_run_endpoint_happy_path_with_mocked_store():

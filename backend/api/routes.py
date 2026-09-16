@@ -61,11 +61,15 @@ from backend.db import queries
 from backend.db.connection import execute_query
 from backend.api.commission_routes import router as commission_router
 from backend.api.activation_workspace_routes import router as activation_workspace_router
+from backend.api.audit_workspace_routes import router as audit_workspace_router
+from backend.api.financial_health_routes import router as financial_health_router
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+router.include_router(audit_workspace_router)
+router.include_router(financial_health_router)
 router.include_router(commission_router)
 router.include_router(activation_workspace_router)
 
@@ -1139,7 +1143,7 @@ def run_zero_commission_audit(
         logger.exception("audit trail persistence failed")
         raise HTTPException(
             status_code=503,
-            detail=f"FBB audit Postgres unreachable: {e}",
+            detail="Saved audit evidence is unavailable. Please retry.",
         )
     return AuditRunResponse(**result)
 
@@ -1164,7 +1168,7 @@ def list_zero_commission_trails(
         return audit_store.get_period_trails(mon_period)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
 
 
 @router.get("/assurance/zero-commission/trails/{partner_code}")
@@ -1178,7 +1182,7 @@ def get_zero_commission_trail(
         trail = audit_store.get_partner_trail(partner_code, mon_period)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
     if trail is None:
         raise HTTPException(
             status_code=404,
@@ -1198,7 +1202,7 @@ def zero_commission_breakdown(
         return audit_store.get_conclusion_breakdown(mon_period)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
 
 
 # ---------------------------------------------------------------------------
@@ -1248,7 +1252,7 @@ def run_audit_module(
         )
     except Exception as e:
         logger.exception("audit trail persistence failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
     return AuditRunResponse(**result)
 
 
@@ -1270,7 +1274,7 @@ def list_audit_trails(
         return audit_store.get_period_trails(mon_period, module)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
 
 
 @router.get("/assurance/audit/breakdown")
@@ -1285,7 +1289,7 @@ def audit_breakdown(
         return audit_store.get_conclusion_breakdown(mon_period, module)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
 
 
 @router.get("/assurance/audit/trails/{partner_code}")
@@ -1301,7 +1305,7 @@ def get_audit_trail(
         trail = audit_store.get_partner_trail(partner_code, mon_period, module)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
     if trail is None:
         raise HTTPException(
             status_code=404,

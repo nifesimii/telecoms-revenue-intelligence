@@ -118,7 +118,8 @@ def test_generic_trails_read_503_when_db_down():
         c = TestClient(app)
         r = c.get("/assurance/audit/trails?module=zero_commission&mon_period=202602")
     assert r.status_code == 503
-    assert "audit Postgres unreachable" in r.json()["detail"]
+    assert r.json()["detail"] == "Saved audit evidence is unavailable. Please retry."
+    assert "connection refused" not in r.text
 
 
 def test_generic_trails_caveat_filter_calls_store():

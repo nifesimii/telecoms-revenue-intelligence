@@ -1,357 +1,111 @@
-// Audit Trails — generic, module-driven view over persisted verification
-// chains. Module-agnostic on purpose: it reads the generic trail shape
-// (partner_code, conclusion, confidence, caveat_steps, steps[]) so any
-// registered audit module renders here with no code changes. Zero-commission
-// is the only module today; inventory/payment drop in via the dropdown later.
-//
-// Nothing is written on view. The explicit "Run" button triggers the run
-// job; GET endpoints just read what's persisted.
-
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { usePeriod } from '../../context/PeriodContext.jsx';
-import { formatNGN, formatPeriod } from '../../lib/format.js';
-import {
-  getAuditModules,
-  runAuditModule,
-  getAuditTrails,
-  getAuditTrail,
-  getAuditBreakdown,
-} from '../../api/client.js';
+import { formatPeriod } from '../../lib/format.js';
+import { downloadCsv } from '../../lib/csv.js';
+import useDebouncedValue from '../../hooks/useDebouncedValue.js';
+import { getAuditModules, getAuditRecords, getAuditExport, runAuditModule } from '../../api/client.js';
+import AuditEvidence from './AuditEvidence.jsx';
+import AuditResults, { AuditSummary } from './AuditResults.jsx';
+import { label } from './auditPresentation.js';
 
-import { CONCLUSION_BADGE as CONCLUSION_TONE } from '../../lib/tones.js';
-const CONFIDENCE_TONE = {
-  HIGH: 'text-emerald-700',
-  MEDIUM: 'text-amber-700',
-  LOW: 'text-red-700',
-};
-
-function Badge({ label, tone }) {
-  return (
-    <span className={`inline-block px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide border rounded-full ${tone}`}>
-      {label}
-    </span>
-  );
+const DEFAULTS = { search: '', conclusion: '', confidence: '', caveats: 'all', caveat_step: '', sort_by: 'partner_name', sort_direction: 'asc', limit: 25, offset: 0 };
+export default function AuditTrailPanel(props) {
+  const { period, loading, error } = usePeriod();
+  const [module, setModule] = useState(props.navigation?.module || 'zero_commission');
+  if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
+  return <AuditWorkspace key={period} period={period} module={module} setModule={setModule} {...props} />;
 }
-
-// One trail's step chain — the "checklist". Renders from the generic steps
-// array, so it works for any module.
-function StepChecklist({ steps }) {
-  const parsed = useMemo(() => {
-    if (Array.isArray(steps)) return steps;
-    try { return JSON.parse(steps || '[]'); } catch { return []; }
-  }, [steps]);
-
-  return (
-    <ol className="space-y-2">
-      {parsed.map((s) => (
-        <li key={s.step} className="flex items-start gap-2">
-          <span className={`mt-0.5 shrink-0 inline-flex items-center justify-center w-5 h-5 rounded-full text-[10px] font-bold ${
-            s.passed ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-          }`}>
-            {s.passed ? '✓' : '!'}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-semibold text-gray-900">
-              Step {s.step}: {s.name}
-            </div>
-            <div className="text-[11px] text-gray-500">{s.checked}</div>
-            <div className="text-xs text-gray-700 mt-0.5">{s.result}</div>
-            {s.caveat && (
-              <div className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
-                ⚠ {s.caveat}
-              </div>
-            )}
-          </div>
-        </li>
-      ))}
-    </ol>
-  );
-}
-
-function TrailRow({ trail, expanded, onToggle }) {
-  const expectedNgn = trail.step3_expected_ngn;
-  return (
-    <>
-      <tr
-        className="border-b border-gray-100 hover:bg-gray-50 cursor-pointer align-top"
-        onClick={onToggle}
-      >
-        <td className="px-2 py-1.5 w-6">
-          <button
-            aria-expanded={expanded}
-            aria-label={expanded ? 'Collapse' : 'Expand'}
-            className="text-gray-400 hover:text-gray-700 select-none"
-          >
-            {expanded ? '▼' : '▶'}
-          </button>
-        </td>
-        <td className="px-2 py-1.5">
-          <div className="text-sm text-gray-800 truncate max-w-[220px]" title={trail.partner_name}>
-            {trail.partner_name}
-          </div>
-          <div className="text-[10px] text-gray-400">{trail.partner_code}</div>
-        </td>
-        <td className="px-2 py-1.5">
-          <Badge label={trail.conclusion} tone={CONCLUSION_TONE[trail.conclusion] || CONCLUSION_TONE.INSUFFICIENT_DATA} />
-        </td>
-        <td className={`px-2 py-1.5 text-xs font-semibold ${CONFIDENCE_TONE[trail.confidence] || 'text-gray-600'}`}>
-          {trail.confidence}
-        </td>
-        <td className="px-2 py-1.5 text-right tabular-nums text-gray-700 text-xs">
-          {expectedNgn != null ? formatNGN(expectedNgn) : '—'}
-        </td>
-        <td className="px-2 py-1.5">
-          <div className="flex flex-wrap gap-1">
-            {(trail.caveat_steps || []).length === 0
-              ? <span className="text-[10px] text-gray-400">clean</span>
-              : trail.caveat_steps.map((c) => (
-                  <span key={c} className="inline-block text-[9px] uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5">
-                    {c}
-                  </span>
-                ))}
-          </div>
-        </td>
-      </tr>
-      {expanded && (
-        <tr className="bg-gray-50">
-          <td colSpan={6} className="px-4 py-3">
-            <StepChecklist steps={trail.steps} />
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-export default function AuditTrailPanel({ navigation } = {}) {
-  const { period } = usePeriod();
-  const [modules, setModules] = useState([]);
-  const [module, setModule] = useState(navigation?.module || 'zero_commission');
-  const [caveatFilter, setCaveatFilter] = useState('');
-  const [partnerQuery, setPartnerQuery] = useState(navigation?.search || '');
+function AuditWorkspace({ period, module, setModule, navigation, onReturn }) {
+  const [filters, setFilters] = useState(() => ({ ...DEFAULTS, search: navigation?.subject ? '' : navigation?.search || '' }));
   const [subject, setSubject] = useState(navigation?.subject || '');
-  const requestVersion = useRef(0);
-  const [trails, setTrails] = useState([]);
-  const [breakdown, setBreakdown] = useState([]);
-  const [expanded, setExpanded] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [trailId, setTrailId] = useState(null);
+  const [notice, setNotice] = useState('');
   const [running, setRunning] = useState(false);
-  const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(null);
-
-  const activeModule = modules.find((m) => m.name === module);
-
-  // Load the module registry once.
+  const [exporting, setExporting] = useState(false);
+  const [runAcknowledged, setRunAcknowledged] = useState(false);
+  const rows = useRef({});
+  const returnFocus = useRef('');
+  const heading = useRef(null);
+  const queryClient = useQueryClient();
+  const search = useDebouncedValue(filters.search);
+  const params = { ...filters, search, mon_period: period, module };
+  const registry = useQuery({ queryKey: ['audit-modules'], queryFn: getAuditModules });
+  const query = useQuery({ queryKey: ['audit-records', params], queryFn: ({ signal }) => getAuditRecords(params, signal), enabled: !subject, retry: false });
+  const data = search === filters.search && !query.isError ? query.data : undefined;
+  const busy = query.isFetching || search !== filters.search;
+  const activeModule = registry.data?.find((item) => item.name === module);
   useEffect(() => {
-    getAuditModules()
-      .then((ms) => {
-        setModules(ms);
-        if (ms.length && !ms.some((m) => m.name === module)) setModule(ms[0].name);
-      })
-      .catch((e) => setError(e?.response?.data?.detail || e?.message || String(e)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const load = () => {
-    if (!period || !module) return;
-    const version = ++requestVersion.current;
-    setLoading(true);
-    setError(null);
-    setTrails([]);
-    setBreakdown([]);
-    Promise.all([
-      subject
-        ? getAuditTrail(subject, module, period).then((trail) =>
-            !caveatFilter || (trail.caveat_steps || []).includes(caveatFilter) ? [trail] : []
-          ).catch((e) => {
-            if (e?.response?.status === 404) return [];
-            throw e;
-          })
-        : getAuditTrails(module, period, caveatFilter || null),
-      getAuditBreakdown(module, period),
-    ])
-      .then(([ts, bd]) => {
-        if (version !== requestVersion.current) return;
-        setTrails(Array.isArray(ts) ? ts : []);
-        setBreakdown(Array.isArray(bd) ? bd : []);
-      })
-      .catch((e) => {
-        if (version !== requestVersion.current) return;
-        setTrails([]);
-        setBreakdown([]);
-        setError(e?.response?.data?.detail || e?.message || String(e));
-      })
-      .finally(() => { if (version === requestVersion.current) setLoading(false); });
-  };
-
-  // Reload trails whenever module / period / filter changes.
-  useEffect(() => { load(); return () => { requestVersion.current++; }; /* eslint-disable-next-line */ }, [module, period, caveatFilter, subject]);
-
-  const runJob = () => {
-    if (!period || !module) return;
-    setRunning(true);
-    setError(null);
-    setNotice(null);
-    runAuditModule(module, period)
-      .then((r) => {
-        setNotice(`Run ${r.run_id.slice(0, 8)} — ${r.trail_count} trails generated.`);
-        load();
-      })
-      .catch((e) => setError(e?.response?.data?.detail || e?.message || String(e)))
-      .finally(() => setRunning(false));
-  };
-
-  const stepOptions = activeModule?.step_names || [];
-
-  // Client-side partner search — case-insensitive substring over
-  // partner_code + partner_name. Trails are already loaded, so this is
-  // a pure display filter (fast even with the 4000+ inventory trails).
-  const filteredTrails = useMemo(() => {
-    const q = partnerQuery.trim().toLowerCase();
-    if (!q) return trails;
-    return trails.filter((t) =>
-      String(t.partner_code || '').toLowerCase().includes(q)
-      || String(t.partner_name || '').toLowerCase().includes(q)
-    );
-  }, [trails, partnerQuery]);
-
-  const total = filteredTrails.length;
-  const totalUnfiltered = trails.length;
-
-  return (
-    <div className="h-full flex flex-col bg-gray-50 text-gray-800">
-      {/* Header controls */}
-      <div className="px-5 py-3 bg-white border-b border-gray-200 flex flex-wrap items-end gap-4">
-        <div className="text-sm font-semibold text-gray-800">
-          Audit Trails
-          <span className="ml-2 text-xs font-normal text-gray-500">· {formatPeriod(period) || '—'}</span>
+    if (!subject && returnFocus.current && !busy) {
+      (rows.current[returnFocus.current] || heading.current)?.focus();
+      returnFocus.current = '';
+    }
+  }, [subject, busy]);
+  function update(key, value) { setFilters((current) => ({ ...current, [key]: value, offset: 0 })); setNotice(''); }
+  function changeModule(value) { setModule(value); setSubject(''); setTrailId(null); setFilters({ ...DEFAULTS }); setNotice(''); setRunAcknowledged(false); }
+  async function exportMatches() {
+    setExporting(true); setNotice('');
+    try { downloadCsv(await getAuditExport(params), `audit-${module}-${period}-matching.csv`); }
+    catch { setNotice('Export failed. Retry when saved evidence is available.'); }
+    finally { setExporting(false); }
+  }
+  async function run() {
+    setRunning(true); setNotice('');
+    try {
+      const result = await runAuditModule(module, period);
+      setNotice(`Run ${result.run_id}: ${result.trail_count} saved trails. Previous trails for this module and period were replaced.`);
+      await queryClient.invalidateQueries({ queryKey: ['audit-records'] });
+      await queryClient.invalidateQueries({ queryKey: ['audit-evidence'] });
+      await queryClient.invalidateQueries({ queryKey: ['audit-breakdown'] });
+    } catch { setNotice('The run did not return a successful result. Refresh saved evidence to inspect the current saved state before retrying.'); }
+    finally { setRunning(false); setRunAcknowledged(false); }
+  }
+  return <main className="overview commission-workspace h-full overflow-y-auto bg-gray-50" aria-label="Audit Trails">
+    <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6">
+      <header className="flex flex-wrap justify-between items-start gap-4">
+        <div><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">Finance & revenue assurance</p>
+          <h1 className="text-2xl font-semibold tracking-tight mt-1">Audit Trails</h1>
+          <p className="text-sm text-gray-600 mt-2">Inspect what was checked, what saved evidence supports, and what remains uncertain.</p>
+          <p className="text-sm text-gray-600 mt-2">Reporting period · {formatPeriod(period)} · {activeModule?.label || label(module)}</p>
         </div>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-gray-500">Module</span>
-          <select
-            value={module}
-            onChange={(e) => { setModule(e.target.value); setExpanded({}); setSubject(''); }}
-            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow"
-          >
-            {modules.map((m) => (
-              <option key={m.name} value={m.name}>{m.label}</option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-gray-500">Caveat step filter</span>
-          <select
-            value={caveatFilter}
-            onChange={(e) => setCaveatFilter(e.target.value)}
-            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow"
-          >
-            <option value="">— all trails —</option>
-            {stepOptions.map((s) => (
-              <option key={s} value={s}>caveat in: {s}</option>
-            ))}
-          </select>
-        </label>
-
-        <label className="flex flex-col gap-1">
-          <span className="text-[11px] uppercase tracking-wide text-gray-500">Partner search</span>
-          <input
-            type="search"
-            value={partnerQuery}
-            onChange={(e) => { setPartnerQuery(e.target.value); setSubject(''); }}
-            placeholder="code or name…"
-            className="text-sm border border-gray-300 rounded-md px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-mtn-yellow w-52"
-          />
-        </label>
-
-        <div className="flex-1" />
-
-        <button
-          onClick={runJob}
-          disabled={running || !period}
-          className="px-4 py-2 rounded-md bg-mtn-yellow text-gray-900 text-sm font-semibold hover:brightness-95 disabled:opacity-50"
-        >
-          {running ? 'Running…' : `Run ${activeModule?.label || module} for ${formatPeriod(period) || '—'}`}
-        </button>
-      </div>
-
-      {activeModule?.claim && (
-        <div className="px-5 py-2 bg-white border-b border-gray-100 text-[11px] text-gray-500">
-          Auditing the claim: <span className="italic text-gray-700">"{activeModule.claim}"</span>
+        <div className="flex flex-wrap gap-2">{onReturn && <button className="overview-button" onClick={onReturn}>Return to investigation</button>}
+          {!subject && <><button className="overview-button" disabled={busy || running} onClick={() => query.refetch()}>Refresh saved evidence</button><button className="overview-button" disabled={!data || busy || exporting || running} onClick={exportMatches}>{exporting ? 'Exporting…' : 'Export all matching results'}</button></>}
         </div>
-      )}
-
-      {/* Breakdown band */}
-      {breakdown.length > 0 && (
-        <div className="px-5 py-2 bg-white border-b border-gray-100 flex flex-wrap items-center gap-4 text-xs">
-          <span className="text-gray-500">
-            {total} trail{total === 1 ? '' : 's'}
-            {partnerQuery && total !== totalUnfiltered && ` (of ${totalUnfiltered})`}
-          </span>
-          {breakdown.map((b, i) => (
-            <span key={i} className="inline-flex items-center gap-1.5">
-              <Badge label={b.conclusion} tone={CONCLUSION_TONE[b.conclusion] || CONCLUSION_TONE.INSUFFICIENT_DATA} />
-              <span className={`font-semibold ${CONFIDENCE_TONE[b.confidence] || 'text-gray-600'}`}>{b.confidence}</span>
-              <span className="tabular-nums text-gray-700">{b.n}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {notice && (
-        <div className="mx-5 mt-3 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2">
-          {notice}
-        </div>
-      )}
-      {error && (
-        <div className="mx-5 mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
-          {error}
-        </div>
-      )}
-
-      {/* Trails table */}
-      <div className="flex-1 min-h-0 p-5 flex flex-col overflow-hidden">
-        <div className="flex-1 min-h-0 bg-white border border-gray-200 rounded-lg shadow-sm overflow-auto">
-          {loading ? (
-            <div className="p-4 text-sm text-gray-500 italic">Loading trails…</div>
-          ) : total === 0 ? (
-            <div className="p-6 text-sm text-gray-500">
-              No trails for this module/period.{' '}
-              <button onClick={runJob} className="text-mtn-yellow font-semibold hover:underline">
-                Run the job
-              </button>{' '}
-              to generate them.
-            </div>
-          ) : (
-            <table className="w-full text-sm border-collapse">
-              <thead className="sticky top-0 bg-gray-50 z-10">
-                <tr className="text-gray-600 text-xs">
-                  <th className="px-2 py-2 w-6" />
-                  <th className="px-2 py-2 text-left font-semibold">Partner</th>
-                  <th className="px-2 py-2 text-left font-semibold">Conclusion</th>
-                  <th className="px-2 py-2 text-left font-semibold">Confidence</th>
-                  <th className="px-2 py-2 text-right font-semibold">Expected</th>
-                  <th className="px-2 py-2 text-left font-semibold">Caveats</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTrails.map((t) => {
-                  const key = t.trail_id ?? `${t.partner_code}-${t.mon_period}`;
-                  return (
-                    <TrailRow
-                      key={key}
-                      trail={t}
-                      expanded={!!expanded[key]}
-                      onToggle={() => setExpanded((e) => ({ ...e, [key]: !e[key] }))}
-                    />
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
-      </div>
+      </header>
+      {subject ? <AuditEvidence subject={subject} trailId={trailId} module={module} period={period} onBack={() => { returnFocus.current = trailId || subject; setSubject(''); setTrailId(null); }} /> : <>
+        {data && <AuditSummary summary={data.summary} filtered={data.filtered_summary} />}
+        <section className="overview-surface p-5 sm:p-6" aria-label="Audit filters">
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 sm:gap-6">
+            <label className="text-sm flex min-w-0 flex-col gap-2">Module<select className="overview-select min-h-11 w-full" value={module} disabled={running} onChange={(e) => changeModule(e.target.value)}>{(registry.data || [{ name: module, label: label(module) }]).map((item) => <option key={item.name} value={item.name}>{item.label}</option>)}</select></label>
+            <label className="text-sm flex min-w-0 flex-col gap-2 sm:col-span-2">Dealer or product search<input type="search" className="overview-select min-h-11 w-full" value={filters.search} onChange={(e) => update('search', e.target.value)} placeholder="Name or code" /></label>
+          </div>
+          <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
+            <label className="text-sm flex min-w-0 flex-col gap-2">Recorded conclusion<select className="overview-select min-h-11 w-full" value={filters.conclusion} onChange={(e) => update('conclusion', e.target.value)}><option value="">All conclusions</option>{[...new Set(query.data?.summary.breakdown.map((item) => item.conclusion) || [])].map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
+            <label className="text-sm flex min-w-0 flex-col gap-2">Recorded confidence<select className="overview-select min-h-11 w-full" value={filters.confidence} onChange={(e) => update('confidence', e.target.value)}><option value="">All confidence levels</option>{['HIGH', 'MEDIUM', 'LOW'].map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
+            <label className="text-sm flex min-w-0 flex-col gap-2">Recorded caveats<select className="overview-select min-h-11 w-full" value={filters.caveats} onChange={(e) => update('caveats', e.target.value)}><option value="all">All trails</option><option value="with">With recorded caveats</option><option value="without">No recorded caveats</option></select></label>
+            <label className="text-sm flex min-w-0 flex-col gap-2">Caveat step<select className="overview-select min-h-11 w-full" value={filters.caveat_step} onChange={(e) => update('caveat_step', e.target.value)}><option value="">All steps</option>{(activeModule?.step_names || []).map((value) => <option key={value} value={value}>{label(value)}</option>)}</select></label>
+          </div>
+          <div className="mt-6 flex flex-col gap-5 border-t border-gray-200 pt-5 sm:flex-row sm:items-end sm:gap-6">
+            <label className="text-sm flex min-w-0 flex-col gap-2 sm:w-52">Sort by<select className="overview-select min-h-11 w-full" value={filters.sort_by} onChange={(e) => update('sort_by', e.target.value)}>{['partner_name', 'partner_code', 'conclusion', 'confidence', 'generated_at'].map((value) => <option key={value} value={value}>{value === 'generated_at' ? 'Saved time' : label(value)}</option>)}</select></label>
+            <label className="text-sm flex min-w-0 flex-col gap-2 sm:w-44">Sort direction<select className="overview-select min-h-11 w-full" value={filters.sort_direction} onChange={(e) => update('sort_direction', e.target.value)}><option value="asc">Ascending</option><option value="desc">Descending</option></select></label>
+            <button className="overview-button min-h-11 self-start sm:ml-auto sm:self-end" onClick={() => setFilters({ ...DEFAULTS })}>Reset filters</button>
+          </div>
+          {registry.isError && <p role="alert" className="mt-3 text-sm">Module choices unavailable. <button className="underline" onClick={() => registry.refetch()}>Retry modules</button></p>}
+        </section>
+        {query.isError && <div role="alert" className="overview-notice">Saved evidence could not be read. This does not mean there are no saved trails. <button className="underline" onClick={() => query.refetch()}>Retry saved evidence</button></div>}
+        {busy && <p role="status">Loading matching saved assessments…</p>}
+        {data && <section className="overview-surface overflow-hidden">
+          <div className="p-5 border-b border-gray-200"><h2 ref={heading} tabIndex={-1} className="font-semibold">Saved assessments</h2><p className="text-sm text-gray-600 mt-2">{data.pagination.total.toLocaleString()} matching trails</p></div>
+          {data.items.length ? <AuditResults rows={data.items} rowRefs={rows} onSelect={(row) => { setSubject(row.partner_code); setTrailId(row.trail_id); }} busy={busy || running} /> : <div className="p-6" role="status"><h3 className="font-semibold">{data.summary.trail_count ? 'No matching saved trails' : 'No saved evidence for this module and period'}</h3><p className="text-sm text-gray-600 mt-2">{data.summary.trail_count ? 'Change or reset filters to see other saved assessments.' : 'This does not establish whether payments or exceptions exist, or whether an audit has ever run.'}</p>{data.summary.trail_count > 0 && <button className="overview-button mt-4" onClick={() => setFilters({ ...DEFAULTS })}>Reset filters</button>}</div>}
+          <div className="p-4 border-t border-gray-200 flex flex-wrap justify-between items-center gap-3 text-sm">
+            <span>{data.pagination.total ? filters.offset + 1 : 0}–{filters.offset + data.items.length} of {data.pagination.total.toLocaleString()}</span>
+            <div className="flex flex-wrap items-center gap-3"><label>Rows per page <select className="overview-select" value={filters.limit} onChange={(e) => update('limit', Number(e.target.value))}>{[25, 50, 100].map((n) => <option key={n}>{n}</option>)}</select></label><button className="overview-button" disabled={busy || !filters.offset} onClick={() => setFilters((f) => ({ ...f, offset: Math.max(0, f.offset - f.limit) }))}>Previous</button><button className="overview-button" disabled={busy || !data.pagination.has_more} onClick={() => setFilters((f) => ({ ...f, offset: f.offset + f.limit }))}>Next</button></div>
+          </div>
+        </section>}
+        {data && <p className="text-xs text-gray-500">Retrieved {new Date(data.retrieved_at).toLocaleString()}. Save/retrieval time is not source freshness.</p>}
+        <details className="text-sm text-gray-600"><summary className="cursor-pointer">Run a new assessment</summary><p className="mt-3">Running {activeModule?.label || label(module)} for {formatPeriod(period)} replaces all saved trails for this module and period. Earlier versions are not retained. Refresh only reads saved evidence.</p><label className="flex gap-2 items-start mt-3"><input type="checkbox" checked={runAcknowledged} disabled={running} onChange={(e) => setRunAcknowledged(e.target.checked)} />I understand this replaces the saved module/period evidence.</label><button className="overview-button mt-3" disabled={running || !runAcknowledged} onClick={run}>{running ? 'Running…' : 'Run and replace saved trails'}</button></details>
+      </>}
+      {notice && <p role="status" className="overview-notice">{notice}</p>}
     </div>
-  );
+  </main>;
 }

@@ -131,7 +131,7 @@ def _format_ticket_body(
         lines.append("## IFS missing — activations without invoice records")
         lines.append("")
         lines.append("Dealers activated FBB devices this period but no matching ")
-        lines.append("IFS purchase record was found in the 6-month window. May ")
+        lines.append("IFS purchase record was found in the available dataset. May ")
         lines.append("indicate stale IFS extract or out-of-window purchases.")
         lines.append("")
         lines.append("| Dealer | Code | Affected products | Activations |")

@@ -17,6 +17,16 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+export async function getFinancialDealers(params, signal) {
+  const { data } = await api.get('/financial-health', { params, signal });
+  return data;
+}
+
+export async function getFinancialReport(dealerId, period, signal) {
+  const { data } = await api.get(`/financial-health/${encodeURIComponent(dealerId)}`, { params: { mon_period: period }, signal });
+  return data;
+}
+
 /**
  * POST /chat
  * @param {string} message The user's question.
@@ -374,5 +384,19 @@ export async function getPaymentAccount(dealerId, period, signal) {
 
 export async function getPaymentAnalytics(params, signal) {
   const { data } = await api.get('/payments/analytics', { params, signal });
+  return data;
+}
+
+/** Bounded saved assessments; full steps load only for an exact subject. */
+export async function getAuditRecords(params, signal) {
+  const { data } = await api.get('/assurance/audit/records', { params, signal });
+  return data;
+}
+export async function getAuditEvidence(subject, module, mon_period, signal, trail_id) {
+  const { data } = await api.get(`/assurance/audit/records/${encodeURIComponent(subject)}`, { params: { module, mon_period, trail_id }, signal });
+  return data;
+}
+export async function getAuditExport(params) {
+  const { data } = await api.get('/assurance/audit/records/export', { params, responseType: 'text' });
   return data;
 }

@@ -5,6 +5,57 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-16 (Dealer Financial Health wayfinding)
+
+- User subsequently authorized implementation with synthetic data throughout.
+  Implemented Financial Health workspace at `?view=financial-health`, four
+  fictional businesses, three reconciled statements, prior-month comparisons,
+  six explainable KPIs, source evidence and complete CSV report. Spec and
+  verification: `docs/DEALER_FINANCIAL_HEALTH.md`. Planning map superseded.
+- Read-only synthetic API is isolated from Presto/APDP and remains explicitly
+  synthetic in either data mode. Monthly fixtures cover Jan–Mar 2026; the app's
+  Feb/Mar selector uses January for the February comparison. No integrations,
+  lending thresholds, dealer scores, funding decisions or production writes.
+- Validation: 260 backend tests passed, 28 skipped; 2 new frontend export tests
+  and 3 existing report tests passed; build passed (existing bundle warning).
+  Browser verified statements, metrics, search/sort, periods, download, error/retry,
+  keyboard/focus and 320/768/1024/1440px overflow. No deployment or commit.
+- Follow-up: claimed "Define the dealer financial statements and business
+  boundary." User selected balance sheet, income statement and cash flow
+  statement, then requested minimum profitability/lending KPIs. Recorded six
+  proposed demo metrics with definitions, evidence requirements and no lending
+  thresholds; reporting scope and detailed statement contents remain open.
+- Charted `.scratch/dealer-financial-health/map.md` with five open decision
+  tickets and dependency links. No tickets resolved; no application changes.
+- User confirmed whole-business health for MTN Finance funding consideration,
+  a synthetic demonstration to support pilot entry, and statements/explainable
+  observations without dealer ranking or funding-amount recommendations.
+- Recorded the user-reported internal upload platform (tentatively "UDP") as
+  an unverified future data source; demo integration is excluded. Do not assume
+  it is UDDM or that account feeds supply complete financial statements.
+- Added the agreed dealer-financial-health term to `CONTEXT.md`. Next decision:
+  "Define the dealer financial statements and business boundary."
+
+---
+
+## Session — 2026-09-15 (March ORSC demo coverage)
+
+- Fixed the demo coverage mismatch: the default March period had activation
+  records but ORSC was configured only for February.
+- Added a reproducible, explicitly synthetic March ORSC fixture: 200 device
+  records, 157 accounts, NGN 2,050,990.17 subscription revenue and 69 zero amounts.
+  February remains NGN 1,964,280.90; demo change is NGN 86,709.27.
+- Commission workspace source labels, account detail and export identify March
+  ORSC as synthetic. No changes to live queries or commission-payable semantics.
+- Generator and assumptions: `backend/data/generate_orsc_demo.py` and
+  `data/samples/README.md`. Added the domain glossary in `CONTEXT.md`.
+- Regression reproduced before the fix; backend suite: 248 passed, 28 skipped.
+  Restarted the local sample API on port 8000 and verified March ORSC totals,
+  February comparison, populated accounts and synthetic source label in-browser.
+  Changes are local; no hosted deployment was performed.
+
+---
+
 ## Session — 2026-09-14 (shared header and workspace history)
 
 - Aligned both header rows with the existing six-workspace content gutters;
@@ -26,6 +77,51 @@ end of each work session. Newest session on top.
   New automated navigation tests remain pending test-seam confirmation; runtime
   inspection found no page exceptions or non-GET requests in the main journeys.
   No deployment. Existing unrelated workspace work was preserved.
+
+---
+
+## Session — 2026-09-14 (Audit Trails saved-evidence workspace)
+
+- Implemented bounded saved-assessment API and UI: backend filters, deterministic
+  sorting, full-module versus whole-filter scope, 25/50/100 rows and on-demand steps.
+- Preserved exact saved trail identity for duplicate subjects, historical conclusions
+  and provenance. Exposed partial-payment qualifications, HIGH-confidence Inventory
+  limitations and corrected/qualified Eligibility entitlement wording.
+- Added all-match formula-safe CSV and individual readable evidence reports;
+  accessible evidence controls, return focus/context, friendly failure/missing states,
+  explicit refresh versus replacement-run controls. No saved audit run or deployment.
+- Verification: 246 backend tests passed, 28 skipped; 3 report tests passed;
+  production build passed with existing bundle warning. Read-only actual-store API
+  and browser journeys covered all modules, exports, paging, errors/retry, identity,
+  period changes and 320/768/1024/1440px widths. Browser log: zero non-GET attempts.
+- Native database projection/paging and historical retention remain deferred;
+  current server shaping reuses period-wide saved-store reads. See
+  `docs/AUDIT_WORKSPACE.md` for exact contracts, evidence and limits.
+
+---
+
+## Session — 2026-09-13 (Inventory investigation workspace)
+
+- Inventory now separates observed excess, invoice coverage gaps and within-
+  purchase comparisons from saved verification conclusions. Removed unsupported
+  dealer-total commission verdicts and six-month invoice-window wording.
+- Existing bounded API powers current-filter summaries, finding views, search,
+  supported sorting and 25/50/100 pagination. Dealer/product identities are
+  readable; column headers remain sticky inside an accessible scroll region.
+- Exact dealer-product/period saved trails load only when evidence is opened.
+  Period changes reset selection; returning preserves list state and focus.
+  Source time, recorded confidence and carryover/completeness limits are visible.
+- Coverage-ticket dialog defaults to IFS, states whole-period scope, supports
+  keyboard/Escape focus return and copy recovery. Compiler wording corrected;
+  purchase calculations and data contracts remain unchanged.
+- Verification: 232 backend tests passed, 28 skipped; 18 focused coverage tests
+  passed; frontend build passed with the existing bundle-size warning. Browser
+  checks covered responsive layouts, filters/paging, saved/missing/failed evidence,
+  period changes, stale refresh and retry, modal focus and ticket error recovery.
+- Independent standards/spec reviews completed; sticky-header regression fixed
+  and cleared. No new regression tests were authored while proposed test-boundary
+  confirmation remained pending. No deployment or audits initiated.
+- Scope, evidence and deferred data work: `docs/INVENTORY_WORKSPACE.md`.
 
 ---
 

@@ -14,6 +14,7 @@ import AssuranceStatusPanel from './components/assurance/AssuranceStatusPanel.js
 import InventoryIntelligencePanel from './components/inventory/InventoryIntelligencePanel.jsx';
 import PaymentIntelligencePanel from './components/payment/PaymentIntelligencePanel.jsx';
 import AuditTrailPanel from './components/audit/AuditTrailPanel.jsx';
+import FinancialHealthWorkspace from './components/financial/FinancialHealthWorkspace.jsx';
 import { PeriodProvider, usePeriod } from './context/PeriodContext.jsx';
 import { getHealth } from './api/client.js';
 import { formatPeriod } from './lib/format.js';
@@ -24,10 +25,11 @@ const VIEWS = [
   { id: 'activation', label: 'Activation' },
   { id: 'inventory', label: 'Inventory' },
   { id: 'payment', label: 'Payments' },
+  { id: 'financial-health', label: 'Financial Health' },
   { id: 'audit', label: 'Audit Trails' },
 ];
 
-function DataModeBadge() {
+function DataModeBadge({ financialDemo = false }) {
   const [mode, setMode] = useState(null); // null | 'sample' | 'live' | 'unknown'
 
   useEffect(() => {
@@ -43,7 +45,7 @@ function DataModeBadge() {
     };
   }, []);
 
-  const cfg = {
+  const cfg = financialDemo ? { dot: 'bg-amber-500', label: 'Synthetic demonstration', tone: 'text-amber-700' } : {
     checking: { dot: 'bg-gray-400', label: 'Checking data mode…', tone: 'text-gray-600' },
     sample: { dot: 'bg-emerald-500', label: 'Sample data', tone: 'text-gray-500' },
     live: { dot: 'bg-amber-500', label: 'Live Presto', tone: 'text-amber-700' },
@@ -51,7 +53,7 @@ function DataModeBadge() {
   }[mode || 'checking'];
 
   return (
-    <span role="status" className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${cfg.tone}`}>
+    <span role="status" className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${cfg.tone} ${financialDemo ? 'print:hidden' : ''}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
       {cfg.label}
     </span>
@@ -176,7 +178,7 @@ function Shell() {
             </div>
             <div className="flex w-full min-w-0 items-center justify-between gap-3 sm:w-auto sm:gap-5">
               <GlobalPeriodSelect />
-              <div className="w-36 shrink-0"><DataModeBadge /></div>
+              <div className="shrink-0"><DataModeBadge financialDemo={view === 'financial-health'} /></div>
             </div>
           </div>
           <label className="flex items-center gap-3 pb-3 lg:hidden text-sm text-gray-600">
@@ -205,6 +207,7 @@ function Shell() {
       </header>
 
       <div className="flex-1 overflow-hidden">
+        {view === 'financial-health' && <FinancialHealthWorkspace />}
         {mounted.overview && (
           <div className={panelClass('overview')}>
             <AssuranceStatusPanel onNavigate={switchView} onAsk={askClaude} />

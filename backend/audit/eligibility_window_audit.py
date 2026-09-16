@@ -179,7 +179,7 @@ def build_trail(inp: EligibilityWindowInputs) -> VerificationTrail:
                  f"outside window (>{_ELIGIBILITY_WINDOW_DAYS}d), or future-dated (<0d)."),
         result=(
             f"{n_outside} outside window (zero-commission CORRECT), "
-            f"{n_inside} inside window (should have earned commission), "
+            f"{n_inside} inside window (other eligibility checks required), "
             f"{n_future} future-dated (data quality issue)."
         ),
         # Pass when every record is legitimately outside the window.

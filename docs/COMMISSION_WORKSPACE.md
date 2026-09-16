@@ -39,6 +39,10 @@ Proposed test seams: public HTTP API and user-visible browser journeys.
   stream switching. Detail/page widths checked at 320, 768, 1024 and 1440px.
 - March ORSC has no source accounts and is explicitly empty, not a verified
   zero balance. February has 157 accounts and NGN 1,964,280.90 recorded revenue.
+  **September 15 update:** the approved synthetic March demo fixture now supplies
+  200 records across 157 accounts, totalling NGN 2,050,990.17. Source labels in
+  the workspace, detail and export identify it as synthetic. February is
+  unchanged. See `data/samples/README.md` for generation assumptions.
 - Live Presto and live AI answer generation were not exercised. The pending
   response lifecycle fix was independently code-reviewed, not runtime tested.
 

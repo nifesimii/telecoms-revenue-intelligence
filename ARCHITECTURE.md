@@ -19,6 +19,16 @@ relevant section here in the same change.
 
 This repository is one product built in two stacked layers.
 
+**Dealer Financial Health demonstration** adds a separate whole-business review
+workspace at `?view=financial-health`. Its read-only `/financial-health` API uses
+`backend/db/financial_health.py` to generate four explicitly fictional businesses
+with reconciled monthly statements and six KPIs. It does not read APDP, Presto,
+or real dealer accounts, even when other workspaces use live data. The collection
+is bounded and searched/sorted on the backend; exact dealer-month detail is loaded
+on demand through TanStack Query. The React workspace lives in
+`frontend/src/components/financial/`. See `docs/DEALER_FINANCIAL_HEALTH.md` for
+scope, assumptions, model rules, verification and future pilot work.
+
 **FBB Revenue Intelligence** (`backend/` + `frontend/`) is a finance-facing
 application that explains, validates, and audits MTN Nigeria's Fixed
 Broadband (FBB) **trade-partner commissions**. It answers questions like "what
@@ -381,7 +391,15 @@ requests are aborted. Payment Exceptions and All Payments share the single
 `/payments` collection with a status filter, so the APDP settlement dataset is
 not fetched twice. Only the active Payment sub-tab is mounted.
 
-Expandable Verify rows use
+Inventory's investigation workspace uses the same bounded comparison contract,
+with server finding filters and current-filter summary counts. Its selected
+dealer-product detail reads saved `inventory_mismatch` trails by exact
+`dealer_id:product_code` and period on demand. Comparison states remain separate
+from saved conclusions. Period-keyed state and TanStack Query prevent stale
+dealer evidence being shown under a new month. Invoice-window and completeness
+limitations are explicit; see `docs/INVENTORY_WORKSPACE.md`.
+
+Payment's expandable Verify rows use
 `GET /dealers/{dealer_id}/verification?mon_period=YYYYMM`. The compact response
 is fetched only when the row is first opened and cached by dealer-period; tab
 mounting no longer downloads verification evidence for every dealer.
@@ -407,6 +425,24 @@ until that path is wired and measured.
 Later, GET /assurance/audit/trails[/{partner}] and /breakdown read them back for
 inspection and evaluation (e.g. "all trails where step 6 raised a caveat").
 ```
+
+### Audit saved-evidence workspace
+
+`api/audit_workspace_routes.py` adds `/assurance/audit/records`, `/records/export`
+and `/records/{subject}` without breaking legacy audit readers. The collection is
+compact and bounded (maximum 100); server search/filter/sort precedes pagination,
+with separate full-module and whole-filter summaries. `db/audit_workspace.py`
+reuses existing period-scoped audit-store reads and preserves recorded provenance.
+Optional `trail_id` isolates a specific saved row when subjects have duplicates.
+Historical Eligibility wording is qualified in additive presentation fields;
+original results and conclusions remain unchanged.
+
+AuditTrailPanel uses TanStack Query for page/evidence caching and cancellation;
+steps load only on evidence selection. Reports and full-match CSV are downloads.
+Run remains explicit and states module/period replacement and missing history.
+Database materialization is still period-wide: compact projection and native
+page/count/aggregate optimization are deferred pending measured query plans.
+See `docs/AUDIT_WORKSPACE.md` for scope and verification.
 
 ### Flow D — APDP ingestion, production path (Kafka → Flink → Postgres)
 ```

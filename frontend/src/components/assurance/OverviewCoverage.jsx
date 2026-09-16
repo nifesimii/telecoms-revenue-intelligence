@@ -11,7 +11,7 @@ function AuditCoverage({ module, period, onNavigate }) {
   return <li className="py-3 border-b border-gray-100 last:border-0">
     <button className="text-sm font-medium text-left hover:underline" onClick={() => onNavigate('audit', { module: module.name, search: '' })}>{module.label} →</button>
     <p className="mt-1 text-xs text-gray-600">
-      {query.isPending ? 'Loading audit coverage…' : query.isError ? 'Audit source unavailable' : total ? `${total.toLocaleString()} persisted trails` : 'Not run for this period'}
+      {query.isPending ? 'Loading audit coverage…' : query.isError ? 'Audit source unavailable' : total ? `${total.toLocaleString()} persisted trails` : 'No saved trails for this period'}
     </p>
     {query.isError && <button className="text-xs underline mt-1" onClick={() => query.refetch()}>Retry audit coverage</button>}
     {insufficient > 0 && <p className="text-xs text-amber-800 mt-1">{insufficient.toLocaleString()} with insufficient evidence</p>}
