@@ -38,7 +38,7 @@ function PeriodWorkspace({ period, stream, setStream, ...props }) {
         </label>
       </header>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Commission revenue stream">
-        {[['activation', 'Activation commission'], ['orsc', 'ORSC subscription revenue']].map(([value, label]) => <button key={value} className={`overview-button ${stream === value ? 'overview-primary' : ''}`} aria-pressed={stream === value} onClick={() => setStream(value)}>{label}</button>)}
+        {[['activation', 'Activation commission'], ['orsc', 'Subscription commission']].map(([value, label]) => <button key={value} className={`overview-button ${stream === value ? 'overview-primary' : ''}`} aria-pressed={stream === value} onClick={() => setStream(value)}>{label}</button>)}
       </div>
       <AccountWorkspace key={`${stream}:${comparison}`} period={period} comparison={comparison} stream={stream} {...props} />
     </div>
@@ -89,7 +89,7 @@ function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptC
   function back() { returnFocus.current = selected.dealer_id; setSelected(null); }
   async function exportMatching() {
     setExporting(true); setExportError('');
-    try { downloadCsv(await getCommissionExport(params), `commission_${stream}_${period}_matching_accounts.csv`); }
+    try { downloadCsv(await getCommissionExport(params), `commission_${stream === 'orsc' ? 'subscription' : stream}_${period}_matching_accounts.csv`); }
     catch { setExportError('The matching-account export is unavailable. Please retry.'); }
     finally { setExporting(false); }
   }
@@ -97,7 +97,7 @@ function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptC
   return <>
     {navigationQuery.isError && !navigationConsumed.current && <p role="alert" className="overview-notice text-red-800">Requested account unavailable. <button className="underline" onClick={() => navigationQuery.refetch()}>Retry account</button></p>}
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <p className="text-sm text-gray-500">{formatPeriod(period)} · {stream === 'orsc' ? 'ORSC revenue base' : 'Activation commission ledger'}</p>
+      <p className="text-sm text-gray-500">{formatPeriod(period)} · {stream === 'orsc' ? 'Subscription commission' : 'Activation commission ledger'}</p>
       <div className="flex flex-wrap gap-2"><button className="overview-button" onClick={() => query.refetch()} disabled={busy}>Refresh</button>
         <button className="overview-button" onClick={exportMatching} disabled={!data || query.isError || busy || exporting}>{exporting ? 'Exporting…' : 'Export matching accounts ↓'}</button>
         <button className="overview-button" aria-expanded={showAssistant} onClick={() => setShowAssistant(!showAssistant)}>{showAssistant ? 'Hide assistant' : 'Ask a question'}</button></div>

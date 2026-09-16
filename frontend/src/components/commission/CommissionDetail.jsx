@@ -49,7 +49,7 @@ export default function CommissionDetail({ account, period, comparison, stream, 
             <div className="p-5 flex flex-wrap gap-3 border-t border-gray-200"><button className="overview-button" onClick={() => setPrompt(comparison ? 'Explain the change by denomination between the selected periods. Distinguish observed changes from verified causes.' : 'Explain this account’s recorded commission by denomination.')}>Explain {comparison ? 'change' : 'breakdown'} →</button>
               <button className="overview-button" aria-expanded={showRecords} onClick={() => setShowRecords(!showRecords)}>{showRecords ? 'Hide' : 'Inspect'} zero-commission records</button></div>
           </section>}
-          {orsc && <div className="overview-notice text-gray-600">This view reports recorded subscription amounts and zero-amount counts. The current source does not establish an ORSC commission-payable figure.</div>}
+          {orsc && <div className="overview-notice text-gray-600">This view reports recorded subscription amounts and zero-amount counts. The current source does not establish a subscription commission payable figure.</div>}
           {showRecords && !orsc && <ZeroCommissionEvidence dealerId={account.dealer_id} period={period} onNavigate={onNavigate} />}
         </>}
       </div>

@@ -104,7 +104,7 @@ function composeMarkdown(s) {
   }
   if (s.orsc) {
     lines.push('');
-    lines.push('## ORSC side (informational)');
+    lines.push('## Subscription commission (informational)');
     lines.push(`- Devices: ${s.orsc.device_count}`);
     lines.push(`- Total subscription: ${formatNGN(s.orsc.total_subscription_amount_ngn)}`);
     lines.push(`- Zero-amount records: ${s.orsc.zero_amount_count}`);
@@ -339,9 +339,9 @@ export default function DealerStatementModal({ open, onClose, dealerId, dealerNa
                 </SectionCard>
               </div>
 
-              {/* ORSC — informational only */}
+              {/* Subscription commission — informational only */}
               {data.orsc && (
-                <SectionCard title="ORSC side (informational — not part of the reconciliation)">
+                <SectionCard title="Subscription commission (informational — not part of the reconciliation)">
                   <div className="grid grid-cols-3 gap-3">
                     <Row label="Devices" value={data.orsc.device_count.toLocaleString()} />
                     <Row label="Total subscription" value={formatNGN(data.orsc.total_subscription_amount_ngn)} />

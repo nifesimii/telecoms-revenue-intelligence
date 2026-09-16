@@ -11,7 +11,7 @@ export default function CommissionSummary({ data, onFilter }) {
   return <section className="overview-surface overflow-hidden" aria-label="Full-period summary">
     <div className="grid lg:grid-cols-2">
       <div className="p-5 sm:p-6 bg-yellow-50 border-b lg:border-b-0 lg:border-r border-gray-200">
-        <h2 className="text-sm text-gray-700">{orsc ? 'Recorded ORSC subscription revenue' : 'Recorded activation commission'}</h2>
+        <h2 className="text-sm text-gray-700">{orsc ? 'Recorded subscription revenue' : 'Recorded activation commission'}</h2>
         <p className="overview-headline font-semibold tracking-tight mt-2 tabular-nums">{s.account_count ? formatNGN(s.amount_ngn) : 'No source records'}</p>
         <p className="mt-3 text-sm text-gray-600">Across {s.account_count.toLocaleString()} dealer accounts · {s.record_count.toLocaleString()} {orsc ? 'device records' : 'activation records'}</p>
         <p className="mt-2 text-xs text-gray-600">{orsc ? 'Subscription revenue is not commission payable.' : 'Existing calculated commission, not a recalculation or settlement balance.'}</p>

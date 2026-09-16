@@ -160,13 +160,13 @@ GET_MONTH_ON_MONTH_VARIANCE: dict[str, Any] = {
 GET_ORSC_SUMMARY: dict[str, Any] = {
     "name": "get_orsc_summary",
     "description": (
-        "Returns per-dealer Ongoing Revenue Service Commission (ORSC) "
-        "subscription totals for a single reporting month from "
+        "Returns per-dealer subscription commission "
+        "revenue totals for a single reporting month from "
         "development.fbb_comm_orsc.\n\n"
         "Use this for:\n"
-        "  * 'What is the ORSC summary for [month]?'\n"
-        "  * 'Which dealers are earning ORSC and how much?'\n"
-        "  * 'How many devices on Dealer X are still generating ORSC?'\n\n"
+        "  * 'What is the Subscription commission summary for [month]?'\n"
+        "  * 'Which dealers are earning Subscription commission and how much?'\n"
+        "  * 'How many devices on Dealer X are still generating Subscription commission?'\n\n"
         "Behaviour:\n"
         "  * Without distributor_code: one row per dealer, sorted by "
         "total_subscription_amount_ngn descending.\n"
@@ -174,9 +174,9 @@ GET_ORSC_SUMMARY: dict[str, Any] = {
         "Each row contains: distributor_code, distributor_name, "
         "account_profile_class, device_count, total_subscription_amount_ngn, "
         "zero_amount_count.\n\n"
-        "Important: data_subscription_amount IS the commission basis. There "
-        "is no 10%% rate multiplication for ORSC — the amount returned is "
-        "what MTN owes the dealer for that month."
+        "Important: the returned amount is recorded subscription revenue. "
+        "Do not apply an activation commission rate or present it as confirmed "
+        "subscription commission payable; the current source does not establish that figure."
     ),
     "input_schema": {
         "type": "object",
@@ -469,7 +469,7 @@ GET_KB_SECTION: dict[str, Any] = {
         "Valid section names:\n"
         "  * data_architecture       — source-system inventory + dev schema\n"
         "  * table_schemas           — column-level field definitions for "
-        "dev_act / ORSC / USP\n"
+        "dev_act / Subscription commission / USP\n"
         "  * calculation_logic       — pseudo-SQL for the commission "
         "calculation pipeline\n"
         "  * ftth_subscriptions_query — FBB / FIBRENET subscription "

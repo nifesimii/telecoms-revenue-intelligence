@@ -10,7 +10,7 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
   const [input, setInput] = useState('');
   const inputRef = useRef(null);
   const threadRef = useRef(null);
-  const context = `Reporting period ${period}. ${comparison ? `Comparison period ${comparison}.` : 'No comparison period selected.'} ${account ? `Exact dealer account code ${account.dealer_id} (${account.dealer_name}); do not combine other accounts with the same name.` : 'Portfolio-level investigation.'} ${stream === 'orsc' ? 'ORSC subscription revenue, not commission payable.' : stream === 'payment' ? 'Payment settlement investigation. Use recorded payment and commission evidence; do not infer causes from aggregate differences.' : 'Activation commission.'}`;
+  const context = `Reporting period ${period}. ${comparison ? `Comparison period ${comparison}.` : 'No comparison period selected.'} ${account ? `Exact dealer account code ${account.dealer_id} (${account.dealer_name}); do not combine other accounts with the same name.` : 'Portfolio-level investigation.'} ${stream === 'orsc' ? 'Subscription commission review: amounts are recorded subscription revenue, not confirmed commission payable.' : stream === 'payment' ? 'Payment settlement investigation. Use recorded payment and commission evidence; do not infer causes from aggregate differences.' : 'Activation commission.'}`;
   useEffect(() => {
     if (!prompt) return;
     setInput(prompt);
@@ -27,12 +27,12 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
     setInput('');
   }
   const suggestions = stream === 'payment' ? ['Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.'] : stream === 'orsc'
-    ? ['Summarise recorded ORSC revenue and zero-amount records.']
+    ? ['Summarise recorded subscription revenue and zero-amount records.']
     : [comparison ? 'Explain the commission change by denomination between these periods.' : 'Explain the recorded commission breakdown.', 'Investigate zero-commission records using only documented KB causes. State what remains unverified.'];
   return <section className="overview-surface overflow-hidden min-w-0" aria-label={stream === 'payment' ? 'Payment assistant' : 'Commission assistant'}>
     <div className="p-5 border-b border-gray-200">
       <div className="flex justify-between gap-3 items-center"><h2 className="font-semibold">Ask about these figures</h2>{messages.length > 0 && <button className="text-xs underline" disabled={isLoading} onClick={clearChat}>Clear thread</button>}</div>
-      <p className="text-xs text-gray-600 mt-2">{account ? `Account ${account.dealer_id}` : 'All accounts'} · {formatPeriod(period)}{comparison ? ` vs ${formatPeriod(comparison)}` : ''} · {stream === 'orsc' ? 'ORSC' : stream === 'payment' ? 'Payments' : 'Activation commission'}</p>
+      <p className="text-xs text-gray-600 mt-2">{account ? `Account ${account.dealer_id}` : 'All accounts'} · {formatPeriod(period)}{comparison ? ` vs ${formatPeriod(comparison)}` : ''} · {stream === 'orsc' ? 'Subscription commission' : stream === 'payment' ? 'Payments' : 'Activation commission'}</p>
     </div>
     <div ref={threadRef} className="p-4 max-h-96 overflow-y-auto commission-conversation" aria-live="polite" aria-busy={isLoading}>
       {!messages.length && <><p className="text-sm text-gray-600 mb-4">Use the records as the starting point. Ask for an explanation when you need more context.</p>

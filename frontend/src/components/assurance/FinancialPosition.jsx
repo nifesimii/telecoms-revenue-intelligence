@@ -33,7 +33,7 @@ export default function FinancialPosition({ payment, prior, comparison, comparis
         </dl>
         <div className="mt-6 flex justify-between gap-2 text-sm"><span className="text-gray-600">Settlement coverage</span><span className="font-semibold">{payment.payment_coverage_pct.toFixed(1)}%</span></div>
         <progress className="overview-progress mt-2 w-full" max="100" value={Math.min(100, Math.max(0, payment.payment_coverage_pct))} aria-label="Settlement coverage" />
-        <p className="mt-3 text-xs text-gray-500">Payment-source commission; ORSC subscription revenue is separate. Outstanding is not automatically a confirmed underpayment.</p>
+        <p className="mt-3 text-xs text-gray-500">Payment-source commission; Subscription commission is separate. Outstanding is not automatically a confirmed underpayment.</p>
       </div>
     </div>
     <div className="px-5 py-4 sm:px-6 border-t border-gray-200 flex flex-wrap gap-x-6 gap-y-3 items-center text-sm">

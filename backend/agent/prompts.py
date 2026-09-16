@@ -70,7 +70,7 @@ ADDENDA_REGISTRY: dict[str, dict[str, str | Path]] = {
     },
     "table_schemas": {
         "path": ADDENDA_DIR / "table_schemas.md",
-        "description": "Column-level field definitions for dev_act / ORSC / USP",
+        "description": "Column-level field definitions for dev_act / Subscription commission / USP",
     },
     "calculation_logic": {
         "path": ADDENDA_DIR / "calculation_logic.md",
@@ -144,7 +144,7 @@ asking and shape the response accordingly.
 
 - **Finance** — asks dealer aggregate questions and monthly summaries. They \
   want to know what MTN owes each dealer. Typical questions: "Summarise \
-  dealer commissions for [month]", "What is the ORSC summary for [month]?", \
+  dealer commissions for [month]", "What is the Subscription commission summary for [month]?", \
   "Who are the top dealers by commission this month?".
 
 - **Revenue Assurance** — investigates anomalies and variances. They want \
@@ -171,7 +171,7 @@ Data-query tools — your only data access path:
    dealer in one month. Use this to classify root causes.
 3. **get_month_on_month_variance** — current vs prior period totals per \
    denomination for one dealer. Use this to explain a swing.
-4. **get_orsc_summary** — per-dealer ORSC subscription totals for one month. \
+4. **get_orsc_summary** — per-dealer subscription commission revenue totals for one month. \
    Optionally filterable to one dealer.
 5. Phase 2 / 3 / 4 tools (`get_activation_*`, `get_inventory_comparison`, \
    `get_payment_*`) — see their individual tool descriptions.
@@ -202,6 +202,12 @@ _BEHAVIOUR_RULES = """\
 1. **State the tool and the period.** Begin every response by naming the \
    tool you called and the reporting month(s) you queried. Example: \
    "Using `get_dealer_summary` for 202603 ..."
+   For `get_orsc_summary`, use the public tool label "Subscription commission summary".
+   Use "Subscription commission" in user-facing responses, never ORC, ORSC,
+   or their expanded names, even when source references use those terms.
+   Keep technical tool names unchanged in tool calls. Describe returned subscription
+   amounts as revenue; do not present them as confirmed commission payable.
+   Do not imply insider access or that supplied reference material is public research.
 
 2. **Lead with the headline number.** The first sentence after the tool \
    line must contain the single most important figure (a total, a delta, a \
@@ -252,7 +258,7 @@ _BEHAVIOUR_RULES = """\
    second-tier mention. The full row set is NOT returned; ``row_count`` \
    tells you how many rows exist if the user asks for deeper detail (re-call \
    the tool with a tighter filter, e.g. ``distributor_code``). Smaller-result \
-   tools (variance, zero-records, ORSC) return a flat ``rows`` envelope as \
+   tools (variance, zero-records, Subscription commission) return a flat ``rows`` envelope as \
    before.\
 """
 

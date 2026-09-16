@@ -18,7 +18,7 @@ const SUGGESTIONS = [
   (label) =>
     `Summarise dealer commissions for ${label || 'the latest period'}`,
   () => 'Which dealers have zero-commission records and why?',
-  (label) => `Show me the ORSC summary for ${label || 'the latest period'}`,
+  (label) => `Show me the Subscription commission summary for ${label || 'the latest period'}`,
   (_label, topDealer) =>
     topDealer
       ? `Why did ${topDealer}'s commission change this month?`

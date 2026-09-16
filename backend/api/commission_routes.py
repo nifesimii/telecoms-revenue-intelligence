@@ -15,6 +15,10 @@ router = APIRouter(prefix='/commissions', tags=['Commission workspace'])
 logger = logging.getLogger(__name__)
 
 
+def public_source(source: str) -> str:
+    return source.replace('ORSC', 'subscription commission')
+
+
 def selection(
     mon_period: str = Query(..., pattern=r'^\d{6}$'),
     prior_period: str | None = Query(None, pattern=r'^\d{6}$'),
@@ -37,8 +41,9 @@ def filtered_collection(
     direction: Literal['asc', 'desc'] = 'desc',
 ) -> dict:
     try:
-        return workspace.collection(**context, search=search, partner_class=partner_class,
+        data = workspace.collection(**context, search=search, partner_class=partner_class,
                                     status=status, sort_by=sort_by, direction=direction)
+        return {**data, 'source': public_source(data['source'])}
     except Exception:
         logger.exception('Commission collection unavailable')
         raise HTTPException(503, 'Commission source unavailable. Retry later.') from None
@@ -54,18 +59,24 @@ def accounts(data: dict = Depends(filtered_collection),
 def export_accounts(data: dict = Depends(filtered_collection)):
     fields = ['mon_period', 'prior_period', 'stream', 'source', 'dealer_id', 'dealer_name',
               'account_profile_class', 'amount_ngn', 'prior_amount_ngn', 'delta_ngn',
-              'delta_pct', 'record_count', 'zero_count']
+              'delta_pct', 'record_count', 'zero_count', 'amount_basis']
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=fields)
     writer.writeheader()
     for row in data['items']:
         record = {key: row.get(key, data.get(key, '')) for key in fields}
+        if data['stream'] == 'orsc':
+            record['stream'] = 'Subscription commission'
+        record['amount_basis'] = ('Recorded subscription revenue; not confirmed commission payable'
+                                  if data['stream'] == 'orsc' else 'Recorded activation commission')
+        record['source'] = public_source(record['source'])
         for key, value in record.items():
             if isinstance(value, str) and value.lstrip().startswith(('=', '+', '-', '@')):
                 record[key] = "'" + value
         writer.writerow(record)
+    stream_name = 'subscription' if data['stream'] == 'orsc' else data['stream']
     return Response(output.getvalue(), media_type='text/csv', headers={
-        'Content-Disposition': f'attachment; filename="commission_{data["stream"]}_{data["mon_period"]}.csv"'})
+        'Content-Disposition': f'attachment; filename="commission_{stream_name}_{data["mon_period"]}.csv"'})
 
 
 @router.get('/{dealer_id}/detail', response_model=CommissionDetail)
@@ -77,7 +88,7 @@ def account_detail(dealer_id: str, context: dict = Depends(selection)):
         raise HTTPException(503, 'Commission evidence unavailable. Retry later.') from None
     if data is None:
         raise HTTPException(404, 'No account records for this stream and period')
-    return data
+    return {**data, 'source': public_source(data['source'])}
 
 
 @router.get('/{dealer_id}/zero-records', response_model=ZeroRecordPage)

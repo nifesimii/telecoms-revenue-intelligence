@@ -195,7 +195,7 @@ function ToolPills({ tools_called, period }) {
           key={`${name}-${i}`}
           className="inline-block bg-gray-100 text-gray-600 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-gray-200"
         >
-          {name}
+          {name === 'get_orsc_summary' ? 'Subscription commission summary' : name}
         </span>
       ))}
       {period && (
