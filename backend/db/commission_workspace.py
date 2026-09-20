@@ -15,6 +15,9 @@ def provenance(period: str | None = None, stream: str | None = None) -> dict:
     source = 'Sample CSVs' if config.USE_SAMPLE_DATA else 'Presto · development'
     if config.USE_SAMPLE_DATA and stream == 'orsc' and period == '202603':
         source = 'Sample CSVs · synthetic March 2026 ORSC demo data'
+    if config.USE_SAMPLE_DATA and period in {'202601', '202604', '202605', '202606'}:
+        month = datetime.strptime(period, '%Y%m').strftime('%B %Y')
+        source = f'Sample CSVs · synthetic {month} demo data'
     return {'source': source,
             'generated_at': datetime.now(timezone.utc).isoformat()}
 

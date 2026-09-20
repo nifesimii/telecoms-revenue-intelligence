@@ -8,7 +8,7 @@ from calendar import monthrange
 from copy import deepcopy
 from functools import lru_cache
 
-PERIODS = ('202601', '202602', '202603')
+PERIODS = ('202601', '202602', '202603', '202604', '202605', '202606')
 DEALERS = (
     dict(dealer_id='DEMO-001', dealer_name='Cedar Connect', scenario='Cash-generating operations',
          revenue=12_000_000, growth=1_000_000, cost_pct=60, expenses=2_100_000,

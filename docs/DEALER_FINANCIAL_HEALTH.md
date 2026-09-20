@@ -15,10 +15,9 @@ needed for the demo defaults below.
   cash-generating operations, profitable but working-capital constrained,
   operating losses/debt pressure, and a missing repayment schedule.
 - One whole business per dealer, including non-MTN activity; no outlet drill-down.
-- Monthly January–March 2026, current versus previous month. Balance sheets are
+- Monthly January–June 2026, current versus previous month. Balance sheets are
   month-end snapshots; income and cash flow are monthly movements, not YTD.
-  The existing app selector exposes February and March; January supplies the
-  February comparison and is also available through the synthetic read API.
+  The app selector exposes all six months. January has no prior-month report.
 - Prepared synthetic accounting records, simulated payment activity and a
   synthetic debt schedule. No uploads, real accounts, UDP/UDDM or APDP connection.
 - Deterministic figures reconcile: assets = liabilities + equity; profit carries

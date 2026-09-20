@@ -26,3 +26,38 @@ summary, detail and CSV export identify March ORSC as synthetic. February remain
 unchanged; an absent month still has no source records. Live Presto reads are
 unaffected. Restart an already-running backend after changing bundled fixtures
 because sample CSVs are cached in memory.
+
+## January–June 2026 coverage
+
+January, April, May and June are synthetic demo extensions. February and March
+activation/ORSC fixtures and existing payment records are preserved. The period
+selector discovers all six months automatically and defaults to June.
+
+Regenerate the added months and their derived simulated payments:
+
+```sh
+USE_SAMPLE_DATA=true PAYMENT_SOURCE=simulated python -m backend.data.generate_half_year_demo
+```
+
+January uses February's dealer roster and rows at 90% activation volume. April,
+May and June use March at 95%, 105% and 110%. Each dealer retains at least one
+record; stable source ordering determines selection/repetition. Recorded product
+prices and per-device commissions are copied, not recalculated. Synthetic IMEIs
+are unique across added activation months. Invoice, activation and snapshot dates
+shift together by calendar months, clamping days at month end. This preserves
+approximate invoice age; it does not assert eligibility or resolve source anomalies.
+
+ORSC retains the same 157 accounts and 200 records per month. Amounts use the
+month's volume percentage plus a deterministic -5 to +5 percentage-point variation
+by row, rounded half-up to cents; zero amounts stay zero. January dates shift back
+one month and its devices have synthetic IDs. April–June retain March's historical
+devices/dates as assumed continuing subscriptions. These are demonstration choices,
+not forecasts, commission rules or evidence of actual revenue.
+
+The shared IFS purchase history and USP reference remain unchanged: inventory
+comparisons continue using the existing cumulative purchase evidence rather than
+inventing duplicate monthly purchases. Added payments derive from each month's
+commission totals and the existing exception/rate mapping. All are SIMULATED.
+Financial Health independently extends its existing four fictional businesses and
+reconciled statement model through June; these businesses are not linked to the
+commission dealer roster. Restart the backend to clear cached CSVs after generation.

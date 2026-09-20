@@ -104,10 +104,18 @@ CORS_ORIGINS: list[str] = [
 # transparently via its ``_load_csv`` helper.
 SAMPLE_DATA_PATHS: dict[str, Path | dict[str, Path]] = {
     "fbb_comm_dev_act": {
+        "202601": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202601.csv",
+        "202604": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202604.csv",
+        "202605": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202605.csv",
+        "202606": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202606.csv",
         "202603": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202603.csv",
         "202602": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202602.csv",
     },
     "fbb_comm_orsc": {
+        "202601": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202601.csv",
+        "202604": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202604.csv",
+        "202605": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202605.csv",
+        "202606": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202606.csv",
         # Synthetic March demo fixture; see data/samples/README.md.
         "202603": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202603.csv",
         "202602": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_sample.csv",

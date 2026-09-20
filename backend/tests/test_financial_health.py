@@ -84,6 +84,6 @@ def test_empty_period_missing_dealer_and_independence_from_live_mode(monkeypatch
     monkeypatch.setattr(config, 'USE_SAMPLE_DATA', False)
     monkeypatch.setattr(config, 'PAYMENT_SOURCE', 'apdp')
     assert client.get('/financial-health?mon_period=202603').json()['source'] == 'synthetic'
-    assert client.get('/financial-health?mon_period=202604').json()['items'] == []
-    assert client.get('/financial-health/DEMO-001?mon_period=202604').status_code == 404
+    assert client.get('/financial-health?mon_period=202607').json()['items'] == []
+    assert client.get('/financial-health/DEMO-001?mon_period=202607').status_code == 404
     assert client.get('/financial-health/not-a-dealer?mon_period=202603').status_code == 404

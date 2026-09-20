@@ -5,6 +5,26 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-20 (January–June demo coverage)
+
+- Populated January, April, May and June 2026 using February/March dealer
+  identities and recorded product commissions. Existing February/March activation,
+  ORSC and payment records are preserved. New months are explicitly synthetic.
+- Added 118,754 activation records, 800 ORSC records and 3,705 derived simulated
+  payment rows. All six months are discovered by the existing period selector;
+  June is the latest default. Shared IFS/USP evidence remains unchanged.
+- Extended the separate four-business Financial Health demo through June.
+  Regeneration and assumptions: `backend/data/generate_half_year_demo.py` and
+  `data/samples/README.md`. Fixed stale payment-generator dealer field names.
+- Six-month API/query checks validate populated streams, stable dealer identities,
+  inventory availability and payment reconciliation. Standards and Spec review:
+  no findings. Full backend suite: 268 passed, 28 skipped. All 5 frontend tests
+  and build passed; existing bundle-size warning remains. Regeneration is
+  byte-for-byte deterministic. No standalone typecheck is configured.
+- Restart any running backend after updating cached fixtures. No deployment.
+
+---
+
 ## Session — 2026-09-16 (Dealer Financial Health wayfinding)
 
 - User subsequently authorized implementation with synthetic data throughout.
