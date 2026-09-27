@@ -202,6 +202,36 @@ def test_summary_returns_apdp_source_and_mapped_records(client: TestClient) -> N
     assert by_dealer["FBB_D00005"]["payment_status"] == "PENDING"
     assert by_dealer["FBB_D00005"]["exception_flag"] == "SALES_WITHOUT_STATEMENT"
 
+    # Drafts preserve the same source amounts but must not turn absent
+    # statement/settlement evidence into an aligned or closed dispute.
+    import pandas as pd
+    for source in APDP_ROWS_202410:
+        activation = pd.DataFrame([{
+            "dealer_id": source["dealer_id"], "dealer_name": source["dealer_id"],
+            "total_activations": 1, "zero_commission_count": 0,
+            "total_commission_ngn": 123.45,
+        }])
+        with patch("backend.agent.dispute_responder.execute_query", return_value=activation):
+            draft_response = client.post("/payments/disputes/draft", json={
+                "distributor_code": source["dealer_id"], "mon_period": "202410",
+            })
+        assert draft_response.status_code == 200, draft_response.text
+        draft = draft_response.json()
+        summary = draft["summary"]
+        assert summary["statement_count"] == source["statement_count"]
+        assert summary["settlement_count"] == source["settlement_count"]
+        assert summary["reconciliation_status"] == source["reconciliation_status"]
+        assert summary["statement_claim_ngn"] == source["expected_commission_ngn"]
+        assert summary["amount_paid_ngn"] == source["total_settled_ngn"]
+        if source["statement_count"] == 0:
+            assert summary["position_code"] == "INSUFFICIENT_PAYMENT_EVIDENCE"
+            assert "support closure" not in draft["markdown"]
+            assert "Statement evidence is absent" in draft["markdown"]
+            assert "Settlement evidence is absent" in draft["markdown"]
+            assert summary["evidence_qualifications"]
+        elif source["reconciliation_status"] == "RECONCILED":
+            assert summary["position_code"] == "RECORDED_BALANCE_ALIGNED"
+
 
 def test_summary_reconciled_row_has_no_exception_flag(client: TestClient) -> None:
     r = client.get("/payments/summary?mon_period=202410")

@@ -39,6 +39,7 @@ function SavedVerification({ dealerId, period, onNavigate }) {
   if (query.isError) return <p className="mt-3 text-sm" role="status">{query.error?.response?.status === 404 ? 'No saved verification for this account and period. Opening evidence does not run an audit.' : 'Saved verification unavailable.'}<button className="ml-2 underline" onClick={() => query.refetch()}>Retry</button></p>;
   const data = query.data;
   return <div className="mt-4 text-sm"><h3 className="font-medium">Saved conclusion: {data.conclusion?.replaceAll('_', ' ').toLowerCase()}</h3>
+    <p className="mt-1 font-medium">Confidence: {data.confidence || 'Not recorded'}</p>
     <p className="text-xs text-gray-500 mt-2">{data.generated_at ? new Date(data.generated_at).toLocaleString() : 'Date not recorded'} · Payment source: {data.payment_source || 'not recorded'}. Saved evidence may predate the current figures.</p>
     <ol className="mt-4 space-y-3">{(data.steps || []).map((step) => <li key={step.step}><p>{step.step}. {step.result}</p>{step.caveat && <p className="text-amber-900 mt-1">Caveat: {step.caveat}</p>}</li>)}</ol>
     <button className="underline mt-4" onClick={() => onNavigate('audit', { module: 'zero_commission', subject: dealerId, search: dealerId })}>Open this audit in workspace →</button>

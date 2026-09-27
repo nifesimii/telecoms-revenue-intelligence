@@ -58,7 +58,7 @@ function ActivationWorkspace({ period, navigation, onNavigate }) {
     setExportError('');
     setFilters((current) => key === 'reset' ? { ...DEFAULT_FILTERS, view: current.view, sort_by: current.view === 'exceptions' ? 'severity' : 'activation_count' } : { ...current, [key]: value, offset: 0, ...(key === 'view' ? { sort_by: value === 'exceptions' ? 'severity' : 'activation_count', direction: 'desc' } : {}) });
   }
-  function changeComparison(value) { setComparison(value); setSelected(null); setFilters((current) => ({ ...current, offset: 0 })); setExportError(''); }
+  function changeComparison(value) { setComparison(value); setFilters((current) => ({ ...current, offset: 0 })); setExportError(''); }
   async function exportMatching() {
     setExporting(true); setExportError('');
     try { downloadCsv(await getActivationExport(params), `activation_${filters.view}_${period}_matching_accounts.csv`); }
@@ -77,7 +77,7 @@ function ActivationWorkspace({ period, navigation, onNavigate }) {
         {data && <ActivationSummary summary={data.summary} onFilter={(finding) => { updateFilter('view', 'accounts'); updateFilter('finding', finding); }} />}
         <div className="flex flex-wrap gap-2" role="group" aria-label="Activation views">{VIEWS.map(([id, label]) => <button key={id} className={`overview-button ${filters.view === id ? 'overview-primary' : ''}`} aria-pressed={filters.view === id} onClick={() => updateFilter('view', id)}>{label}</button>)}</div>
         {!data && query.isPending && <div role="status" aria-label="Loading activation workspace" className="space-y-5 animate-pulse">{!data && <div className="h-56 bg-gray-200 rounded-lg" />}<div className="h-80 bg-gray-200 rounded-lg" /></div>}
-        {data && <ActivationAccounts data={data} busy={busy || query.isError} filters={filters} onFilter={updateFilter} onSelect={setSelected} rowRefs={rowRefs} onPage={(offset) => setFilters((current) => ({ ...current, offset }))} />}
+        {data && <ActivationAccounts data={data} busy={busy} refreshError={query.isError} filters={filters} onFilter={updateFilter} onSelect={setSelected} rowRefs={rowRefs} onPage={(offset) => setFilters((current) => ({ ...current, offset }))} />}
         {data && <footer className="text-xs text-gray-500 flex flex-wrap gap-3 justify-between border-t border-gray-200 pt-4"><span>{data.source} · Retrieved {new Date(data.generated_at).toLocaleString()}</span><span>Recorded figures follow existing source calculations.</span></footer>}
       </>}
     </div>

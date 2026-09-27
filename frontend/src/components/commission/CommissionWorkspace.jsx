@@ -38,16 +38,16 @@ function PeriodWorkspace({ period, stream, setStream, ...props }) {
         </label>
       </header>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Commission revenue stream">
-        {[['activation', 'Activation commission'], ['orsc', 'Subscription commission']].map(([value, label]) => <button key={value} className={`overview-button ${stream === value ? 'overview-primary' : ''}`} aria-pressed={stream === value} onClick={() => setStream(value)}>{label}</button>)}
+        {[['activation', 'Activation commission'], ['orsc', 'Subscription commission']].map(([value, label]) => <button key={value} className={`overview-button ${stream === value ? 'overview-primary' : ''}`} aria-pressed={stream === value} onClick={() => { props.onAssistantScopeClear?.(); setStream(value); }}>{label}</button>)}
       </div>
-      <AccountWorkspace key={`${stream}:${comparison}`} period={period} comparison={comparison} stream={stream} {...props} />
+      <AccountWorkspace key={stream} period={period} comparison={comparison} stream={stream} {...props} />
     </div>
   </main>;
 }
 
 const DEFAULT_FILTERS = { search: '', partner_class: '', status: 'all', sort_by: 'amount_ngn', direction: 'desc', limit: 25, offset: 0 };
 
-function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptConsumed, onNavigate, navigation }) {
+function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptConsumed, onNavigate, navigation, assistantScope, onAssistantScopeClear }) {
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, search: navigation?.search || navigation?.dealer_id || '' }));
   const [selected, setSelected] = useState(null);
   const [showAssistant, setShowAssistant] = useState(Boolean(pendingPrompt));
@@ -74,6 +74,10 @@ function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptC
     setSelected(navigationQuery.data.account);
     navigationConsumed.current = true;
   }, [navigationQuery.data, navigationQuery.isError, navigation]);
+  useEffect(() => {
+    setFilters((current) => ({ ...current, offset: 0 }));
+    setExportError('');
+  }, [comparison]);
   useEffect(() => {
     if (pendingPrompt) { setSelected(null); setShowAssistant(true); }
   }, [pendingPrompt]);
@@ -103,7 +107,7 @@ function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptC
         <button className="overview-button" aria-expanded={showAssistant} onClick={() => setShowAssistant(!showAssistant)}>{showAssistant ? 'Hide assistant' : 'Ask a question'}</button></div>
     </div>
     {exportError && <p role="alert" className="text-sm text-red-800">{exportError}</p>}
-    {showAssistant && <CommissionAssistant key={`${period}:${comparison}:${stream}:all`} period={period} comparison={comparison} stream={stream} prompt={pendingPrompt} onPromptConsumed={onPromptConsumed} />}
+    {showAssistant && <CommissionAssistant key={`${period}:${comparison}:${stream}:${JSON.stringify(assistantScope || null)}`} inventoryScope={assistantScope} onInventoryScopeClear={onAssistantScopeClear} period={period} comparison={comparison} stream={stream} prompt={pendingPrompt} onPromptConsumed={onPromptConsumed} />}
     {query.isError && <div role="alert" className="overview-notice text-red-800">Commission data unavailable. {data ? 'The figures below are the last successful result; they have not been refreshed.' : 'No balance can be established.'} <button className="underline" onClick={() => query.refetch()}>Retry</button></div>}
     {!data && query.isPending && <div role="status" aria-label="Loading commission workspace" className="space-y-5 animate-pulse"><div className="h-56 bg-gray-200 rounded-lg" /><div className="h-80 bg-gray-200 rounded-lg" /></div>}
     {data && <>

@@ -505,8 +505,8 @@ class DisputeDraftRequest(BaseModel):
     # Optional verbatim quote of the dealer's claim — included in the
     # letter so the recipient sees exactly what we're responding to.
     dispute_text: str | None = None
-    # If the caller already has the paid amount (e.g. from /payments/summary),
-    # pass it through so the recommended position reflects real settlement state.
+    # Legacy input accepted for compatibility but ignored. Draft owed/paid
+    # amounts are retrieved from the configured payment source.
     amount_paid: float | None = None
 
 
@@ -520,11 +520,18 @@ class DisputeDraftSummary(BaseModel):
     unqualified_activations: int
     qualification_rate_pct: float
     qualified_commission_ngn: float
+    # Legacy field name: payment-source recorded owed, not a dealer claim.
     statement_claim_ngn: float
     amount_paid_ngn: float
     outstanding_ngn: float
     root_cause_classifications: dict[str, int]
     position_code: str
+    # APDP evidence counts/status qualify normalized source amounts. None on
+    # sources without these fields; absent records do not prove zero entitlement.
+    statement_count: int | None = None
+    settlement_count: int | None = None
+    reconciliation_status: str | None = None
+    evidence_qualifications: list[str] = Field(default_factory=list)
 
 
 class DisputeDraftResponse(BaseModel):

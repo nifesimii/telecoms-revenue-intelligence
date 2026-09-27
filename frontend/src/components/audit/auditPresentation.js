@@ -16,7 +16,7 @@ export function measureValue(key, value) {
 export function qualifications(trail) {
   const notes = [...(trail.limitations || [])];
   if (trail.module === 'inventory_mismatch') notes.push('Carryover and alias checks can miss products with purchases but no activations. Invoice data presence does not establish complete period coverage. Excess units do not establish commission owed.');
-  if (trail.module === 'eligibility_window') notes.push('Inside the window; other eligibility checks required. Window classification alone does not establish commission entitlement.');
+  if (trail.module === 'eligibility_window') notes.push('Being inside the window alone does not establish commission entitlement; other eligibility checks are required.');
   if (trail.conclusion === 'NOT_PAID' && Number(trail.measures?.amount_paid_ngn) > 0) notes.push(`${trail.partial_payment ? 'Partial payment' : 'Positive payment'} recorded: ${formatNGN(Number(trail.measures.amount_paid_ngn))}. The saved NOT_PAID label does not mean no payment occurred. Manual review is required.`);
   return notes;
 }

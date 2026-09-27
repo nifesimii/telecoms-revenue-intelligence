@@ -10,15 +10,14 @@
 // before composing — it's included in the letter so the recipient sees
 // exactly what we're responding to.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { draftDisputeResponse } from '../../api/client.js';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 
 const POSITION_TONE = {
-  NO_FURTHER_ACTION: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  PARTIAL_PAYMENT_AGREED: 'bg-amber-100 text-amber-800 border-amber-200',
-  DISPUTE_DECLINED: 'bg-red-100 text-red-800 border-red-200',
-  DECLINED_INSUFFICIENT_QUALIFICATION: 'bg-red-100 text-red-800 border-red-200',
+  RECORDED_BALANCE_ALIGNED: 'bg-gray-100 text-gray-700 border-gray-200',
+  RECORDED_SHORTFALL: 'bg-amber-100 text-amber-800 border-amber-200',
+  RECORDED_EXCESS: 'bg-amber-100 text-amber-800 border-amber-200',
 };
 
 const CAUSE_LABEL = {
@@ -30,8 +29,15 @@ const CAUSE_LABEL = {
 
 export default function DisputeDraftModal({ open, onClose, row, period }) {
   const dialogRef = useRef(null);
+  const resultRef = useRef(null);
+  const inputRef = useRef(null);
+  const requestRef = useRef(0);
+  const positionId = useId();
   useEffect(() => {
-    if (open) dialogRef.current?.querySelector('button')?.focus();
+    if (!open) return;
+    const opener = document.activeElement;
+    dialogRef.current?.querySelector('button')?.focus();
+    return () => { if (opener?.isConnected) opener.focus(); };
   }, [open]);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -40,37 +46,47 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
   const [copyOk, setCopyOk] = useState(false);
   const [composed, setComposed] = useState(false);
 
+  useEffect(() => {
+    if (open && composed) resultRef.current?.focus();
+  }, [open, composed]);
+
   // Reset every time the modal opens for a new row.
   useEffect(() => {
+    requestRef.current += 1;
     if (!open) return;
+    setLoading(false);
     setData(null);
     setError(null);
     setDisputeText('');
     setCopyOk(false);
     setComposed(false);
-  }, [open, row?.dealer_id]);
+    return () => { requestRef.current += 1; };
+  }, [open, row?.dealer_id, period]);
 
   function compose() {
     if (!row || !period) return;
+    const request = ++requestRef.current;
     setLoading(true);
     setError(null);
     setCopyOk(false);
     // Request body keeps distributor_code (input-parameter convention —
-      // matches CLAUDE.md agent tools + the raw SQL column). Response fields
-      // use dealer_id / dealer_name (API-response convention). See
-      // ARCHITECTURE.md "Naming conventions".
-      draftDisputeResponse({
+    // matches CLAUDE.md agent tools + the raw SQL column). Response fields
+    // use dealer_id / dealer_name (API-response convention). See
+    // ARCHITECTURE.md "Naming conventions".
+    draftDisputeResponse({
       distributor_code: row.dealer_id,
       mon_period: period,
       dispute_text: disputeText.trim() || null,
-      amount_paid: row.amount_paid != null ? Number(row.amount_paid) : null,
     })
       .then((d) => {
+        if (request !== requestRef.current) return;
         setData(d);
         setComposed(true);
       })
-      .catch((e) => setError(e?.response?.data?.detail || e?.message || String(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (request === requestRef.current) setError(e?.response?.data?.detail || e?.message || String(e));
+      })
+      .finally(() => { if (request === requestRef.current) setLoading(false); });
   }
 
   async function copyMarkdown() {
@@ -112,7 +128,7 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
         if (event.key !== 'Tab') return;
         const controls = [...dialogRef.current.querySelectorAll('button:not(:disabled), textarea:not(:disabled), input:not(:disabled), a[href]')];
         const first = controls[0], last = controls[controls.length - 1];
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === resultRef.current)) { event.preventDefault(); last?.focus(); }
         if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       }}
       aria-modal="true"
@@ -126,25 +142,29 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
               Compose dispute response — {row?.dealer_name || row?.dealer_id}
             </h2>
             <div className="text-[11px] text-gray-500 mt-0.5">
-              Period {formatPeriod(period)} · Statement {formatNGN(row?.commission_owed)} · Outstanding {formatNGN(row?.amount_unpaid)}
+              Period {formatPeriod(period)} · Recorded owed {formatNGN(s?.statement_claim_ngn ?? row?.commission_owed)} · Outstanding {formatNGN(s?.outstanding_ngn ?? row?.amount_unpaid)}
             </div>
           </div>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-900 text-xl leading-none px-2"
             title="Close"
+            aria-label="Close dispute response"
           >
             ×
           </button>
         </div>
 
+        <p role="status" className="sr-only">{composed ? 'Draft composed. Ready for Finance review.' : loading ? 'Composing draft…' : ''}</p>
         <div className="flex-1 overflow-auto px-5 py-4">
           {!composed && (
             <>
-              <label className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">
+              <label htmlFor={positionId} className="block text-[11px] uppercase tracking-wide text-gray-500 mb-1">
                 Dealer's stated position (optional)
               </label>
               <textarea
+                id={positionId}
+                ref={inputRef}
                 value={disputeText}
                 onChange={(e) => setDisputeText(e.target.value)}
                 rows={4}
@@ -167,13 +187,17 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
           )}
 
           {error && (
-            <div className="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+            <div role="alert" className="mt-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
               {error}
             </div>
           )}
 
           {composed && s && (
             <>
+              <h3 ref={resultRef} tabIndex={-1} className="text-sm font-semibold text-gray-900 mb-2">
+                Draft for Finance review — {s.dealer_name}, {formatPeriod(s.mon_period)}
+              </h3>
+              <p className="text-xs text-gray-600 mb-3">Recorded observations only. Confirm source qualifications in the draft before approving or sharing a response.</p>
               {/* Summary band */}
               <div className="bg-gray-50 border border-gray-200 rounded-md px-4 py-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
@@ -186,14 +210,14 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
                 </div>
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-3 text-xs">
                   <Metric label="Total activations" value={s.total_activations.toLocaleString()} />
-                  <Metric label="Qualified" value={`${s.qualified_activations.toLocaleString()} (${s.qualification_rate_pct.toFixed(1)}%)`} tone="text-emerald-700" />
-                  <Metric label="Unqualified" value={s.unqualified_activations.toLocaleString()} tone="text-amber-700" />
-                  <Metric label="Qualified-earned" value={formatNGN(s.qualified_commission_ngn)} />
-                  <Metric label="Statement claim" value={formatNGN(s.statement_claim_ngn)} />
-                  <Metric label="Paid" value={formatNGN(s.amount_paid_ngn)} tone="text-emerald-700" />
+                  <Metric label="Non-zero records" value={`${s.qualified_activations.toLocaleString()} (${s.qualification_rate_pct.toFixed(1)}%)`} tone="text-emerald-700" />
+                  <Metric label="Zero records" value={s.unqualified_activations.toLocaleString()} tone="text-amber-700" />
+                  <Metric label="Activation comparison" value={formatNGN(s.qualified_commission_ngn)} />
+                  <Metric label="Recorded owed" value={formatNGN(s.statement_claim_ngn)} />
+                  <Metric label="Recorded paid" value={formatNGN(s.amount_paid_ngn)} tone="text-emerald-700" />
                   <Metric label="Outstanding" value={formatNGN(s.outstanding_ngn)} tone="text-gray-900" />
                   <Metric
-                    label="Root causes"
+                    label="Candidate causes"
                     value={Object.keys(s.root_cause_classifications).length || '—'}
                   />
                 </div>
@@ -214,7 +238,7 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
               {/* Markdown preview — monospace so the formatting reads as-pasted */}
               <div className="mt-4">
                 <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1">
-                  Letter (markdown — paste into email or attach)
+                  Draft (markdown — Finance approval required before sharing)
                 </div>
                 <pre className="bg-gray-900 text-gray-100 text-[11px] leading-snug rounded-md p-3 max-h-[40vh] overflow-auto whitespace-pre-wrap font-mono">
                   {data.markdown}
@@ -228,7 +252,10 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
           {composed && (
             <>
               <button
-                onClick={() => setComposed(false)}
+                onClick={() => {
+                  setComposed(false);
+                  requestAnimationFrame(() => inputRef.current?.focus());
+                }}
                 className="text-xs text-gray-700 hover:text-gray-900 px-2 py-1"
               >
                 ← Edit & recompose

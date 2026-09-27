@@ -10,12 +10,12 @@ shape every time, so finance officers can rely on it for the demo.
 The letter has four sections:
 
   1. Activation evidence    — total / qualified / unqualified / rate
-  2. Commission calculation — earned / claimed / paid / outstanding
+  2. Recorded payment position — source owed / paid / outstanding; activation comparison
   3. Root-cause analysis    — zero-commission records classified into the
                               four KB root causes (USP snapshot miss /
                               outside 6-month window / NULL profile class /
                               Hynex denomination split)
-  4. Recommended position   — FULL / PARTIAL / DECLINE based on variance
+  4. Conditional observation — recorded shortfall / excess / alignment for Finance review
 
 The KB rules referenced here MUST match ``knowledge_base/fbb_commission_kb.md``;
 if the KB changes, this module must be updated.
@@ -27,6 +27,9 @@ from typing import Any
 
 import pandas as pd
 
+from backend import config
+from backend.audit.payment_data import payment_lookup
+from backend.db.commission_workspace import provenance
 from backend.db.connection import execute_query
 
 
@@ -78,7 +81,7 @@ def _classify_zero_record(row: dict[str, Any]) -> str:
 _CAUSE_LABELS = {
     "USP_SNAPSHOT_MISS": (
         "USP snapshot miss",
-        "Dealer profile was not present in the USP dimension snapshot at the moment of commission calculation, even if the profile is on file today.",
+        "Possible snapshot miss: confirm whether the profile was present when commission was calculated; current profile evidence alone cannot establish this.",
     ),
     "OUTSIDE_6_MONTH_WINDOW": (
         "Outside the 6-month eligibility window",
@@ -86,11 +89,11 @@ _CAUSE_LABELS = {
     ),
     "NULL_PROFILE_CLASS": (
         "Missing account profile class",
-        "Dealer record has no profile class on file — the activation cannot be matched to a commission rate.",
+        "The returned record has no profile class; confirm the profile used during calculation before attributing zero commission to this condition.",
     ),
     "HYNEX_DENOMINATION_SPLIT": (
         "Hynex denomination edge case",
-        "Product belongs to the known Hynex / Hynex_1 split that the commission engine handles separately.",
+        "The denomination matches the known Hynex / Hynex_1 naming pattern; confirm the applicable split before attributing a cause.",
     ),
 }
 
@@ -100,38 +103,28 @@ def _format_ngn(v: float | int | None) -> str:
     return f"NGN {n:,.2f}"
 
 
-def _recommend_position(qualified_earned: float, claimed: float, paid: float) -> tuple[str, str]:
-    """Return (position_code, paragraph) based on variance vs the statement."""
-    outstanding = round(claimed - paid, 2)
-    earned_minus_paid = round(qualified_earned - paid, 2)
-
-    # Tolerance ±NGN 1 for rounding.
-    if abs(earned_minus_paid) <= 1 and outstanding <= 1:
+def _recommend_position(owed: float, paid: float) -> tuple[str, str]:
+    """Describe the recorded balance without deciding entitlement or settlement."""
+    balance = round(owed - paid, 2)
+    if balance > 0:
         return (
-            "NO_FURTHER_ACTION",
-            "Records align: the dealer has been paid in full for activations that qualified. "
-            "We recommend closing this dispute with no further settlement action.",
+            "RECORDED_SHORTFALL",
+            f"The payment source records an outstanding balance of {_format_ngn(balance)}. "
+            "If Finance confirms the source coverage, entitlement and settlement evidence, "
+            "this balance may require settlement review.",
         )
-    if earned_minus_paid > 1:
+    if balance < 0:
         return (
-            "PARTIAL_PAYMENT_AGREED",
-            f"The qualified activations support an additional {_format_ngn(earned_minus_paid)} "
-            f"beyond what has been paid to date. We recommend settling this additional amount "
-            f"in the next payment cycle.",
-        )
-    if earned_minus_paid < -1 and paid > claimed:
-        return (
-            "DISPUTE_DECLINED",
-            f"The paid amount already exceeds the commission earned by the dealer's qualified "
-            f"activations by {_format_ngn(abs(earned_minus_paid))}. No further settlement is due; "
-            f"the dispute is declined on the basis of the activation evidence above.",
+            "RECORDED_EXCESS",
+            f"Recorded paid exceeds recorded owed by {_format_ngn(-balance)}. "
+            "Finance should reconcile the source scope and settlement evidence before "
+            "deciding whether an adjustment is needed.",
         )
     return (
-        "DECLINED_INSUFFICIENT_QUALIFICATION",
-        f"The statement claims {_format_ngn(claimed)} but qualified activations only support "
-        f"{_format_ngn(qualified_earned)}. We recommend declining the additional "
-        f"{_format_ngn(claimed - qualified_earned)} unless the dealer provides evidence that "
-        f"any of the unqualified activations should be re-classified.",
+        "RECORDED_BALANCE_ALIGNED",
+        "Recorded owed and paid amounts align for this account and period. "
+        "If Finance confirms the evidence is complete, this may support closure; "
+        "the recorded balance alone does not resolve the dealer's claim.",
     )
 
 
@@ -150,10 +143,8 @@ def compose_dispute_response(
         dispute_text:      optional free-text quote from the dealer's claim;
                            included verbatim in the letter so the recipient
                            sees what we're responding to.
-        amount_paid:       optional override for the paid amount (when the
-                           caller already has it from /payments/summary).
-                           If omitted, defaults to the qualified-earned
-                           figure (assumes statement was paid in full).
+        amount_paid:       legacy input accepted for compatibility but ignored.
+                           Owed and paid are read from the configured payment source.
 
     Returns:
         ``{"markdown": str, "summary": {...}}`` where ``summary`` carries
@@ -180,8 +171,59 @@ def compose_dispute_response(
     qualified = max(0, total_acts - zero_count)
     qual_rate = (qualified / total_acts * 100.0) if total_acts > 0 else 0.0
 
-    claimed = qualified_earned  # statement claim mirrors qualified-earned in sample mode
-    paid = float(amount_paid) if amount_paid is not None else qualified_earned
+    # Match the exact account, never a substring or an activation-derived balance.
+    payment_df = payment_lookup(period, config.PAYMENT_SOURCE)
+    payment_rows = (payment_df[payment_df["dealer_id"].astype(str) == dealer]
+                    if not payment_df.empty else payment_df)
+    if len(payment_rows) != 1:
+        raise ValueError(f"No unique payment account for dealer {dealer} in period {period}.")
+    payment = payment_rows.iloc[0]
+    apdp = config.PAYMENT_SOURCE == "apdp"
+    owed_key = "expected_commission_ngn" if apdp else "commission_owed"
+    paid_key = "total_settled_ngn" if apdp else "amount_paid"
+    if any(pd.isna(payment.get(key)) for key in (owed_key, paid_key)):
+        raise ValueError(f"Incomplete payment amounts for dealer {dealer} in period {period}.")
+    claimed = float(payment[owed_key])
+    paid = float(payment[paid_key])
+    payment_source = ("APDP recorded settlements; source completeness and fixture/live provenance "
+                      "must be confirmed by Finance" if apdp else
+                      "Simulated settlements (payment_simulation.csv); demonstration data, "
+                      "not evidence of actual payment or entitlement")
+    activation_source = provenance(period, "activation")["source"]
+    statement_count = settlement_count = None
+    reconciliation_status = None
+    evidence_qualifications: list[str] = []
+    statement_present = settlement_present = True
+    if apdp:
+        # APDP coalesces absent amounts to zero. Counts and source status
+        # establish whether those numbers have supporting records.
+        statement_count = (int(payment["statement_count"])
+                           if pd.notna(payment.get("statement_count")) else None)
+        settlement_count = (int(payment["settlement_count"])
+                            if pd.notna(payment.get("settlement_count")) else None)
+        reconciliation_status = (str(payment["reconciliation_status"])
+                                 if pd.notna(payment.get("reconciliation_status")) else None)
+        statement_present = (statement_count is not None and statement_count > 0
+                             and reconciliation_status != "SALES_WITHOUT_STATEMENT")
+        settlement_present = (settlement_count is not None and settlement_count > 0
+                              and reconciliation_status != "STATEMENT_WITHOUT_PAYMENT")
+        if not statement_present:
+            evidence_qualifications.append(
+                "Statement evidence is absent or not established. The source's recorded "
+                "owed amount may be a normalized zero, not confirmed zero entitlement. "
+                "The displayed balance cannot establish alignment or support dispute closure."
+            )
+        if not settlement_present:
+            evidence_qualifications.append(
+                "Settlement evidence is absent or not established. The source's recorded "
+                "paid amount may be a normalized zero; absence does not prove non-payment. "
+                "Finance must confirm payment coverage and references."
+            )
+        if reconciliation_status != "RECONCILED":
+            evidence_qualifications.append(
+                f"Source reconciliation status: {reconciliation_status or 'not supplied'}. "
+                "An arithmetic balance does not resolve this source finding."
+            )
 
     # 2. Zero-commission records, classified.
     classifications: dict[str, int] = {}
@@ -195,13 +237,30 @@ def compose_dispute_response(
             classifications[cause] = classifications.get(cause, 0) + 1
 
     # 3. Recommended position.
-    position_code, position_para = _recommend_position(qualified_earned, claimed, paid)
+    if apdp and (not statement_present or (
+        round(claimed - paid, 2) == 0
+        and (not settlement_present or reconciliation_status != "RECONCILED")
+    )):
+        position_code = "INSUFFICIENT_PAYMENT_EVIDENCE"
+        position_para = (
+            "The available APDP evidence does not establish an aligned payment position. "
+            "Finance must confirm statement and settlement coverage and resolve any "
+            "source reconciliation finding before deciding the dispute."
+        )
+    else:
+        position_code, position_para = _recommend_position(claimed, paid)
 
     # 4. Render markdown.
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     ref = f"DISP-{dealer}-{period}"
     lines: list[str] = []
     lines.append(f"# Commission dispute review — {dealer_name}")
+    lines.append("")
+    lines.append("**Draft for Finance review — not an approved response or settlement decision.**")
+    lines.append("")
+    lines.append(f"**Payment source:** {payment_source}.  ")
+    lines.append(f"**Activation source:** {activation_source}.  ")
+    lines.append("Source amounts are recorded observations; Finance must confirm coverage and supporting evidence before sharing or acting on this draft.")
     lines.append("")
     lines.append(f"**Reference:** {ref}  ")
     lines.append(f"**Date:** {today}  ")
@@ -213,8 +272,8 @@ def compose_dispute_response(
     lines.append("")
     lines.append(
         f"Thank you for raising a commission dispute for the {period} reporting "
-        "month. We have reviewed our records against the standing FBB commission "
-        "schedule and provide the following evidence-based response."
+        "month. This draft summarises the available recorded evidence for Finance "
+        "review. It does not approve, decline or promise settlement."
     )
     if dispute_text:
         lines.append("")
@@ -226,23 +285,31 @@ def compose_dispute_response(
     lines.append("## 1. Activation evidence")
     lines.append("")
     lines.append(f"- Total activations in {period}: **{total_acts:,}**")
-    lines.append(f"- Qualified for commission: **{qualified:,} ({qual_rate:.1f}%)**")
-    lines.append(f"- Unqualified: **{zero_count:,}**")
+    lines.append(f"- Non-zero commission records: **{qualified:,} ({qual_rate:.1f}%)**")
+    lines.append(f"- Zero-commission records: **{zero_count:,}**")
     lines.append("")
-    lines.append("## 2. Commission calculation")
+    lines.append("## 2. Recorded payment position")
     lines.append("")
-    lines.append(f"- Commission earned from qualified activations: **{_format_ngn(qualified_earned)}**")
-    lines.append(f"- Statement amount issued: **{_format_ngn(claimed)}**")
-    lines.append(f"- Settlement to date: **{_format_ngn(paid)}**")
+    lines.append(f"- Activation commission (separate comparison): **{_format_ngn(qualified_earned)}**")
+    lines.append(f"- Payment-source recorded owed: **{_format_ngn(claimed)}**")
+    lines.append(f"- Payment-source recorded paid: **{_format_ngn(paid)}**")
     outstanding = max(0.0, round(claimed - paid, 2))
-    lines.append(f"- Outstanding (statement − paid): **{_format_ngn(outstanding)}**")
+    lines.append(f"- Outstanding (recorded owed − paid, minimum zero): **{_format_ngn(outstanding)}**")
+    if apdp:
+        lines.append(f"- Statement records: **{statement_count if statement_count is not None else 'Not supplied'}**")
+        lines.append(f"- Settlement records: **{settlement_count if settlement_count is not None else 'Not supplied'}**")
+        lines.append(f"- Source reconciliation status: **{reconciliation_status or 'Not supplied'}**")
+        for qualification in evidence_qualifications:
+            lines.append(f"- **Evidence qualification:** {qualification}")
+    lines.append("")
+    lines.append("Activation commission is a separate comparison, not a substitute for payment-source owed. Differences do not establish a cause or entitlement.")
     lines.append("")
     if zero_count > 0:
-        lines.append("## 3. Root-cause analysis")
+        lines.append("## 3. Candidate KB explanations — require verification")
         lines.append("")
         lines.append(
-            f"Of the {zero_count:,} unqualified activations, the following "
-            "documented conditions apply (per the FBB Commission KB):"
+            f"For the {zero_count:,} zero-commission records, the template groups "
+            "candidate explanations using the FBB Commission KB. These are not verified root causes:"
         )
         lines.append("")
         for cause, n in sorted(classifications.items(), key=lambda kv: -kv[1]):
@@ -250,11 +317,12 @@ def compose_dispute_response(
             lines.append(f"- **{n:,} records — {label}.** {explainer}")
         lines.append("")
         lines.append(
-            "These conditions result in zero commission per the standing commission "
-            "schedule, regardless of the activation value."
+            "USP snapshot miss is a fallback candidate, not proof that a profile was absent. "
+            "Hynex naming alone does not confirm a split caused zero commission. "
+            "Confirm snapshot, profile and invoice/activation evidence before attributing a cause."
         )
         lines.append("")
-    lines.append("## 4. Recommended settlement position")
+    lines.append("## 4. Conditional Finance observation")
     lines.append("")
     lines.append(f"**{position_code.replace('_', ' ')}**")
     lines.append("")
@@ -272,12 +340,12 @@ def compose_dispute_response(
     lines.append("- Evidence of profile registration as of the activation date")
     lines.append("")
     lines.append(
-        "We will re-review this dispute within **3 business days** of receiving "
-        "additional evidence."
+        "Finance should confirm source coverage, payment references and any difference "
+        "between recorded owed and activation commission before approving a response. "
+        "Any next action and timing require separate confirmation."
     )
     lines.append("")
-    lines.append("Regards,  ")
-    lines.append("MTN FBB Finance Team")
+    lines.append("Prepared for Finance review; no approval or service commitment is implied.")
     lines.append("")
     lines.append("---")
     lines.append(f"*Generated by FBB Revenue Intelligence Platform · {today} UTC*")
@@ -299,5 +367,9 @@ def compose_dispute_response(
             "outstanding_ngn": round(outstanding, 2),
             "root_cause_classifications": classifications,
             "position_code": position_code,
+            "statement_count": statement_count,
+            "settlement_count": settlement_count,
+            "reconciliation_status": reconciliation_status,
+            "evidence_qualifications": evidence_qualifications,
         },
     }

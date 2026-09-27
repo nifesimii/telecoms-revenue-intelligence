@@ -82,8 +82,8 @@ def test_compose_dispute_response_for_real_dealer_in_sample():
     assert sum(s["root_cause_classifications"].values()) == s["unqualified_activations"]
     # Position should be derived
     assert s["position_code"] in {
-        "NO_FURTHER_ACTION", "PARTIAL_PAYMENT_AGREED",
-        "DISPUTE_DECLINED", "DECLINED_INSUFFICIENT_QUALIFICATION",
+        "RECORDED_BALANCE_ALIGNED", "RECORDED_SHORTFALL",
+        "RECORDED_EXCESS",
     }
 
 
@@ -93,10 +93,10 @@ def test_compose_markdown_includes_required_sections():
     for header in [
         "# Commission dispute review",
         "## 1. Activation evidence",
-        "## 2. Commission calculation",
-        "## 4. Recommended settlement position",
+        "## 2. Recorded payment position",
+        "## 4. Conditional Finance observation",
         "## 5. Next steps",
-        "MTN FBB Finance Team",
+        "Draft for Finance review",
     ]:
         assert header in md, f"missing section: {header}"
 
@@ -116,14 +116,22 @@ def test_compose_raises_for_unknown_dealer():
         compose_dispute_response(distributor_code="999999", mon_period="202602")
 
 
-def test_compose_uses_amount_paid_override_for_position():
-    # Force a clear over-payment scenario
+def test_compose_ignores_amount_paid_override_for_position():
+    # Client-supplied settlement must not override the recorded account.
+    from backend.db.connection import execute_query
+    payments = execute_query("get_payment_summary", {"mon_period": "202602"})
+    account = payments[payments["dealer_id"].astype(str) == "74050"].iloc[0]
     payload = compose_dispute_response(
         distributor_code="74050",
         mon_period="202602",
         amount_paid=999_999_999.99,
     )
-    assert payload["summary"]["position_code"] == "DISPUTE_DECLINED"
+    assert payload["summary"]["amount_paid_ngn"] == account["amount_paid"]
+    assert payload["summary"]["statement_claim_ngn"] == round(account["commission_owed"], 2)
+    assert payload["summary"]["outstanding_ngn"] == round(account["amount_unpaid"], 2)
+    assert "Simulated" in payload["markdown"]
+    assert "3 business days" not in payload["markdown"]
+    assert "dispute is declined" not in payload["markdown"]
 
 
 # ---------------------------------------------------------------------------

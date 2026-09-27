@@ -4,7 +4,8 @@ import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatPeriod } from '../../lib/format.js';
 import { downloadCsv } from '../../lib/csv.js';
 import useDebouncedValue from '../../hooks/useDebouncedValue.js';
-import { getAuditModules, getAuditRecords, getAuditExport, runAuditModule } from '../../api/client.js';
+import { getAuditModules, getAuditRecords, getAuditExport } from '../../api/client.js';
+import useAuditReplacement from './useAuditReplacement.js';
 import AuditEvidence from './AuditEvidence.jsx';
 import AuditResults, { AuditSummary } from './AuditResults.jsx';
 import { label } from './auditPresentation.js';
@@ -21,7 +22,8 @@ function AuditWorkspace({ period, module, setModule, navigation, onReturn }) {
   const [subject, setSubject] = useState(navigation?.subject || '');
   const [trailId, setTrailId] = useState(null);
   const [notice, setNotice] = useState('');
-  const [running, setRunning] = useState(false);
+  const { replacement, run: runReplacement } = useAuditReplacement();
+  const running = replacement?.status === 'pending';
   const [exporting, setExporting] = useState(false);
   const [runAcknowledged, setRunAcknowledged] = useState(false);
   const rows = useRef({});
@@ -32,9 +34,18 @@ function AuditWorkspace({ period, module, setModule, navigation, onReturn }) {
   const params = { ...filters, search, mon_period: period, module };
   const registry = useQuery({ queryKey: ['audit-modules'], queryFn: getAuditModules });
   const query = useQuery({ queryKey: ['audit-records', params], queryFn: ({ signal }) => getAuditRecords(params, signal), enabled: !subject, retry: false });
-  const data = search === filters.search && !query.isError ? query.data : undefined;
-  const busy = query.isFetching || search !== filters.search;
+  const invalidOffset = query.data && filters.offset > 0 && filters.offset >= query.data.pagination.total;
+  const data = search === filters.search && !query.isError && !invalidOffset ? query.data : undefined;
+  const busy = query.isFetching || search !== filters.search || Boolean(invalidOffset);
   const activeModule = registry.data?.find((item) => item.name === module);
+  useEffect(() => {
+    if (invalidOffset) {
+      // The cached first page may predate the shrink and still be considered
+      // fresh. Refetch it when recovering instead of restoring stale totals.
+      queryClient.invalidateQueries({ queryKey: ['audit-records', { ...params, offset: 0 }], exact: true });
+      setFilters((current) => ({ ...current, offset: 0 }));
+    }
+  }, [invalidOffset, queryClient, params]);
   useEffect(() => {
     if (!subject && returnFocus.current && !busy) {
       (rows.current[returnFocus.current] || heading.current)?.focus();
@@ -50,15 +61,9 @@ function AuditWorkspace({ period, module, setModule, navigation, onReturn }) {
     finally { setExporting(false); }
   }
   async function run() {
-    setRunning(true); setNotice('');
-    try {
-      const result = await runAuditModule(module, period);
-      setNotice(`Run ${result.run_id}: ${result.trail_count} saved trails. Previous trails for this module and period were replaced.`);
-      await queryClient.invalidateQueries({ queryKey: ['audit-records'] });
-      await queryClient.invalidateQueries({ queryKey: ['audit-evidence'] });
-      await queryClient.invalidateQueries({ queryKey: ['audit-breakdown'] });
-    } catch { setNotice('The run did not return a successful result. Refresh saved evidence to inspect the current saved state before retrying.'); }
-    finally { setRunning(false); setRunAcknowledged(false); }
+    if (!runAcknowledged || running) return;
+    setRunAcknowledged(false); setNotice('');
+    await runReplacement(module, period);
   }
   return <main className="overview commission-workspace h-full overflow-y-auto bg-gray-50" aria-label="Audit Trails">
     <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 space-y-6">
@@ -72,6 +77,13 @@ function AuditWorkspace({ period, module, setModule, navigation, onReturn }) {
           {!subject && <><button className="overview-button" disabled={busy || running} onClick={() => query.refetch()}>Refresh saved evidence</button><button className="overview-button" disabled={!data || busy || exporting || running} onClick={exportMatches}>{exporting ? 'Exporting…' : 'Export all matching results'}</button></>}
         </div>
       </header>
+      {replacement && <p role="status" className="overview-notice">
+        Replacement assessment · {label(replacement.module)} · {formatPeriod(replacement.period)} ({replacement.period}):{' '}
+        {running ? 'Running; additional replacement runs are disabled until this request finishes.'
+          : replacement.status === 'success'
+            ? `Run ${replacement.result.run_id}: ${replacement.result.trail_count} saved trails. Previous trails for this module and period were replaced.`
+            : 'The run did not return a successful result; its outcome is unknown. Refresh saved evidence for this module and period to inspect the current saved state before retrying.'}
+      </p>}
       {subject ? <AuditEvidence subject={subject} trailId={trailId} module={module} period={period} onBack={() => { returnFocus.current = trailId || subject; setSubject(''); setTrailId(null); }} /> : <>
         {data && <AuditSummary summary={data.summary} filtered={data.filtered_summary} />}
         <section className="overview-surface p-5 sm:p-6" aria-label="Audit filters">

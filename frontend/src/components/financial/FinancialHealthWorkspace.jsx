@@ -10,7 +10,7 @@ import './financial.css';
 export default function FinancialHealthWorkspace() {
   const { period, loading, error } = usePeriod();
   if (!period) return <p role="status" className="p-6">{loading ? 'Loading reporting periods…' : error ? 'Reporting periods unavailable. Reload to retry.' : 'No reporting periods available.'}</p>;
-  return <Workspace key={period} period={period} />;
+  return <Workspace period={period} />;
 }
 
 function Workspace({ period }) {
@@ -18,6 +18,7 @@ function Workspace({ period }) {
   const [sort, setSort] = useState('dealer_name');
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState(null);
+  useEffect(() => { setOffset(0); }, [period]);
   const rowRefs = useRef({});
   const returnFocus = useRef(null);
   const debouncedSearch = useDebouncedValue(search);

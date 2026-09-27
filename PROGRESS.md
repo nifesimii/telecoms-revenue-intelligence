@@ -5,6 +5,42 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-27 (Pre-demo evidence and investigation fixes)
+
+- Implemented the priorities in `docs/DEMO_UX_REVIEW_2026-09-27.md` using three
+  visible Herdr workers, followed by fresh Standards and Spec reviews.
+- Payment drafts use exact source owed/paid amounts, keep activation earnings
+  separate, preserve source qualifications and require Finance review. Removed
+  unsupported final decisions/turnaround promises; fixed modal labels and focus.
+  APDP missing statements/settlements retain evidence qualifications; normalized
+  zero amounts cannot support a closed/aligned conclusion without evidence.
+- Saved Commission conclusions show confidence. Activation source labels include
+  reporting/comparison synthetic provenance, including CSV exports. Coverage
+  tickets request source confirmation before conditional remediation; Inventory
+  assistant handoffs carry dealer/product scope with explicit exit and resets.
+- Commission/Activation comparisons retain selected dealer and filters; Financial
+  Health retains dealer across months and names total liabilities-to-equity.
+- Audit eligibility wording is conditional. Replacement scope/outcome survives
+  period/navigation remounts, duplicate runs are blocked, and collection shrink
+  resets to a freshly fetched first page.
+- Verification: full backend suite 274 passed, 28 existing skips; five frontend
+  tests passed; production build passed (existing bundle-size warning). No
+  standalone typecheck is configured; changed Python modules compile. After
+  review fixes, 29 focused payment/APDP checks passed again. Existing
+  regression tests were updated; new test seams were not confirmed.
+- Chrome verified six workspaces, comparison/month continuity, Inventory handoff
+  and scope exit, dispute composition/focus/download, and saved March evidence.
+  Mocked audit responses verified pending/outcome retention and shrinking-page
+  recovery without live replacement runs. Rehearsal and evidence caveats:
+  `docs/DEMO_UX_REHEARSAL_2026-09-27.md`.
+- Review: all Spec findings and the Standards scope violation resolved. A
+  non-blocking source-field mapping duplication heuristic remains; broader
+  normalization refactoring was deliberately kept outside this demo fix.
+- No deployment, source fixture changes, live AI or Presto calls. Deployed build
+  parity/projector rehearsal remains an environment-specific pre-demo check.
+
+---
+
 ## Session — 2026-09-27 (Richer synthetic Inventory scenarios)
 
 - Used two Codex agents in Herdr sibling panes for fixture generation and

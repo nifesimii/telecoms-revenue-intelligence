@@ -15,6 +15,16 @@ _FINDING_LABELS = {
 _SEVERITY_RANK = {'HIGH': 3, 'MEDIUM': 2, 'LOW': 1}
 
 
+def activation_provenance(period: str, prior_period: str | None) -> dict:
+    metadata = provenance(period)
+    if prior_period:
+        metadata['source'] = (
+            f"Reporting {period}: {metadata['source']} · "
+            f"Comparison {prior_period}: {provenance(prior_period)['source']}"
+        )
+    return metadata
+
+
 def account_rows(period: str) -> list[dict]:
     frame = execute_query('get_activation_summary', {'mon_period': period})
     rows = frame.astype(object).where(frame.notna(), None).to_dict(orient='records')
@@ -100,7 +110,7 @@ def collection(period: str, prior_period: str | None, view: str, search: str,
     absent = [r for r in filtered if sort_value(r) is None]
     present.sort(key=sort_value, reverse=direction == 'desc')
     return {'mon_period': period, 'prior_period': prior_period, 'view': view,
-            **provenance(), 'summary': totals(rows), 'filtered_summary': totals(filtered),
+            **activation_provenance(period, prior_period), 'summary': totals(rows), 'filtered_summary': totals(filtered),
             'comparison_account_count': sum(r['prior_activation_count'] is not None for r in rows),
             'partner_classes': sorted({r['account_profile_class'] for r in rows}),
             'items': present + absent, 'total': len(filtered)}
@@ -111,4 +121,4 @@ def detail(period: str, prior_period: str | None, dealer_id: str) -> dict | None
     row = next((r for r in enrich_accounts(period, prior_period) if r['dealer_id'] == dealer_id), None)
     if row is None:
         return None
-    return {'mon_period': period, 'prior_period': prior_period, **provenance(), 'account': row}
+    return {'mon_period': period, 'prior_period': prior_period, **activation_provenance(period, prior_period), 'account': row}

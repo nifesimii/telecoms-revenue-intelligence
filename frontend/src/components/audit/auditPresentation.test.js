@@ -23,5 +23,7 @@ test('high confidence without caveats does not suppress Inventory limitations', 
 test('historical report qualifies entitlement while preserving recorded wording', () => {
   const report = evidenceReport({ partner_code: 'D1', module: 'eligibility_window', steps: [{step: 4, name: 'classify_against_window', result: 'should have earned commission', presentation_result: 'other eligibility checks required', presentation_qualification: 'Historical wording qualified for display'}] });
   assert.match(report, /other eligibility checks required/);
+  assert.match(report, /Being inside the window alone does not establish commission entitlement; other eligibility checks are required\./);
+  assert.doesNotMatch(report, /Inside the window; other eligibility checks required/);
   assert.match(report, /Original recorded wording: should have earned commission/);
 });

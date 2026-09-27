@@ -102,11 +102,13 @@ function _writeViewToUrl(view, push = false, context) {
 }
 
 function Shell() {
+  const { period } = usePeriod();
   const [view, setView] = useState(_readViewFromUrl);
   // Track which panels have been visited. Once mounted, a panel stays in the
   // DOM and is shown/hidden via CSS — preventing re-fetches on every tab switch.
   const [mounted, setMounted] = useState(() => ({ [_readViewFromUrl()]: true }));
   const [pendingPrompt, setPendingPrompt] = useState('');
+  const [assistantScope, setAssistantScope] = useState(null);
   const [navigation, setNavigation] = useState(() => {
     const entry = window.history.state?.fbbWorkspace;
     return entry?.view === _readViewFromUrl() ? { [entry.view]: entry.context } : {};
@@ -120,7 +122,10 @@ function Shell() {
   activeView.current = view;
   const auditOrigin = useRef(null);
 
+  useEffect(() => { setAssistantScope(null); }, [period]);
+
   const switchView = useCallback((v, context) => {
+    if (v !== 'commission' || context) setAssistantScope(null);
     if (v === activeView.current && !context) return;
     const nextContext = context ? { ...context, revision: ++revision.current } : navigationRef.current[v];
     if (v === 'audit' && context && activeView.current !== 'audit') {
@@ -136,6 +141,7 @@ function Shell() {
   useEffect(() => {
     _writeViewToUrl(_readViewFromUrl(), false, navigationRef.current[_readViewFromUrl()]);
     const restoreView = () => {
+      setAssistantScope(null);
       const next = _readViewFromUrl();
       const entry = window.history.state?.fbbWorkspace;
       const context = entry?.view === next ? entry.context : undefined;
@@ -156,7 +162,8 @@ function Shell() {
     return () => window.removeEventListener('popstate', restoreView);
   }, []);
 
-  const askClaude = (text) => {
+  const askClaude = (text, scope = null) => {
+    setAssistantScope(scope);
     setPendingPrompt(text);
     switchView('commission');
   };
@@ -220,6 +227,8 @@ function Shell() {
               navigation={navigation.commission}
               onNavigate={switchView}
               pendingPrompt={pendingPrompt}
+              assistantScope={assistantScope}
+              onAssistantScopeClear={() => setAssistantScope(null)}
               onPromptConsumed={() => setPendingPrompt('')}
             />
           </div>

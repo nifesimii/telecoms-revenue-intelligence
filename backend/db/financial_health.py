@@ -40,7 +40,7 @@ def calculate_kpis(v):
          ['operating_cash_flow']),
         ('current_ratio', 'Current ratio', 'multiple', 'Current assets / current liabilities',
          ['current_assets', 'current_liabilities']),
-        ('debt_to_equity', 'Debt-to-equity', 'multiple', 'Total liabilities / total equity',
+        ('debt_to_equity', 'Total liabilities-to-equity', 'multiple', 'Total liabilities / total equity',
          ['total_liabilities', 'total_equity']),
         ('dscr', 'Debt-service coverage', 'multiple', 'EBITDA / (scheduled principal + interest)',
          ['ebitda', 'scheduled_principal', 'interest']),
