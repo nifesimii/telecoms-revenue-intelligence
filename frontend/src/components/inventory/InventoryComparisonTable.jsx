@@ -21,6 +21,7 @@ export default function InventoryComparisonTable({ rows, busy, onSelect, rowRefs
           <p className="text-xs text-gray-500 mt-1">Dealer {row.dealer_id}</p>
           <p className="text-sm text-gray-700 mt-3 break-words">{row.product_name || 'Product name unavailable'}</p>
           <p className="text-xs text-gray-500 mt-1">Product {row.product_code}</p>
+          {row.scenario_id && <p className="text-xs font-medium text-blue-900 mt-3">{row.scenario_label}</p>}
         </th>
         <td className="text-right tabular-nums">{units(row.total_units_purchased)}{row.total_units_purchased == null && <span className="block text-xs text-gray-500 mt-1">Not recorded</span>}</td>
         <td className="text-right tabular-nums">{units(row.activation_count)}</td>

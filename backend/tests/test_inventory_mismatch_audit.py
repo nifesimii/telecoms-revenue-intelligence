@@ -210,7 +210,16 @@ def test_run_period_produces_trails_against_sample_data():
         }
         assert t.confidence in {"HIGH", "MEDIUM", "LOW"}
         assert ":" in t.partner_code  # composite dealer:product key
-        assert t.payment_source == "ifs"
+        if t.partner_code in {"213044:1283279", "205044:1186254", "19477:1212360", "98052:1283280"}:
+            # These four February holdouts are explicitly labelled demo cases;
+            # fictional evidence must never inherit authentic IFS provenance.
+            assert t.payment_source == "synthetic_inventory"
+            assert t.conclusion == "INSUFFICIENT_DATA"
+            assert t.confidence == "LOW"
+            assert all(step.detail["scenario_id"].startswith("synthetic_shared_") for step in t.steps)
+        else:
+            assert t.payment_source == "ifs"
+    assert sum(t.payment_source == "synthetic_inventory" for t in trails) == 4
 
 
 def test_run_period_returns_empty_for_unknown_period():

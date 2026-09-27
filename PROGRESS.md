@@ -5,6 +5,61 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-27 (Richer synthetic Inventory scenarios)
+
+- Used two Codex agents in Herdr sibling panes for fixture generation and
+  downstream provenance, followed by independent Standards and Spec reviews.
+- Added a reproducible 16-comparison cohort across 13 dealers/six products:
+  12 positive fictional purchase quantities and four retained missing-evidence
+  controls. Existing source CSVs and all commission/payment amounts are preserved.
+- Shared fixed quantities retain existing purchase semantics. June anchor cases
+  cover exact matches, purchase cushions, one-unit excesses and larger excesses;
+  all six months and baseline/enriched outcomes appear in the generated manifest.
+- Search `Synthetic` in Inventory to explore the cohort across tabs. Labels and
+  disclosures survive API, agent result compression, assurance and ticket drafts.
+  Synthetic trails are inconclusive/LOW; synthetic evidence cannot establish
+  carryover/aliases, and prior saved trails are not presented as scenario proof.
+- June totals are now 35 observed mismatches, 377 excess units, 4,138 invoice
+  gaps and 63 within-purchase combinations. Walkthrough, monthly distribution and
+  regeneration: `docs/INVENTORY_DEMO_SCENARIOS.md` and `data/samples/README.md`.
+- Updated the existing sample-audit assertion to distinguish the four known
+  synthetic holdout trails from authentic IFS trails without weakening either
+  provenance check. New test boundaries were proposed but not confirmed; no new
+  scenario test files were introduced.
+- Verification: focused inventory query/audit checks passed (33), composite checks
+  passed (4), and generator output is byte-for-byte deterministic with unchanged
+  source hashes. Final full backend suite: 274 passed, 28 existing skips; all five
+  frontend tests and production build passed (existing bundle-size warning).
+  No standalone typecheck is configured; Python compilation passed. Updated
+  Overview expectations for three additional March findings; its export check
+  now requires synthetic disclosure. Standards and Spec reviews: no unresolved
+  findings after follow-up review.
+- Browser checked three scenario views, month switching, detail disclosure,
+  suppressed stale audit requests, ticket disclosure and 320/768/1024/1440px
+  layouts. Fixed the mobile search field squeezing. No deployment.
+
+---
+
+## Session — 2026-09-27 (Inventory summaries and data assessment)
+
+- Each Inventory view now shows relevant summaries: investigation excess and
+  gaps; coverage combinations/distinct dealers/activations; within-purchase
+  combinations/purchased units/activations. API aggregates cover the entire
+  filtered result before pagination; absent purchased quantities remain null.
+- Inspected January–June fixtures without changes. All three classifications
+  already exist each month; 97.96–98.50% of combinations lack matched invoices.
+  Distribution and proposed scenarios: `docs/INVENTORY_DATA_ASSESSMENT.md`.
+  Shared March-only IFS evidence and purchase-window semantics should be addressed
+  before generating monthly replenishment/carryover stories.
+- Validation: 274 backend tests passed, 28 existing skips; all 5 frontend tests
+  and production build passed (existing bundle-size warning). Headless Chrome
+  verified tab totals, pagination, empty search/reset, reporting-period reset,
+  and card layouts at 320/768/1024/1440px. No application runtime errors;
+  existing missing `/favicon.ico` produces a browser console 404.
+- Sample fixtures unchanged. No deployment.
+
+---
+
 ## Session — 2026-09-20 (January–June demo coverage)
 
 - Populated January, April, May and June 2026 using February/March dealer

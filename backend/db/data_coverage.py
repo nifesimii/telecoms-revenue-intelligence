@@ -26,6 +26,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from backend import config
 from backend.db.connection import execute_query
 
 Source = Literal["ifs", "usp", "both"]
@@ -115,6 +116,14 @@ def _format_ticket_body(
         "",
         f"**Period:** {mon_period}",
         "**Source:** FBB Revenue Intelligence Platform",
+        *([
+            "**Demo disclosure:** Sample mode includes synthetic comparison scenarios "
+            "with shared purchase evidence and retained invoice gaps. These are not "
+            "authentic IFS invoices or verified operational issues. The reporting month "
+            "selects activations; no monthly purchase window or carryover rule is "
+            "established. Counts may reflect synthetic scenarios. This draft is for "
+            "demonstration; validate against authentic source evidence before operational action.",
+        ] if config.USE_SAMPLE_DATA else []),
         f"**Severity:** {severity}",
         f"**Affected dealers:** {total_dealers}",
         "",

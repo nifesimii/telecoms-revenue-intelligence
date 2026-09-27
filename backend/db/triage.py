@@ -286,6 +286,12 @@ def _triage_get_inventory_comparison(
         "total_excess_units_confirmed": round(total_excess, 0),
         "worst_confirmed_mismatch": top_str,
     }
+    if "scenario_id" in df and df["scenario_id"].fillna("").ne("").any():
+        headline["source_note"] = (
+            "Includes synthetic shared purchase scenarios. These are fictional "
+            "comparisons, not authentic IFS invoices or verified inventory mismatches. "
+            "No stock carryover or alias resolution is established by synthetic evidence."
+        )
 
     cols = [
         "dealer_id",
@@ -298,6 +304,9 @@ def _triage_get_inventory_comparison(
         "inventory_gap",
         "gap_pct",
         "finding_type",
+        "scenario_id",
+        "scenario_label",
+        "data_coverage_note",
     ]
 
     # Must: CONFIRMED_MISMATCH sorted by gap_pct desc (highest severity first).

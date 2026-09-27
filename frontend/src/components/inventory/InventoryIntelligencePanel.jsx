@@ -67,6 +67,7 @@ function InventoryWorkspace({ period, navigation, onAsk }) {
       <aside className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900" aria-label="Invoice coverage limitation">
         <p className="font-semibold">Invoice coverage is limited</p>
         <p className="mt-1">The reporting period selects activations. Purchases use the available invoice dataset; a matching invoice window and complete period coverage are not established. Treat excess quantities as observations requiring investigation.</p>
+        {data?.source_note && <p className="mt-2">{data.source_note}</p>}
       </aside>
       {selected ? <InventoryDetail row={selected.row} period={period} retrievedAt={selected.retrievedAt} onAsk={onAsk}
         onTicket={() => setTicketOpen(true)} onBack={() => { returnFocus.current = subjectFor(selected.row); setSelected(null); }} /> : <>
@@ -75,7 +76,7 @@ function InventoryWorkspace({ period, navigation, onAsk }) {
         {busy && <p role="status" className="text-sm text-gray-600">{data ? 'Refreshing this comparison…' : 'Loading matching comparisons…'}</p>}
         {!data && busy && <div aria-hidden="true" className="space-y-4 animate-pulse"><div className="h-40 rounded-lg bg-gray-200" /><div className="h-64 rounded-lg bg-gray-200" /></div>}
         {data && <>
-          <InventorySummary summary={data.summary} includeWithin={includeWithin} />
+          <InventorySummary summary={data.summary} view={filters.view} />
           <section className="overview-surface overflow-hidden" aria-labelledby="inventory-comparisons-heading">
             <div className="p-5 border-b border-gray-200"><h2 ref={listHeading} tabIndex={-1} id="inventory-comparisons-heading" className="font-semibold">Dealer-product comparisons</h2>
               <p className="text-sm text-gray-600 mt-2" role="status">{pagination.total.toLocaleString()} matching combinations · {filters.view === 'coverage' ? 'Invoice coverage gaps' : includeWithin ? 'Within recorded purchases' : 'Needs investigation'}</p>

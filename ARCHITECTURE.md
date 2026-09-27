@@ -399,6 +399,16 @@ from saved conclusions. Period-keyed state and TanStack Query prevent stale
 dealer evidence being shown under a new month. Invoice-window and completeness
 limitations are explicit; see `docs/INVENTORY_WORKSPACE.md`.
 
+Sample Inventory comparisons also join a separate immutable fictional purchase
+cohort from `inventory_demo_scenarios.csv`. Source IFS and activation CSVs remain
+unchanged; shared quantities follow existing pooled comparison semantics rather
+than introducing a monthly invoice window. `scenario_id`/`scenario_label` and
+coverage notes survive API and agent result compression. The UI exposes scenario
+search and suppresses older saved trails for those rows. New synthetic trails are
+inconclusive, and synthetic rows cannot supply carryover/alias evidence for other
+comparisons. The generator, manifest and walkthrough are documented in
+`docs/INVENTORY_DEMO_SCENARIOS.md`.
+
 Payment's expandable Verify rows use
 `GET /dealers/{dealer_id}/verification?mon_period=YYYYMM`. The compact response
 is fetched only when the row is first opened and cached by dealer-period; tab

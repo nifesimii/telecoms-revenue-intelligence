@@ -125,6 +125,7 @@ def assemble_dealer_full_context(
         "get_inventory_comparison", {"mon_period": mon_period}
     )
     inv_match = inv_df[inv_df["dealer_id"].astype(str) == distributor_code]
+    synthetic_count = int(inv_match["scenario_id"].ne("").sum()) if "scenario_id" in inv_match else 0
     confirmed_count = int((inv_match["finding_type"] == "CONFIRMED_MISMATCH").sum())
     no_invoice_count = int((inv_match["finding_type"] == "NO_INVOICE_RECORD").sum())
     within_count = int((inv_match["finding_type"] == "WITHIN_ALLOCATION").sum())
@@ -148,6 +149,9 @@ def assemble_dealer_full_context(
             "inventory_gap": _safe_num(i["inventory_gap"]),
             "gap_pct": _safe_num(i["gap_pct"]),
             "finding_type": str(i["finding_type"]),
+            "scenario_id": _safe_str(i.get("scenario_id")) or "",
+            "scenario_label": _safe_str(i.get("scenario_label")) or "",
+            "data_coverage_note": _safe_str(i.get("data_coverage_note")),
         }
         for _, i in inv_match.iterrows()
     ]
@@ -236,6 +240,12 @@ def assemble_dealer_full_context(
         "inventory": {
             "products_in_period": int(len(inv_df[inv_df["dealer_id"].astype(str) == distributor_code])),
             "confirmed_mismatches": confirmed_count,
+            "synthetic_scenario_count": synthetic_count,
+            "source_note": (
+                "Includes fictional shared purchase scenarios, not authentic IFS evidence "
+                "or verified stock/carryover. Scenario labels describe June anchor examples."
+                if synthetic_count else ""
+            ),
             "no_invoice_records": no_invoice_count,
             "within_allocation": within_count,
             "findings": inventory_findings,

@@ -61,3 +61,35 @@ commission totals and the existing exception/rate mapping. All are SIMULATED.
 Financial Health independently extends its existing four fictional businesses and
 reconciled statement model through June; these businesses are not linked to the
 commission dealer roster. Restart the backend to clear cached CSVs after generation.
+
+## Inventory shared synthetic scenarios
+
+`inventory_demo_scenarios.csv` adds 16 labelled comparison scenarios across 13
+dealers and six products: 12 fictional purchase quantities and four retained
+missing-invoice controls. Existing source CSVs remain unchanged. This separate
+sample-only overlay is used by Inventory comparisons, with provenance carried
+through API/UI, assurance and coverage tickets.
+
+Regenerate only these two Inventory artifacts:
+
+```sh
+python -m backend.data.generate_inventory_demo
+# Or inspect an isolated generation without replacing bundled artifacts:
+python -m backend.data.generate_inventory_demo --output-dir /tmp/inventory-demo
+```
+
+The generated manifest records source hashes, scenario identities, and baseline
+and enriched outcomes for January–June. Quantities are fixed, not recalculated
+to preserve a desired classification after source drift. The generator rejects
+existing IFS matches, invalid quantities and changed June anchor counts.
+
+These are shared fictional purchase snapshots, not month-dated invoices. The
+same quantity is compared with each month's existing activation count. Scenario
+labels describe June's anchor examples; other months can classify differently.
+No stock carryover, replenishment, alias resolution or actual coverage improvement
+is asserted. Blank purchase quantities remain unknown. See
+`docs/INVENTORY_DEMO_SCENARIOS.md` for the walkthrough and limits.
+
+Restart the backend after regenerating cached CSVs. Search `Synthetic` in the
+Inventory tab to isolate the cohort. Saved trails from other evidence are not
+shown as verification of the synthetic quantities.

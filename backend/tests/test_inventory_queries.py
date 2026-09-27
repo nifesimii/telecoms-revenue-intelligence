@@ -191,6 +191,41 @@ def test_inventory_page_rejects_unbounded_limit(client: TestClient) -> None:
     assert r.status_code == 422
 
 
+@pytest.mark.parametrize("finding", ["NO_INVOICE_RECORD", "WITHIN_ALLOCATION"])
+@pytest.mark.parametrize("search", [None, "1283279", "no-such-inventory-dealer"])
+def test_inventory_summary_covers_filtered_results_not_page(client, finding, search):
+    expected = execute_query("get_inventory_comparison", {"mon_period": "202603"})
+    expected = expected[expected["finding_type"] == finding]
+    if search:
+        expected = expected[
+            expected[["dealer_id", "dealer_name", "product_code", "product_name"]]
+            .fillna("").astype(str)
+            .apply(lambda col: col.str.lower().str.contains(search, regex=False))
+            .any(axis=1)
+        ]
+    params = {
+        "mon_period": "202603", "finding_type": finding,
+        "include_within_allocation": True, "limit": 1,
+    }
+    if search:
+        params["search"] = search
+    summaries = []
+    for offset in (0, 1):
+        response = client.get("/inventory/comparison-page", params={**params, "offset": offset})
+        assert response.status_code == 200
+        body = response.json()
+        assert body["pagination"]["total"] == len(expected)
+        summary = body["summary"]
+        assert summary["distinct_dealer_count"] == expected["dealer_id"].nunique()
+        assert summary["total_activation_count"] == int(expected["activation_count"].sum())
+        purchases = expected["total_units_purchased"].dropna()
+        assert summary["total_recorded_purchased_units"] == (
+            float(purchases.sum()) if len(purchases) else None
+        )
+        summaries.append(summary)
+    assert summaries[0] == summaries[1]
+
+
 # ---------------------------------------------------------------------------
 # Test 8 — query results never use fraud language; agent question check
 # ---------------------------------------------------------------------------

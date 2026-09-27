@@ -54,6 +54,17 @@ class InventoryAssuranceService(BaseAssuranceService):
         if dealer_id is not None and dealer_id != "":
             df = df[df["dealer_id"].astype(str) == str(dealer_id)]
 
+        scenarios = (
+            df.loc[df["scenario_id"].fillna("").ne(""),
+                   ["scenario_id", "scenario_label"]].drop_duplicates().to_dict(orient="records")
+            if "scenario_id" in df else []
+        )
+        synthetic_note = (
+            "Includes synthetic comparison scenarios using shared demonstration "
+            "purchase evidence, not authentic IFS invoices or verified mismatches. "
+            "Retained invoice gaps may also be synthetic scenarios."
+            if scenarios else ""
+        )
         # Count NO_INVOICE_RECORD rows for the metadata caveat — these are not
         # findings per spec.
         no_invoice_count = int(
@@ -65,6 +76,8 @@ class InventoryAssuranceService(BaseAssuranceService):
 
         findings: list[dict[str, Any]] = []
         for _, row in mismatches.iterrows():
+            scenario_id = str(row.get("scenario_id") or "")
+            scenario_label = str(row.get("scenario_label") or "")
             gap_pct = row["gap_pct"] if row["gap_pct"] is not None else None
             try:
                 gap_pct_f = float(gap_pct) if gap_pct is not None else None
@@ -86,13 +99,24 @@ class InventoryAssuranceService(BaseAssuranceService):
                     "dealer_id": str(row["dealer_id"]),
                     "dealer_name": str(row["dealer_name"]),
                     "product_code": str(row["product_code"]),
+                    "scenario_id": scenario_id,
+                    "scenario_label": scenario_label,
                     "description": (
+                        (f"Synthetic scenario {scenario_id} ({scenario_label}); "
+                         "not a verified IFS mismatch. " if scenario_id else "") +
                         f"Product {row['product_code']}: "
                         f"{activation_count} activations, "
                         f"{_format_units(purchased)} purchased, "
                         f"{gap_pct_label}% excess"
                     ),
                     "recommended_action": (
+                        f"Synthetic comparison: {activation_count} activations, "
+                        f"{_format_units(purchased)} shared purchased units "
+                        f"({gap_pct_label}% excess). "
+                        "Demonstration only. Obtain authentic invoice evidence before "
+                        "investigating a real mismatch; no carryover or alias conclusion "
+                        "is established."
+                        if scenario_id else
                         f"Verify dealer purchase records against activation "
                         f"count for product {row['product_code']}. Activated "
                         f"{activation_count} units, purchased "
@@ -112,21 +136,26 @@ class InventoryAssuranceService(BaseAssuranceService):
             "outside the available data window, not confirmed mismatches."
         )
 
+        finding_label = "comparison mismatches" if scenarios else "confirmed inventory mismatches"
         if not findings:
             status = "PASS"
             summary = (
-                f"No confirmed inventory mismatches found in {mon_period}. "
+                f"No {finding_label} found in {mon_period}. "
                 f"{no_invoice_count} dealer-product combos have no invoice "
                 "record in the available data window."
             )
         else:
             status = "FLAG"
             summary = (
-                f"{len(findings)} confirmed mismatches found in {mon_period}. "
+                f"{len(findings)} {finding_label} found in {mon_period}. "
                 f"{high} HIGH severity, {medium} MEDIUM, {low} LOW. "
                 f"{no_invoice_count} additional dealer-product combos have no "
                 "invoice record in the available data window."
             )
+
+        if scenarios:
+            summary += " " + synthetic_note
+            coverage_note += " " + synthetic_note
 
         return AssuranceResult(
             module=self.module_name,
@@ -140,5 +169,7 @@ class InventoryAssuranceService(BaseAssuranceService):
                 "low_count": low,
                 "no_invoice_record_count": no_invoice_count,
                 "coverage_note": coverage_note,
+                "synthetic_scenarios": scenarios,
+                "synthetic_note": synthetic_note,
             },
         )

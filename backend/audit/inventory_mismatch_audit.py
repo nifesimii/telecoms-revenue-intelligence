@@ -78,6 +78,8 @@ class InventoryMismatchInputs:
     # Step 6 — upstream completeness
     ifs_records_present: bool = True
     known_ingestion_gap: bool = False
+    scenario_id: str = ""
+    scenario_label: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -264,13 +266,49 @@ def build_trail(inp: InventoryMismatchInputs) -> VerificationTrail:
         },
     ))
 
+    if inp.scenario_id:
+        disclosure = (
+            f"Synthetic comparison scenario {inp.scenario_id}: {inp.scenario_label}. "
+            "Shared demonstration evidence, not authentic IFS invoices or verified "
+            "stock. No purchase window, carryover or alias conclusion is established."
+        )
+        for step in steps:
+            step.detail.update(scenario_id=inp.scenario_id,
+                               scenario_label=inp.scenario_label)
+        named_steps = {step.name: step for step in steps}
+        signal = named_steps["mismatch_signal"]
+        signal.caveat = disclosure
+        signal.detail.update(source_table="synthetic_inventory", limitation=disclosure)
+        purchase = named_steps["purchase_record_lookup"]
+        purchase.checked = "Does this synthetic scenario include purchase evidence?"
+        purchase.result = (
+            f"Synthetic shared purchase quantity: {purchased:.0f} units."
+            if purchased is not None else "Synthetic scenario retains missing purchase evidence."
+        )
+        purchase.passed = False
+        purchase.caveat = disclosure
+        purchase.detail["source_table"] = "synthetic_inventory"
+        for name in ("prior_period_stock", "product_alias_reconciliation"):
+            step = named_steps[name]
+            step.result = "Not assessed: synthetic scenarios do not establish carryover or alias evidence."
+            step.passed = False
+            step.caveat = disclosure
+            step.detail = {"scenario_id": inp.scenario_id,
+                           "scenario_label": inp.scenario_label,
+                           "limitation": disclosure}
+        coverage = named_steps["upstream_completeness"]
+        coverage.result = "Synthetic comparison evidence does not establish authentic IFS coverage."
+        coverage.passed = False
+        coverage.caveat = disclosure
+        coverage.detail["data_source"] = "synthetic_inventory"
+
     # ── Conclusion + confidence ───────────────────────────────────────────
     conclusion, confidence = _conclude(inp, steps, gap)
     return VerificationTrail(
         partner_code=f"{inp.dealer_id}:{inp.product_code}",
         partner_name=f"{inp.dealer_name} · {inp.product_code}",
         mon_period=inp.mon_period,
-        payment_source=_DATA_SOURCE,
+        payment_source="synthetic_inventory" if inp.scenario_id else _DATA_SOURCE,
         steps=steps,
         conclusion=conclusion,
         confidence=confidence,
@@ -283,6 +321,8 @@ def _conclude(
     gap: float | None,
 ) -> tuple[str, str]:
     """Derive (conclusion, confidence) from the step results."""
+    if inp.scenario_id:
+        return "INSUFFICIENT_DATA", "LOW"
     caveat_step_names = [s.name for s in steps if s.caveat]
     step2 = next(s for s in steps if s.step == 2)
     step4 = next(s for s in steps if s.step == 4)
@@ -342,6 +382,8 @@ def _prior_leftover_for(
     """
     if prior_df is None or prior_df.empty:
         return 0.0
+    if "scenario_id" in prior_df:
+        prior_df = prior_df[prior_df["scenario_id"].fillna("").eq("")]
     match = prior_df[
         (prior_df["dealer_id"].astype(str) == str(dealer_id))
         & (prior_df["product_code"].astype(str) == str(product_code))
@@ -370,6 +412,8 @@ def _sibling_purchases_for(
     out: dict[str, float] = {}
     if period_df is None or period_df.empty or not siblings:
         return out
+    if "scenario_id" in period_df:
+        period_df = period_df[period_df["scenario_id"].fillna("").eq("")]
     for code in siblings:
         match = period_df[
             (period_df["dealer_id"].astype(str) == str(dealer_id))
@@ -434,6 +478,8 @@ def gather_inputs(
         sibling_purchases=sibling_purchases,
         ifs_records_present=ifs_records_present,
         known_ingestion_gap=not ifs_records_present,
+        scenario_id=str(row.get("scenario_id") or ""),
+        scenario_label=str(row.get("scenario_label") or ""),
     )
 
 

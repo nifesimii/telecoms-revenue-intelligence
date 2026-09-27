@@ -22,7 +22,8 @@ def test_overview_full_counts_and_money_are_not_preview_totals(client):
     response = client.get('/assurance/overview?mon_period=202603&limit=5')
     assert response.status_code == 200
     data = response.json()
-    assert data['finding_count'] == 1676
+    # Enriched March adds three labelled synthetic Inventory findings.
+    assert data['finding_count'] == 1679
     assert data['affected_dealers'] == 922
     assert data['total'] == 922
     assert len(data['items']) == 5
@@ -39,12 +40,12 @@ def test_queue_pages_do_not_overlap_and_search_is_not_preview_limited(client):
     first = client.get('/assurance/overview?mon_period=202603&limit=5').json()
     second = client.get('/assurance/overview?mon_period=202603&limit=5&offset=5').json()
     assert {r['dealer_id'] for r in first['items']}.isdisjoint(r['dealer_id'] for r in second['items'])
-    assert second['finding_count'] == 1676
+    assert second['finding_count'] == 1679
     # This account is outside the first five; server-side search still finds it.
     code = second['items'][-1]['dealer_id']
     filtered = client.get('/assurance/overview', params={'mon_period': '202603', 'search': code}).json()
     assert any(r['dealer_id'] == code for r in filtered['items'])
-    assert filtered['finding_count'] == 1676
+    assert filtered['finding_count'] == 1679
     empty = client.get('/assurance/overview?mon_period=202603&search=nonexistent-dealer').json()
     assert empty['total'] == 0
     assert empty['items'] == []
@@ -64,9 +65,13 @@ def test_export_contains_full_period_not_only_preview(client):
     response = client.get('/assurance/overview/export?mon_period=202603')
     assert response.status_code == 200
     records = list(csv.DictReader(io.StringIO(response.text)))
-    assert len(records) == 1676
+    assert len(records) == 1679
     assert {r['period'] for r in records} == {'202603'}
     assert sum(r['module'] == 'commission' for r in records) == 575
+    synthetic = [r for r in records if r['description'].startswith('Synthetic scenario')]
+    assert len(synthetic) == 3
+    assert {r['module'] for r in synthetic} == {'inventory'}
+    assert all('Demonstration only' in r['recommended_action'] for r in synthetic)
 
 
 def test_aggregate_only_position_matches_existing_payments(client):
@@ -88,7 +93,7 @@ def test_payment_outage_preserves_other_checks_and_blocks_complete_export(client
     data = response.json()
     assert data['complete'] is False
     assert data['payment'] is None
-    assert data['finding_count'] == 789
+    assert data['finding_count'] == 792
     payment = next(m for m in data['modules'] if m['module'] == 'payment')
     assert payment['status'] == 'UNAVAILABLE'
     assert all(row['amount_outstanding'] is None for row in data['items'])
@@ -97,7 +102,7 @@ def test_payment_outage_preserves_other_checks_and_blocks_complete_export(client
 
 def test_module_and_severity_filters_select_the_matching_finding(client):
     data = client.get('/assurance/overview?mon_period=202603&module=inventory&severity=LOW').json()
-    assert data['finding_count'] == 1676
+    assert data['finding_count'] == 1679
     assert data['items']
     for row in data['items']:
         assert row['severity'] == 'LOW'

@@ -10,9 +10,9 @@ export default function InventoryFilters({ filters, onChange }) {
       className={`overview-button ${filters.view === id ? 'overview-primary' : ''}`} aria-pressed={filters.view === id}
       onClick={() => onChange('view', id)}>{label}</button>)}</div>
     <div className="flex flex-wrap items-end gap-3">
-      <label className="text-sm text-gray-600 flex-1 min-w-0">Search dealer or product
+      <label className="text-sm text-gray-600 w-full sm:w-auto sm:flex-1 min-w-0">Search dealer, product or scenario
         <input type="search" value={filters.search} onChange={(e) => onChange('search', e.target.value)}
-          className="overview-select block mt-1 w-full" placeholder="Name or code" />
+          className="overview-select block mt-1 w-full" placeholder="Name, code or Synthetic" />
       </label>
       {filters.view === 'exceptions' && <label className="text-sm text-gray-600">Comparison
         <select className="overview-select block mt-1 max-w-full" value={filters.finding} onChange={(e) => onChange('finding', e.target.value)}>

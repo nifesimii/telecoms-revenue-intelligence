@@ -25,6 +25,7 @@ The four tables in scope (fully qualified for Presto):
 """
 from __future__ import annotations
 
+from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
 
@@ -1058,6 +1059,29 @@ def _sample_get_inventory_comparison(params: dict) -> pd.DataFrame:
     )
     ifs_aggr["total_units_purchased"] = ifs_aggr["total_units_purchased"].astype(float)
 
+    # Separate fictional purchase snapshots enrich sample comparisons without
+    # changing source CSVs or introducing a monthly invoice-window rule. Missing
+    # quantities are deliberate holdouts and remain unknown.
+    scenarios = _load_csv("inventory_demo_scenarios")
+    keys = ["dealer_id", "product_code"]
+    for key in keys:
+        scenarios[key] = scenarios[key].apply(_norm_str)
+    if scenarios.duplicated(keys).any():
+        raise ValueError("Inventory demo scenarios must have unique dealer-product pairs")
+    for field in ("scenario_id", "scenario_label"):
+        if scenarios[field].fillna("").astype(str).str.strip().eq("").any():
+            raise ValueError("Inventory demo scenarios must retain explicit provenance")
+    if not scenarios.merge(ifs_aggr[keys], on=keys, how="inner").empty:
+        raise ValueError("Inventory demo scenarios must not replace existing IFS evidence")
+    quantities = pd.to_numeric(scenarios["total_units_purchased"], errors="raise")
+    if not quantities.dropna().map(lambda value: isfinite(value) and value > 0).all():
+        raise ValueError("Recorded inventory demo purchase quantities must be finite and positive")
+    scenarios["total_units_purchased"] = quantities
+    ifs_aggr = pd.concat([
+        ifs_aggr,
+        scenarios.loc[quantities.notna(), [*keys, "total_units_purchased"]],
+    ], ignore_index=True)
+
     # ---- 7. Outer join ---------------------------------------------------
     merged = dev_aggr.merge(
         ifs_aggr,
@@ -1069,6 +1093,11 @@ def _sample_get_inventory_comparison(params: dict) -> pd.DataFrame:
     # Keep only records where there are activations — pure-purchase rows
     # (no activations) are not actionable.
     merged = merged[merged["activation_count"].fillna(0) > 0].copy()
+    merged = merged.merge(
+        scenarios[[*keys, "scenario_id", "scenario_label"]],
+        on=keys, how="left", validate="one_to_one",
+    )
+    merged[["scenario_id", "scenario_label"]] = merged[["scenario_id", "scenario_label"]].fillna("")
     merged["activation_count"] = merged["activation_count"].fillna(0).astype(int)
     merged["qualified_count"] = merged["qualified_count"].fillna(0).astype(int)
 
@@ -1111,7 +1140,16 @@ def _sample_get_inventory_comparison(params: dict) -> pd.DataFrame:
                 "inventory_gap": gap,
                 "gap_pct": gap_pct,
                 "finding_type": finding,
-                "data_coverage_note": _INVENTORY_NOTES[finding],
+                "scenario_id": r["scenario_id"],
+                "scenario_label": r["scenario_label"],
+                "data_coverage_note": (
+                    "Synthetic demo scenario. "
+                    + ("Fictional purchase evidence uses the same shared quantity across reporting months; "
+                       "it is not an IFS source invoice or evidence of stock carryover. "
+                       if has_invoice else "Missing invoice evidence is deliberately retained. ")
+                    + _INVENTORY_NOTES[finding].replace("Invoice records found.", "Demo purchase quantity supplied.")
+                    if r["scenario_id"] else _INVENTORY_NOTES[finding]
+                ),
             }
         )
 
@@ -1129,6 +1167,8 @@ def _sample_get_inventory_comparison(params: dict) -> pd.DataFrame:
                 "gap_pct",
                 "finding_type",
                 "data_coverage_note",
+                "scenario_id",
+                "scenario_label",
             ]
         )
 

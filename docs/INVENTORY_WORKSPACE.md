@@ -9,7 +9,12 @@ Baseline: `0d0ff43a1bfceb916ac3717983247e282ac9baf4`.
   invoice coverage gaps, observed excess requiring investigation, and within
   recorded purchases separately from saved verification conclusions.
 - Current-filter summaries come from the server, never the visible page:
-  observed excess units and dealer-product counts by comparison status.
+  investigation shows excess units/mismatch counts/coverage gaps; coverage shows
+  combinations/distinct dealers/activation records; within purchases shows
+  combinations/recorded purchased units/activation records. Missing purchased
+  quantities remain null. See `INVENTORY_DATA_ASSESSMENT.md` for the monthly
+  pre-enrichment distribution. The implemented synthetic cohort is documented
+  in `INVENTORY_DEMO_SCENARIOS.md`.
 - Expose server finding filters, search, supported deterministic sorts and
   25/50/100 pagination. Retain TanStack Query bounded caching.
 - Show dealer and product names/codes, recorded purchases, activation records,
@@ -42,7 +47,8 @@ Saved trail carryover/alias checks omit purchase-only combinations; upstream
 completeness currently checks for a nonempty IFS file. Show these limitations
 alongside saved results, including HIGH confidence. Later improvements:
 purchase-only history, bounded invoice evidence, authoritative source freshness,
-distinct-dealer/full-period aggregates, filtered exports and scoped tickets.
+full-period aggregates, filtered exports and scoped tickets. Current-filter
+distinct-dealer counts are available in the coverage summary.
 
 ## Verification
 

@@ -284,6 +284,8 @@ class InventoryComparisonRecord(BaseModel):
     gap_pct: float | None = None
     finding_type: str
     data_coverage_note: str
+    scenario_id: str = ""
+    scenario_label: str = ""
 
 
 class PaginationMeta(BaseModel):
@@ -301,12 +303,16 @@ class InventoryComparisonSummary(BaseModel):
     no_invoice_record_count: int
     within_allocation_count: int
     total_gap_units: float
+    distinct_dealer_count: int
+    total_activation_count: int
+    total_recorded_purchased_units: float | None
 
 
 class InventoryComparisonPage(BaseModel):
     items: list[InventoryComparisonRecord]
     pagination: PaginationMeta
     summary: InventoryComparisonSummary
+    source_note: str = ""
 
 
 # ---------------------------------------------------------------------------

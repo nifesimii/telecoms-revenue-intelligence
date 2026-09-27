@@ -550,11 +550,17 @@ def get_inventory_comparison_page(
     if search and search.strip():
         q = search.strip().lower()
         mask = pd.Series(False, index=df.index)
-        for column in ("dealer_id", "dealer_name", "product_code", "product_name"):
+        for column in ("dealer_id", "dealer_name", "product_code", "product_name", "scenario_label"):
             mask |= df[column].fillna("").astype(str).str.lower().str.contains(q, regex=False)
         df = df[mask]
 
     summary = InventoryComparisonSummary(
+        distinct_dealer_count=int(df["dealer_id"].nunique()),
+        total_activation_count=int(df["activation_count"].sum()),
+        total_recorded_purchased_units=(
+            float(df["total_units_purchased"].sum())
+            if df["total_units_purchased"].notna().any() else None
+        ),
         confirmed_mismatch_count=int((df["finding_type"] == "CONFIRMED_MISMATCH").sum()),
         no_invoice_record_count=int((df["finding_type"] == "NO_INVOICE_RECORD").sum()),
         within_allocation_count=int((df["finding_type"] == "WITHIN_ALLOCATION").sum()),
@@ -573,6 +579,12 @@ def get_inventory_comparison_page(
     page = _bounded_page(df, limit, offset)
     items = [InventoryComparisonRecord(**row) for row in page.to_dict(orient="records")]
     return InventoryComparisonPage(
+        source_note=(
+            "Sample data includes labelled synthetic purchase scenarios. Their fixed quantities "
+            "are shared across reporting months, not monthly purchases or verified stock. "
+            "Search Synthetic to explore them."
+            if config.USE_SAMPLE_DATA else ""
+        ),
         items=items,
         pagination=PaginationMeta(
             limit=limit, offset=offset, returned=len(items), total=total,
