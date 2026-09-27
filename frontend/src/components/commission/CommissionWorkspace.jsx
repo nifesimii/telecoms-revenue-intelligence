@@ -13,8 +13,11 @@ import CommissionAssistant from './CommissionAssistant.jsx';
 export default function CommissionWorkspace(props) {
   const { period, error, loading } = usePeriod();
   const [stream, setStream] = useState('activation');
+  // Dealer selection outlives the period-specific figures and comparison state.
+  const [selected, setSelected] = useState(null);
+  const navigationConsumed = useRef(false);
   if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
-  return <PeriodWorkspace key={period} period={period} stream={stream} setStream={setStream} {...props} />;
+  return <PeriodWorkspace key={period} period={period} stream={stream} setStream={setStream} {...props} selected={selected} setSelected={setSelected} navigationConsumed={navigationConsumed} />;
 }
 
 function PeriodWorkspace({ period, stream, setStream, ...props }) {
@@ -38,7 +41,7 @@ function PeriodWorkspace({ period, stream, setStream, ...props }) {
         </label>
       </header>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Commission revenue stream">
-        {[['activation', 'Activation commission'], ['orsc', 'Subscription commission']].map(([value, label]) => <button key={value} className={`overview-button ${stream === value ? 'overview-primary' : ''}`} aria-pressed={stream === value} onClick={() => { props.onAssistantScopeClear?.(); setStream(value); }}>{label}</button>)}
+        {[['activation', 'Activation commission'], ['orsc', 'Subscription commission']].map(([value, label]) => <button key={value} className={`overview-button ${stream === value ? 'overview-primary' : ''}`} aria-pressed={stream === value} onClick={() => { props.onAssistantScopeClear?.(); if (value !== stream) props.setSelected(null); setStream(value); }}>{label}</button>)}
       </div>
       <AccountWorkspace key={stream} period={period} comparison={comparison} stream={stream} {...props} />
     </div>
@@ -47,16 +50,14 @@ function PeriodWorkspace({ period, stream, setStream, ...props }) {
 
 const DEFAULT_FILTERS = { search: '', partner_class: '', status: 'all', sort_by: 'amount_ngn', direction: 'desc', limit: 25, offset: 0 };
 
-function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptConsumed, onNavigate, navigation, assistantScope, onAssistantScopeClear }) {
+function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptConsumed, onNavigate, navigation, assistantScope, onAssistantScopeClear, selected, setSelected, navigationConsumed }) {
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, search: navigation?.search || navigation?.dealer_id || '' }));
-  const [selected, setSelected] = useState(null);
   const [showAssistant, setShowAssistant] = useState(Boolean(pendingPrompt));
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const rowRefs = useRef({});
   const listHeading = useRef(null);
   const returnFocus = useRef(null);
-  const navigationConsumed = useRef(false);
   const search = useDebouncedValue(filters.search);
   const params = { ...filters, search, mon_period: period, prior_period: comparison || undefined, stream };
   const query = useQuery({ queryKey: ['commission-accounts', params],

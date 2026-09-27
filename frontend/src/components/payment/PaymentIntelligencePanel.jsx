@@ -17,23 +17,24 @@ const DEFAULTS = { search: '', status: '', sort_by: 'amount_unpaid', sort_direct
 
 export default function PaymentIntelligencePanel(props) {
   const { period, loading, error } = usePeriod();
+  // Keep the account while period-specific balances and evidence reload.
+  const [selected, setSelected] = useState(props.navigation?.dealer_id || null);
   const initialPeriod = useRef(null);
   const navigationConsumed = useRef(false);
   const [view, setView] = useState(props.navigation?.tab === 'variance' ? 'comparison' : VIEWS.some(([id]) => id === props.navigation?.tab) ? props.navigation.tab : 'exceptions');
   if (period && !initialPeriod.current) initialPeriod.current = period;
   if (initialPeriod.current && period !== initialPeriod.current) navigationConsumed.current = true;
   if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
-  return <PaymentWorkspace key={period} period={period} {...props} view={view} setView={setView} navigation={!navigationConsumed.current ? props.navigation : undefined} />;
+  return <PaymentWorkspace key={period} period={period} {...props} view={view} setView={setView} selected={selected} setSelected={setSelected} navigation={!navigationConsumed.current ? props.navigation : undefined} />;
 }
 
-function PaymentWorkspace({ period, navigation, onNavigate, view, setView }) {
+function PaymentWorkspace({ period, navigation, onNavigate, view, setView, selected, setSelected }) {
   const client = useQueryClient();
   const { periods } = usePeriod();
   const earlier = periods.filter((p) => p < period).sort().reverse();
   const [selectedComparison, setComparison] = useState(() => navigation?.prior_period === '' || earlier.includes(navigation?.prior_period) ? navigation.prior_period : null);
   const comparison = selectedComparison ?? earlier[0] ?? '';
   const [filters, setFilters] = useState({ ...DEFAULTS, search: navigation?.search || '' });
-  const [selected, setSelected] = useState(navigation?.dealer_id || null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const exportController = useRef(null);

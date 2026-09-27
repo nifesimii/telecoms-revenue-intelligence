@@ -16,7 +16,7 @@ export default function ActivationDetail({ account, period, comparison, onBack, 
   useEffect(() => { heading.current?.focus(); }, []);
   return <div className="space-y-5">
     <button className="overview-button" onClick={onBack}>← Back to accounts</button>
-    <header ref={heading} tabIndex={-1} className="outline-none"><p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Activation investigation</p><h2 className="mt-1 text-2xl font-semibold break-words">{r?.dealer_name || account.dealer_name}</h2><p className="text-sm text-gray-600 mt-2">Account {account.dealer_id} · {r?.account_profile_class || account.account_profile_class || 'Class not recorded'} · {formatPeriod(period)}</p></header>
+    <header ref={heading} tabIndex={-1} className="outline-none"><p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Activation investigation</p><h2 className="mt-1 text-2xl font-semibold break-words">{r?.dealer_name || account.dealer_name}</h2><p className="text-sm text-gray-600 mt-2">Account {account.dealer_id} · {r ? r.account_profile_class || 'Class not recorded' : 'Class unavailable'} · {formatPeriod(period)}</p></header>
     {query.isPending && <div className="h-48 overview-surface bg-gray-100 animate-pulse p-5" role="status">Loading activation account…</div>}
     {query.isError && <p role="alert" className="overview-notice text-red-800">Account figures unavailable. {data && 'Previously loaded figures are shown below.'} <button className="underline" onClick={() => query.refetch()}>Retry</button></p>}
     {r && <>

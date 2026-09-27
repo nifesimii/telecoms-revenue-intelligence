@@ -14,14 +14,15 @@ export default function CommissionDetail({ account, period, comparison, stream, 
   const query = useQuery({ queryKey: ['commission-detail', account.dealer_id, params],
     queryFn: ({ signal }) => getCommissionDetail(account.dealer_id, params, signal) });
   const data = query.data;
+  const currentAccount = data?.account;
   const orsc = stream === 'orsc';
   useEffect(() => { headingRef.current?.focus(); }, []);
   return <div className="space-y-5">
     <button className="overview-button" onClick={onBack}>← Back to accounts</button>
     <header ref={headingRef} tabIndex={-1} className="outline-none">
       <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Account investigation</p>
-      <h2 className="mt-1 text-2xl font-semibold break-words">{account.dealer_name}</h2>
-      <p className="text-sm text-gray-600 mt-2">Account {account.dealer_id} · {account.account_profile_class} · {formatPeriod(period)}</p>
+      <h2 className="mt-1 text-2xl font-semibold break-words">{currentAccount?.dealer_name || account.dealer_name}</h2>
+      <p className="text-sm text-gray-600 mt-2">Account {account.dealer_id} · {currentAccount ? currentAccount.account_profile_class || 'Class not recorded' : 'Class unavailable'} · {formatPeriod(period)}</p>
     </header>
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 items-start">
       <div className="xl:col-span-2 min-w-0 space-y-5">
@@ -53,7 +54,7 @@ export default function CommissionDetail({ account, period, comparison, stream, 
           {showRecords && !orsc && <ZeroCommissionEvidence dealerId={account.dealer_id} period={period} onNavigate={onNavigate} />}
         </>}
       </div>
-      <CommissionAssistant key={`${account.dealer_id}:${period}:${comparison}:${stream}`} account={account} period={period} comparison={comparison} stream={stream} prompt={prompt} onPromptConsumed={() => setPrompt('')} />
+      <CommissionAssistant key={`${account.dealer_id}:${period}:${comparison}:${stream}`} account={currentAccount || account} period={period} comparison={comparison} stream={stream} prompt={prompt} onPromptConsumed={() => setPrompt('')} />
     </div>
   </div>;
 }

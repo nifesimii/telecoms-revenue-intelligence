@@ -5,6 +5,25 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-27 (Keep selected dealer across reporting periods)
+
+- Commission, Activation and Payment investigations retain the selected dealer
+  when the reporting month changes, matching existing comparison continuity.
+  Period-specific workspaces still reload figures/evidence and reset comparison
+  defaults. Explicit Back to accounts and dealer reselection remain available.
+- Commission navigation is consumed once so a month change cannot reopen an
+  earlier navigation target. Commission/Activation classifications come from
+  the fresh detail response, including a current null classification.
+- Verified in isolated Chrome: comparison changes, May/January reporting changes,
+  fresh dealer detail requests, Back to accounts, reselection and null-class
+  responses. No application runtime errors in the three-workspace check.
+- Full suite: 274 backend passed, 28 existing skips; all five frontend tests
+  passed; production build passed with the existing bundle-size warning. No
+  standalone typecheck is configured. Standards and Spec reviews have no
+  unresolved findings. No deployment.
+
+---
+
 ## Session — 2026-09-27 (Pre-demo evidence and investigation fixes)
 
 - Implemented the priorities in `docs/DEMO_UX_REVIEW_2026-09-27.md` using three

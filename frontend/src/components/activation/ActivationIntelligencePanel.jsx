@@ -15,20 +15,21 @@ const navigationView = (tab) => tab === 'variance' ? 'comparison' : VIEWS.some((
 
 export default function ActivationIntelligencePanel(props) {
   const { period, error, loading } = usePeriod();
+  // Keep the dealer while the period-specific workspace reloads its evidence.
+  const [selected, setSelected] = useState(() => props.navigation?.dealer_id ? { dealer_id: props.navigation.dealer_id, dealer_name: props.navigation.dealer_name || `Account ${props.navigation.dealer_id}` } : null);
   const initialPeriod = useRef(null);
   const navigationConsumed = useRef(false);
   if (period && !initialPeriod.current) initialPeriod.current = period;
   if (initialPeriod.current && period !== initialPeriod.current) navigationConsumed.current = true;
   if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
-  return <ActivationWorkspace key={period} period={period} {...props} navigation={!navigationConsumed.current ? props.navigation : undefined} />;
+  return <ActivationWorkspace key={period} period={period} {...props} selected={selected} setSelected={setSelected} navigation={!navigationConsumed.current ? props.navigation : undefined} />;
 }
 
-function ActivationWorkspace({ period, navigation, onNavigate }) {
+function ActivationWorkspace({ period, navigation, onNavigate, selected, setSelected }) {
   const { periods } = usePeriod();
   const earlier = periods.filter((p) => p < period).sort().reverse();
   const [comparison, setComparison] = useState(() => navigation?.prior_period === '' || earlier.includes(navigation?.prior_period) ? navigation.prior_period : earlier[0] || '');
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, view: navigationView(navigation?.tab), search: navigation?.search || '', sort_by: navigation?.tab === 'exceptions' ? 'severity' : 'activation_count' }));
-  const [selected, setSelected] = useState(() => navigation?.dealer_id ? { dealer_id: navigation.dealer_id, dealer_name: navigation.dealer_name || `Account ${navigation.dealer_id}` } : null);
   const workspaceRef = useRef(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
