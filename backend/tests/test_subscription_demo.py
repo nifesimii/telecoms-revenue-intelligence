@@ -102,6 +102,32 @@ def test_histories_agree_with_other_months_and_never_predate_activation():
                 assert h['has_paid_subscription'] == observed
 
 
+def test_device_totals_cover_the_complete_filter_before_paging(monkeypatch):
+    from fastapi.testclient import TestClient
+    from backend.main import app
+    from backend import config
+    monkeypatch.setattr(config, 'USE_SAMPLE_DATA', True)
+    client = TestClient(app)
+    page = client.get('/subscriptions/SYN-SUB-002/devices', params={
+        'mon_period': '202606', 'limit': 1}).json()
+    assert len(page['items']) == 1
+    totals = page['filtered_summary']
+    assert totals['device_count'] == 2
+    assert totals['recorded_subscription_revenue_ngn'] == 9000
+    assert totals['simulated_commission_ngn'] == 250
+    assert totals['dealer_expectation_ngn'] == 450
+    assert totals['variance_ngn'] == -200
+    filtered = client.get('/subscriptions/SYN-SUB-002/devices', params={
+        'mon_period': '202606', 'reason': 'below_minimum'}).json()['filtered_summary']
+    assert filtered['device_count'] == 1
+    assert filtered['recorded_subscription_revenue_ngn'] == 4000
+    assert filtered['simulated_commission_ngn'] == 0
+    unknown = client.get('/subscriptions/SYN-SUB-008/devices', params={
+        'mon_period': '202606'}).json()['filtered_summary']
+    assert unknown['simulated_commission_ngn'] is None
+    assert unknown['dealer_expectation_ngn'] is None
+
+
 def test_unknown_inputs_and_leap_anniversary_are_preserved():
     from backend.data.generate_subscription_demo import calculate_record
     row = calculate_record(mon_period='202502', first_activation_date='2024-02-29',
@@ -175,6 +201,25 @@ def test_subscription_assistant_tools_return_bounded_provenance(monkeypatch):
 
 
 import pytest
+
+
+@pytest.mark.parametrize('target', ['header', 'device'])
+def test_untrusted_fixture_policy_is_unavailable(monkeypatch, tmp_path, target):
+    import json
+    from fastapi.testclient import TestClient
+    from backend.main import app
+    from backend import config
+    period = '202606'
+    relative = f'data/samples/subscription_commission_demo_{period}.json'
+    payload = json.loads((config.PROJECT_ROOT / relative).read_text())
+    (payload if target == 'header' else payload['records'][0])['policy_label'] = 'Unverified alternate terms'
+    fixture = tmp_path / relative
+    fixture.parent.mkdir(parents=True)
+    fixture.write_text(json.dumps(payload))
+    monkeypatch.setattr(config, 'PROJECT_ROOT', tmp_path)
+    monkeypatch.setattr(config, 'USE_SAMPLE_DATA', True)
+    response = TestClient(app).get('/subscriptions', params={'mon_period': period})
+    assert response.status_code == 503
 
 
 @pytest.mark.parametrize('mode', ['tool_answer', 'history_followup', 'failure', 'iteration_limit'])

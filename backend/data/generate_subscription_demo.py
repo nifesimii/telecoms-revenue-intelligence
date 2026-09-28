@@ -12,15 +12,85 @@ uses only supplied settlement evidence at fixed 2026-07-15, never today's date.
 """
 import calendar
 import json
+from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 
-POLICY_LABEL = 'Illustrative subscription commission policy—not confirmed MTN terms.'
+from backend.models.subscription import POLICY_LABEL
 EVIDENCE_AS_OF = '2026-07-15'
 PERIODS = tuple(f'2026{month:02d}' for month in range(1, 7))
 BOUNDARY = ('PAID purchase date >= first activation and < its 12-calendar-month '
             'anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility.')
+
+
+@dataclass(frozen=True)
+class Scenario:
+    key: str
+    imei: str
+    dealer_id: str
+    dealer_name: str
+    revenue_ngn: int | None
+    expectation_ngn: int | None
+    first_activation_date: str
+    settlement: str
+    reference_id: str
+    explanation: str
+
+
+# Identities are explicit so reordering scenarios never reassigns devices or dealers.
+SCENARIOS = (
+    Scenario(key='eligible', imei='990000000000000',
+             dealer_id='SYN-SUB-001', dealer_name='Synthetic Renewal Partners',
+             revenue_ngn=10000, expectation_ngn=500, first_activation_date='2025-10-01',
+             settlement='paid', reference_id='00',
+             explanation='Paid revenue qualifies; recorded commission agrees with the supplied dealer expectation.'),
+    Scenario(key='threshold', imei='990000000000001',
+             dealer_id='SYN-SUB-002', dealer_name='Synthetic Threshold Partners',
+             revenue_ngn=5000, expectation_ngn=250, first_activation_date='2025-10-01',
+             settlement='paid', reference_id='01',
+             explanation='Exactly NGN 5,000.00 on this device qualifies; all qualifying revenue earns the illustrative rate.'),
+    Scenario(key='below_minimum', imei='990000000000002',
+             dealer_id='SYN-SUB-002', dealer_name='Synthetic Threshold Partners',
+             revenue_ngn=4000, expectation_ngn=200, first_activation_date='2025-10-01',
+             settlement='none', reference_id='02',
+             explanation='Dealer expected commission on NGN 4,000.00; this device is below the monthly minimum.'),
+    Scenario(key='no_renewal', imei='990000000000003',
+             dealer_id='SYN-SUB-003', dealer_name='Synthetic Renewal Gap Partners',
+             revenue_ngn=0, expectation_ngn=500, first_activation_date='2025-10-01',
+             settlement='none', reference_id='03',
+             explanation='Dealer expected a renewal; supplied monthly activity shows no paid subscription. This is not proof of churn.'),
+    Scenario(key='expired', imei='990000000000004',
+             dealer_id='SYN-SUB-004', dealer_name='Synthetic Expired Window Partners',
+             revenue_ngn=15000, expectation_ngn=750, first_activation_date='2024-12-01',
+             settlement='none', reference_id='04',
+             explanation='Dealer expected commission on a renewal after the original eligibility anniversary. Renewals do not restart it.'),
+    Scenario(key='overdue', imei='990000000000005',
+             dealer_id='SYN-SUB-005', dealer_name='Synthetic Settlement Review Partners',
+             revenue_ngn=12000, expectation_ngn=600, first_activation_date='2025-10-01',
+             settlement='unpaid', reference_id='05',
+             explanation='Earnings match expectation; supplied settlement evidence shows no payment as of the evidence date. Due date determines overdue versus not yet due.'),
+    Scenario(key='unknown_payment', imei='990000000000006',
+             dealer_id='SYN-SUB-006', dealer_name='Synthetic Missing Payment Partners',
+             revenue_ngn=8000, expectation_ngn=400, first_activation_date='2025-10-01',
+             settlement='unknown', reference_id='06',
+             explanation='Earnings match expectation; subscription settlement evidence is missing, so payment cannot be established.'),
+    Scenario(key='churn_context', imei='990000000000007',
+             dealer_id='SYN-SUB-007', dealer_name='Synthetic History Review Partners',
+             revenue_ngn=0, expectation_ngn=500, first_activation_date='2025-10-01',
+             settlement='none', reference_id='07',
+             explanation='Three complete consecutive months show no paid subscriptions. Churn is contextual; exclusion is no paid subscription this month.'),
+    Scenario(key='missing_history', imei='990000000000008',
+             dealer_id='SYN-SUB-007', dealer_name='Synthetic History Review Partners',
+             revenue_ngn=0, expectation_ngn=500, first_activation_date='2025-10-01',
+             settlement='none', reference_id='08',
+             explanation='No paid subscription this month. Prior history is incomplete, so churn is unknown.'),
+    Scenario(key='unknown_activity', imei='990000000000009',
+             dealer_id='SYN-SUB-008', dealer_name='Synthetic Evidence Gap Partners',
+             revenue_ngn=None, expectation_ngn=None, first_activation_date='2025-10-01',
+             settlement='unknown', reference_id='09',
+             explanation='Monthly activity evidence is missing. Revenue, eligibility result, earnings, expectation and payment amounts remain unknown.'),
+)
 
 
 def money(value):
@@ -86,32 +156,10 @@ def generate_records(mon_period):
     month = date(int(mon_period[:4]), int(mon_period[4:]), 1)
     next_month = date(month.year + (month.month == 12), month.month % 12 + 1, 1)
     due = next_month.replace(day=calendar.monthrange(next_month.year, next_month.month)[1])
-    scenarios = [
-        ('eligible', 10000, 500, '2025-10-01', 'paid', [True, True, True]),
-        ('threshold', 5000, 250, '2025-10-01', 'paid', [True, True, True]),
-        ('below_minimum', 4000, 200, '2025-10-01', 'none', [True, True, True]),
-        ('no_renewal', 0, 500, '2025-10-01', 'none', [True, True, False]),
-        ('expired', 15000, 750, '2024-12-01', 'none', [True, True, True]),
-        ('overdue', 12000, 600, '2025-10-01', 'unpaid', [True, True, True]),
-        ('unknown_payment', 8000, 400, '2025-10-01', 'unknown', [True, True, True]),
-        ('churn_context', 0, 500, '2025-10-01', 'none', [False, False, False]),
-        ('missing_history', 0, 500, '2025-10-01', 'none', [None, None, False]),
-        ('unknown_activity', None, None, '2025-10-01', 'unknown', [None, None, None]),
-    ]
-    explanations = {
-        'eligible': 'Paid revenue qualifies; recorded commission agrees with the supplied dealer expectation.',
-        'threshold': 'Exactly NGN 5,000.00 on this device qualifies; all qualifying revenue earns the illustrative rate.',
-        'below_minimum': 'Dealer expected commission on NGN 4,000.00; this device is below the monthly minimum.',
-        'no_renewal': 'Dealer expected a renewal; supplied monthly activity shows no paid subscription. This is not proof of churn.',
-        'expired': 'Dealer expected commission on a renewal after the original eligibility anniversary. Renewals do not restart it.',
-        'overdue': 'Earnings match expectation; supplied settlement evidence shows no payment as of the evidence date. Due date determines overdue versus not yet due.',
-        'unknown_payment': 'Earnings match expectation; subscription settlement evidence is missing, so payment cannot be established.',
-        'churn_context': 'Three complete consecutive months show no paid subscriptions. Churn is contextual; exclusion is no paid subscription this month.',
-        'missing_history': 'No paid subscription this month. Prior history is incomplete, so churn is unknown.',
-        'unknown_activity': 'Monthly activity evidence is missing. Revenue, eligibility result, earnings, expectation and payment amounts remain unknown.',
-    }
     records = []
-    for index, (scenario, amount, expectation, activated, settlement, history) in enumerate(scenarios):
+    for case in SCENARIOS:
+        scenario, amount = case.key, case.revenue_ngn
+        expectation, activated, settlement = case.expectation_ngn, case.first_activation_date, case.settlement
         if scenario == 'no_renewal' and paid_history(scenario, mon_period):
             amount = 10000
         purchases = ([{'date': month.replace(day=10).isoformat(), 'status': 'PAID', 'amount_ngn': amount}]
@@ -139,16 +187,11 @@ def generate_records(mon_period):
             history_rows.append({'mon_period': history_period,
                                  'has_paid_subscription': paid_history(scenario, history_period)})
         history = [h['has_paid_subscription'] for h in history_rows]
-        # Pair threshold/below-minimum to prove the minimum is per device,
-        # and pair missing history/churn to expose mixed evidence in one account.
-        dealer_index = {0: 1, 1: 2, 2: 2, 3: 3, 4: 4, 5: 5, 6: 6, 7: 7, 8: 7, 9: 8}[index]
-        names = ['Renewal Partners', 'Threshold Partners', 'Renewal Gap Partners', 'Expired Window Partners',
-                 'Settlement Review Partners', 'Missing Payment Partners', 'History Review Partners', 'Evidence Gap Partners']
-        records.append({**row, 'scenario': scenario, 'dealer_id': f'SYN-SUB-{dealer_index:03d}',
-            'dealer_name': 'Synthetic ' + names[dealer_index - 1],
+        records.append({**row, 'scenario': scenario, 'dealer_id': case.dealer_id,
+            'dealer_name': case.dealer_name,
             'account_profile_class': None if scenario == 'unknown_activity' else 'FIXED BROADBAND',
-            'imei': f'99000000000{index:04d}', 'product_name': 'Synthetic FBB Router',
-            'selling_dealer_id': f'SYN-SUB-{dealer_index:03d}',
+            'imei': case.imei, 'product_name': 'Synthetic FBB Router',
+            'selling_dealer_id': case.dealer_id,
             'activity_evidence_complete': amount is not None,
             'eligibility_status': ('unknown' if amount is None else 'expired' if scenario == 'expired' else 'within_window'),
             'paid_subscription_dates': [p['date'] for p in purchases if p['status'] == 'PAID'] if amount is not None else None,
@@ -157,13 +200,13 @@ def generate_records(mon_period):
             'due_date': due.isoformat() if commission is not None and commission > 0 else None,
             'payment_status': status, 'amount_paid_ngn': paid, 'outstanding_ngn': outstanding,
             'payment_date': month.replace(day=20).isoformat() if settlement == 'paid' else None,
-            'payment_evidence_reference': None if settlement == 'unknown' else f'SYN-SUB-SETTLEMENT-{mon_period}-{index:02d}',
-            'expectation_reference': None if expectation is None else f'SYN-SUB-EXPECTATION-{mon_period}-{index:02d}',
+            'payment_evidence_reference': None if settlement == 'unknown' else f'SYN-SUB-SETTLEMENT-{mon_period}-{case.reference_id}',
+            'expectation_reference': None if expectation is None else f'SYN-SUB-EXPECTATION-{mon_period}-{case.reference_id}',
             'variance_explanation': (
                 'A paid renewal is recorded this month and the illustrative earnings match expectation.'
                 if scenario == 'no_renewal' and amount else
                 'Three supplied consecutive months show no paid subscriptions. Churn is contextual only.'
-                if scenario == 'missing_history' and all(v is not None for v in history) else explanations[scenario]),
+                if scenario == 'missing_history' and all(v is not None for v in history) else case.explanation),
             'source': 'Synthetic subscription commission fixtures', 'synthetic': True,
             'policy_label': POLICY_LABEL, 'evidence_as_of': EVIDENCE_AS_OF,
             'eligibility_boundary': BOUNDARY})

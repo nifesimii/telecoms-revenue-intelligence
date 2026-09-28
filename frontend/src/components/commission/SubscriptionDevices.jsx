@@ -4,7 +4,8 @@ import { getSubscriptionDevices } from '../../api/client.js';
 import useDebouncedValue from '../../hooks/useDebouncedValue.js';
 import { formatPeriod } from '../../lib/format.js';
 import PaginationControls from '../shared/PaginationControls.jsx';
-import { POLICY_LABEL, PAYMENT_LABELS, REASON_LABELS, subscriptionMoney, churnLabel } from './subscriptionPresentation.js';
+import { SubscriptionFigures } from './SubscriptionFigures.jsx';
+import { PAYMENT_LABELS, REASON_LABELS, subscriptionMoney, churnLabel } from './subscriptionPresentation.js';
 
 export default function SubscriptionDevices({ dealerId, period, reason, onReasonChange }) {
   const [filters, setFilters] = useState({ search: '', sort_by: 'imei', direction: 'asc', limit: 25, offset: 0 });
@@ -33,6 +34,7 @@ export default function SubscriptionDevices({ dealerId, period, reason, onReason
       : !data ? <p className="p-5 animate-pulse" role="status">Loading device evidence…</p>
       : !data.evidence_available ? <p className="p-5 text-sm" role="status">{data.unavailable_reason}</p>
       : <>
+        <SubscriptionFigures figures={data.filtered_summary} totals title="Matching device totals" available={data.commission_available} />
         <div className={busy ? 'opacity-60' : ''}>{data.items.map((device) => <DeviceEvidence key={`${period}:${device.imei}`} device={device} />)}</div>
         {!data.items.length && <div role="status" className="p-5"><p className="font-medium">No device records match these filters</p><p className="text-sm text-gray-600 mt-2">Try another IMEI or eligibility result. Missing records do not establish zero commission.</p><button className="overview-button mt-3" onClick={() => { filter('search', ''); onReasonChange('all'); }}>Clear device filters</button></div>}
         <fieldset disabled={busy} className="p-4 border-t border-gray-200 commission-pagination"><legend className="sr-only">Subscription device pages</legend><PaginationControls pagination={{ total: data.total, returned: data.items.length, limit: data.limit, offset: data.offset, has_more: data.offset + data.items.length < data.total }} pageSize={filters.limit} onPageSizeChange={(n) => filter('limit', n)} onOffsetChange={(offset) => setFilters((current) => ({ ...current, offset }))} /></fieldset>
@@ -51,7 +53,7 @@ function DeviceEvidence({ device: d }) {
       <span className="block text-sm mt-2">{REASON_LABELS[d.reason]} · Simulated commission: <strong className="tabular-nums">{subscriptionMoney(d.simulated_commission_ngn)}</strong> · {PAYMENT_LABELS[d.payment_status]}</span>
     </summary>
     <div className="mt-5 space-y-5">
-      <p className="text-xs text-gray-600">Synthetic device evidence · {d.scenario}. {POLICY_LABEL}</p>
+      <p className="text-xs text-gray-600">Synthetic device evidence · {d.scenario}. {d.policy_label}</p>
       <section aria-label={`Activity and eligibility for ${d.imei}`}>
         <h4 className="text-sm font-semibold">Selling dealer, paid activity and date eligibility</h4>
         <dl className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">

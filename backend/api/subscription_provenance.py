@@ -5,7 +5,7 @@ the conversation loop remains unaware of subscription policy or data storage.
 """
 import json
 from backend import config
-from backend.db.subscription_workspace import POLICY_LABEL
+from backend.models.subscription import POLICY_LABEL
 
 
 def qualify_subscription_answer(response, *, message='', history=(), raw_data=None, tools_called=()):

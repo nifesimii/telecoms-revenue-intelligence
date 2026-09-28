@@ -11,9 +11,9 @@ from backend import config
 from backend.api.subscription_schemas import DealerSort, DeviceSort, PaymentFilter, ReasonFilter
 from backend.db import queries
 from backend.db.connection import execute_query
+from backend.models.subscription import POLICY_LABEL
 from typing import get_args
 
-POLICY_LABEL = 'Illustrative subscription commission policy—not confirmed MTN terms.'
 AMOUNTS = ('recorded_subscription_revenue_ngn', 'eligible_revenue_ngn', 'simulated_commission_ngn',
            'dealer_expectation_ngn', 'variance_ngn', 'amount_paid_ngn', 'outstanding_ngn')
 
@@ -29,8 +29,11 @@ def selection(period):
     if config.USE_SAMPLE_DATA:
         payload = queries.get_subscription_demo_records(period)
         records = payload['records'] if payload else []
+        if payload and (payload.get('policy_label') != POLICY_LABEL or
+                        any(row.get('policy_label') != POLICY_LABEL for row in records)):
+            raise ValueError('Subscription fixture policy provenance does not match the approved demo')
         metadata = {'mon_period': period, 'source': 'Synthetic subscription commission fixtures',
-                    'synthetic': True, 'policy_label': POLICY_LABEL,
+                    'synthetic': True, 'policy_label': payload['policy_label'] if payload else POLICY_LABEL,
                     'evidence_as_of': payload['evidence_as_of'] if payload else None,
                     'commission_available': bool(records), 'availability': 'demo' if records else 'no_source_records',
                     'eligibility_boundary': payload['eligibility_boundary'] if payload else None}
@@ -79,16 +82,27 @@ def accounts(period):
     return metadata, rows, records
 
 
+def amount_totals(rows):
+    return {**{key: sum_known(rows, key) for key in AMOUNTS},
+            'known_simulated_commission_ngn': sum_known(rows, 'simulated_commission_ngn', strict=False),
+            'known_recorded_subscription_revenue_ngn': sum_known(rows, 'recorded_subscription_revenue_ngn', strict=False)}
+
+
 def totals(rows):
     reasons = Counter()
     for row in rows:
         reasons.update(row['reason_counts'])
-    return {**{key: sum_known(rows, key) for key in AMOUNTS}, 'account_count': len(rows),
+    return {**amount_totals(rows), 'account_count': len(rows),
             'device_count': sum(r['device_count'] for r in rows),
-            'known_simulated_commission_ngn': sum_known(rows, 'simulated_commission_ngn', strict=False),
-            'known_recorded_subscription_revenue_ngn': sum_known(rows, 'recorded_subscription_revenue_ngn', strict=False),
             'unknown_commission_count': sum(r['unknown_commission_count'] for r in rows),
             'payment_status_counts': dict(Counter(r['payment_status'] for r in rows)), 'reason_counts': dict(reasons)}
+
+
+def device_totals(rows):
+    return {**amount_totals(rows), 'device_count': len(rows),
+            'unknown_commission_count': sum(r['simulated_commission_ngn'] is None for r in rows),
+            'payment_status_counts': dict(Counter(r['payment_status'] for r in rows)),
+            'reason_counts': dict(Counter(r['reason'] for r in rows))}
 
 
 def sorted_rows(rows, sort_by, direction, identity):
@@ -139,5 +153,6 @@ def devices(period, dealer_id, limit=25, offset=0, reason='all', search='', sort
             and search.casefold() in f"{r['imei']} {r['product_name']}".casefold()]
     rows = sorted_rows(rows, sort_by, direction, 'imei')
     return {**metadata, 'dealer_id': dealer_id, 'evidence_available': available,
+            'filtered_summary': device_totals(rows),
             'unavailable_reason': None if available else 'Recorded device commission evidence unavailable; revenue alone does not establish commission payable.',
             'items': rows[offset:offset + limit], 'total': len(rows), 'limit': limit, 'offset': offset}

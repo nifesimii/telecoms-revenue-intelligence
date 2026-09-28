@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import useChat from '../../hooks/useChat.js';
 import MessageBubble, { LoadingBubble } from '../MessageBubble.jsx';
 import { formatPeriod } from '../../lib/format.js';
-import { POLICY_LABEL, subscriptionContext } from './subscriptionPresentation.js';
+import { subscriptionContext } from './subscriptionPresentation.js';
 
 export default function CommissionAssistant({ period, comparison, stream, account, inventoryScope, onInventoryScopeClear, subscription, prompt = '', onPromptConsumed }) {
   const questionId = useId();
@@ -38,7 +38,7 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
     <div className="p-5 border-b border-gray-200">
       <div className="flex justify-between gap-3 items-center"><h2 className="font-semibold">Ask about these figures</h2>{messages.length > 0 && <button className="text-xs underline" disabled={isLoading} onClick={clearChat}>Clear thread</button>}</div>
       <p className="text-xs text-gray-600 mt-2">{inventoryScope ? `Inventory · Account ${inventoryScope.dealer_id} · Product ${inventoryScope.product_code}` : account ? `Account ${account.dealer_id}` : 'All accounts'} · {formatPeriod(inventoryScope?.period || period)}{!inventoryScope && comparison ? ` vs ${formatPeriod(comparison)}` : ''} · {inventoryScope ? 'Inventory comparison' : stream === 'orsc' ? 'Subscription commission' : stream === 'payment' ? 'Payments' : 'Activation commission'}</p>
-      {subscription && <p className="text-xs text-gray-700 mt-3">{subscription.synthetic ? `Synthetic demonstration. ${POLICY_LABEL}` : 'Recorded revenue only. Subscription commission is unavailable.'}</p>}
+      {subscription && <p className="text-xs text-gray-700 mt-3">{subscription.synthetic ? `Synthetic demonstration. ${subscription.policy_label}` : 'Recorded revenue only. Subscription commission is unavailable.'}</p>}
     </div>
     {inventoryScope && <button className="overview-button m-4 mb-0" onClick={onInventoryScopeClear}>Return to Commission assistant</button>}
     <div ref={threadRef} className="p-4 max-h-96 overflow-y-auto commission-conversation" aria-live="polite" aria-busy={isLoading}>

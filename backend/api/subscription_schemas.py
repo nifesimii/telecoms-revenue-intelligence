@@ -43,14 +43,17 @@ class Account(Amounts):
     unknown_commission_count: int
 
 
-class Totals(Amounts):
-    account_count: int
+class DeviceTotals(Amounts):
     device_count: int
     known_simulated_commission_ngn: float | None
     known_recorded_subscription_revenue_ngn: float | None
     unknown_commission_count: int
     payment_status_counts: dict[str, int]
     reason_counts: dict[str, int]
+
+
+class Totals(DeviceTotals):
+    account_count: int
 
 
 class SubscriptionPage(Provenance):
@@ -115,6 +118,7 @@ class DevicePage(Provenance):
     dealer_id: str
     evidence_available: bool
     unavailable_reason: str | None
+    filtered_summary: DeviceTotals
     items: list[Device]
     total: int
     limit: int

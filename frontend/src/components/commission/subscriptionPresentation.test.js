@@ -10,7 +10,7 @@ test('subscription amounts distinguish missing evidence, recorded zero and negat
 });
 
 test('subscription investigation carries exact dealer, synthetic policy and subscription tool scope', () => {
-  const context = subscriptionContext({ synthetic: true, commission_available: true, source: 'Synthetic subscription commission fixtures', evidence_as_of: '2026-07-15' }, '202606', { dealer_id: 'SUB-001', dealer_name: 'Demo dealer' });
+  const context = subscriptionContext({ synthetic: true, policy_label: 'Illustrative subscription commission policy—not confirmed MTN terms.', commission_available: true, source: 'Synthetic subscription commission fixtures', evidence_as_of: '2026-07-15' }, '202606', { dealer_id: 'SUB-001', dealer_name: 'Demo dealer' });
   assert.match(context, /Illustrative subscription commission policy—not confirmed MTN terms\./);
   assert.match(context, /Synthetic demonstration/);
   assert.match(context, /202606/);
@@ -20,6 +20,7 @@ test('subscription investigation carries exact dealer, synthetic policy and subs
   assert.match(context, /get_subscription_devices/);
   assert.match(context, /never combine.*activation/i);
   assert.match(subscriptionContext({ synthetic: false, commission_available: false }, '202606'), /revenue only.*commission is unavailable/i);
+  assert.match(subscriptionContext({ synthetic: true, policy_label: 'Supplied policy provenance' }, '202606'), /Supplied policy provenance/);
 });
 
 test('churn stays contextual and insufficient history never becomes a negative indicator', () => {
