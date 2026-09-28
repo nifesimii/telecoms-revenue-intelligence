@@ -90,6 +90,27 @@ export async function getCommissionExport(params) {
   return data;
 }
 
+export async function getSubscriptionAccounts(params, signal) {
+  const { data } = await api.get('/subscriptions', { params, signal });
+  return data;
+}
+
+export async function getSubscriptionDetail(dealerId, params, signal) {
+  const { data } = await api.get(`/subscriptions/${encodeURIComponent(dealerId)}/detail`, { params, signal });
+  return data;
+}
+
+export async function getSubscriptionDevices(dealerId, params, signal) {
+  const { data } = await api.get(`/subscriptions/${encodeURIComponent(dealerId)}/devices`, { params, signal });
+  return data;
+}
+
+export async function getSubscriptionExport(params) {
+  const { limit, offset, ...filters } = params;
+  const { data } = await api.get('/subscriptions/export', { params: filters, responseType: 'text' });
+  return data;
+}
+
 export async function getDealerVerification(dealer_id, mon_period, signal) {
   const { data } = await api.get(`/dealers/${encodeURIComponent(dealer_id)}/verification`, {
     params: { mon_period }, signal,
