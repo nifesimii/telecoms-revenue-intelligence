@@ -5,6 +5,27 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-28 (Subscription layout consistency)
+
+- Inspected rendered Commission, Subscriptions and Payments views in isolated
+  Chrome. Subscriptions now uses a compact shared summary, seven-column dealer
+  table and the same View breakdown action as Activation Commission.
+- Revenue changes sit below current revenue; prior amounts and percentage
+  changes remain in dealer detail. Revenue, recorded commission, settled and
+  outstanding amounts retain their separate meanings and missing-evidence states.
+- Consolidated subscription evidence into one expandable section, added an
+  Explain figures prompt action, and made zero-revenue labels explicit.
+- Fixed page overflow from the table's absolutely positioned screen-reader
+  heading by containing it within the horizontal scroll region.
+- Browser checks covered 320/768/1024/1440px, evidence expansion, focus return,
+  prompt prefilling, empty search, filters, no comparison, stream switching,
+  unavailable commission evidence and failed-refresh messaging. No document
+  overflow in the verified layouts. Build and five frontend tests passed;
+  full backend suite: 287 passed, 28 skipped. Existing bundle warning remains.
+- Local frontend changes only; no deployment or financial calculation changes.
+
+---
+
 ## Session — 2026-09-28 (Subscription commission demo)
 
 - Added separate fictional recorded upstream subscription commission and

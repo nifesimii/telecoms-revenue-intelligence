@@ -41,7 +41,12 @@ work requiring measured query plans.
 The Health explanation discloses its existing missing-evidence and over-settlement
 limitations. No scores, classifications, commission calculations or SQL change.
 AI threads use exact account, reporting period, comparison and payment scope, using
-the existing Commission assistant lifecycle. Cross-module navigation preserves
+the existing Commission assistant lifecycle. **Ask about this payment** reveals the assistant,
+prefills the payment question, scrolls the composer into view and focuses it.
+Select **Send question** to request an answer; opening never sends automatically.
+Repeated activation preserves an unsent draft and the existing thread, including
+keyboard activation. While a request is pending, focus moves to the composer form.
+Cross-module navigation preserves
 account code and comparison. Returning from detail retains list filters, page and
 keyboard focus. Period changes reset all selected evidence; the obsolete lazy hook is replaced by query
 state keyed by dealer **and** period.

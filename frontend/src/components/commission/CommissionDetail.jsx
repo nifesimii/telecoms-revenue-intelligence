@@ -36,9 +36,10 @@ export default function CommissionDetail({ account, period, comparison, stream, 
             <p className="overview-headline mt-2 font-semibold tabular-nums">{formatNGN(data.account.amount_ngn)}</p>
             <dl className="grid sm:grid-cols-3 gap-4 mt-5 text-sm">
               <div><dt className="text-gray-500">{orsc ? 'Device records' : 'Activation records'}</dt><dd className="font-semibold mt-1">{data.account.record_count.toLocaleString()}</dd></div>
-              <div><dt className="text-gray-500">{orsc ? 'Zero-amount records' : 'Zero-commission records'}</dt><dd className="font-semibold mt-1">{data.account.zero_count.toLocaleString()}</dd></div>
+              <div><dt className="text-gray-500">{orsc ? 'Zero-revenue records' : 'Zero-commission records'}</dt><dd className="font-semibold mt-1">{data.account.zero_count.toLocaleString()}</dd></div>
               <div><dt className="text-gray-500">{orsc ? 'Revenue change' : 'Change'} {comparison ? `vs ${formatPeriod(comparison)}` : ''}</dt><dd className="font-semibold mt-1"><MoneyChange value={data.account.delta_ngn} /></dd></div>
             </dl>
+            {orsc && comparison && data.account.prior_amount_ngn != null && <p className="mt-3 text-xs text-gray-600">Prior revenue {formatNGN(data.account.prior_amount_ngn)}{data.account.delta_pct != null ? ` · ${data.account.delta_pct > 0 ? '+' : ''}${data.account.delta_pct}% change` : ''}</p>}
             {orsc && <div className="border-t border-gray-200 mt-5 pt-5"><SubscriptionAmounts figures={data.account} /></div>}
             {comparison && data.account.prior_amount_ngn == null && <p className="text-sm text-gray-600 mt-4">No account record in {formatPeriod(comparison)}. A percentage change cannot be established.</p>}
             <p className="mt-5 text-xs text-gray-500">{data.source} · Retrieved {new Date(data.generated_at).toLocaleString()}. {orsc ? 'Subscription revenue is not commission payable.' : 'Recorded commission is not a dealer-submitted expectation or confirmed settlement.'}</p>
@@ -53,8 +54,16 @@ export default function CommissionDetail({ account, period, comparison, stream, 
             <div className="p-5 flex flex-wrap gap-3 border-t border-gray-200"><button className="overview-button" onClick={() => setPrompt(comparison ? 'Explain the change by denomination between the selected periods. Distinguish observed changes from verified causes.' : 'Explain this account’s recorded commission by denomination.')}>Explain {comparison ? 'change' : 'breakdown'} →</button>
               <button className="overview-button" aria-expanded={showRecords} onClick={() => setShowRecords(!showRecords)}>{showRecords ? 'Hide' : 'Inspect'} zero-commission records</button></div>
           </section>}
-          {orsc && <section className="overview-surface p-5"><h3 className="font-semibold">Device attribution and settlement evidence</h3><p className="mt-2 text-sm text-gray-600">Follow devices attributed to this dealer in the subscription source through revenue, recorded commission and settlement references.</p><button className="overview-button mt-4" aria-expanded={showRecords} onClick={() => setShowRecords(!showRecords)}>{showRecords ? 'Hide' : 'Inspect'} device records</button></section>}
-          {showRecords && orsc && <SubscriptionEvidence dealerId={account.dealer_id} period={period} />}
+          {orsc && <section className="overview-surface overflow-hidden" aria-label="Subscription evidence">
+            <div className="p-5"><h3 className="font-semibold">Subscription evidence</h3>
+              <p className="mt-2 text-sm text-gray-600">Inspect device revenue, recorded commission and settlement references for this account.</p>
+            </div>
+            <div className="px-5 py-4 flex flex-wrap gap-3 border-t border-gray-200">
+              <button className="overview-button" onClick={() => setPrompt('Explain this account’s subscription revenue, recorded commission, settled and outstanding amounts. Distinguish recorded evidence from missing evidence.')}>Explain figures →</button>
+              <button className="overview-button" aria-expanded={showRecords} aria-controls="subscription-device-evidence" onClick={() => setShowRecords(!showRecords)}>{showRecords ? 'Hide' : 'Inspect'} device records</button>
+            </div>
+            <div id="subscription-device-evidence">{showRecords && <SubscriptionEvidence dealerId={account.dealer_id} period={period} />}</div>
+          </section>}
           {showRecords && !orsc && <ZeroCommissionEvidence dealerId={account.dealer_id} period={period} onNavigate={onNavigate} />}
         </>}
       </div>

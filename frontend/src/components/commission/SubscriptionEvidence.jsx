@@ -11,13 +11,13 @@ export default function SubscriptionEvidence({ dealerId, period }) {
   const query = useQuery({ queryKey: ['subscription-records', dealerId, period, offset, limit],
     queryFn: ({ signal }) => getCommissionSubscriptionRecords(dealerId, { mon_period: period, stream: 'orsc', offset, limit }, signal) });
   const data = query.data;
-  return <section className="overview-surface overflow-hidden" aria-label="Subscription device evidence">
-    <div className="p-5"><h3 className="font-semibold">Subscription device records</h3><p className="text-sm text-gray-600 mt-2">Dealer attribution follows the subscription source. Original sale ownership has not been independently verified.</p></div>
+  return <section className="border-t border-gray-200" aria-label="Subscription device evidence">
+    <div className="p-5"><h4 className="font-semibold">Subscription device records</h4><p className="text-sm text-gray-600 mt-2">Dealer attribution follows the subscription source. Original sale ownership has not been independently verified.</p></div>
     {query.isPending && <p role="status" className="p-5">Loading device evidence…</p>}
     {query.isError && <p role="alert" className="p-5 text-red-800">Device evidence unavailable. <button className="underline" onClick={() => query.refetch()}>Retry</button></p>}
     {data && <>
       <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable subscription device records"><table className="commission-table w-full text-sm text-left">
-        <thead><tr><th>Device / IMEI</th><th className="text-right">Subscription revenue</th><th className="text-right">Recorded commission</th><th className="text-right">Settled</th><th className="text-right">Outstanding</th><th>Statement reference</th><th>Settlement reference</th></tr></thead>
+        <thead><tr><th scope="col">Device / IMEI</th><th scope="col" className="text-right">Subscription revenue</th><th scope="col" className="text-right">Recorded commission</th><th scope="col" className="text-right">Settled</th><th scope="col" className="text-right">Outstanding</th><th scope="col">Statement reference</th><th scope="col">Settlement reference</th></tr></thead>
         <tbody>{data.items.map((row, index) => <tr key={`${row.imei}-${offset + index}`}>
           <td className="font-mono text-xs">{row.imei || 'Not recorded'}</td>
           <td className="text-right tabular-nums whitespace-nowrap">{formatNGN(row.subscription_revenue_ngn)}</td>

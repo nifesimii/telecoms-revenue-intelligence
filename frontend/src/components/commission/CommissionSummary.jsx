@@ -17,7 +17,8 @@ export default function CommissionSummary({ data, onFilter }) {
         <p className="mt-3 text-sm text-gray-600">Across {s.account_count.toLocaleString()} dealer accounts · {s.record_count.toLocaleString()} {orsc ? 'device records' : 'activation records'}</p>
         <p className="mt-2 text-xs text-gray-600">{orsc ? 'Subscription revenue is not commission payable.' : 'Existing calculated commission, not a recalculation or settlement balance.'}</p>
       </div>
-      <div className="p-5 sm:p-6 grid sm:grid-cols-2 gap-5">
+      {orsc ? <div className="p-5 sm:p-6"><SubscriptionAmounts figures={s} />
+        </div> : <div className="p-5 sm:p-6 grid sm:grid-cols-2 gap-5">
         <div><h3 className="text-sm text-gray-600">{orsc ? 'Zero-amount records' : 'Zero-commission records'}</h3>
           <p className="text-2xl font-semibold mt-2 tabular-nums">{s.zero_count.toLocaleString()}</p>
           <button className="mt-2 text-sm underline underline-offset-4" onClick={() => onFilter('with_zero')}>Across {s.accounts_with_zero.toLocaleString()} accounts →</button>
@@ -27,9 +28,13 @@ export default function CommissionSummary({ data, onFilter }) {
           <button className="mt-2 text-sm underline underline-offset-4" onClick={() => onFilter('all_zero')}>Review accounts →</button>
         </div>
         <p className="sm:col-span-2 text-xs text-gray-600">Zero amounts are a starting point for investigation, not proof of an error or money owed.</p>
-      </div>
+      </div>}
     </div>
-    {orsc && <div className="border-t border-gray-200 p-5 sm:p-6"><SubscriptionAmounts figures={s} /></div>}
+    {orsc && <div className="border-t border-gray-200 px-5 py-3 sm:px-6 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+      <button className="underline underline-offset-4" onClick={() => onFilter('with_zero')}>{s.zero_count.toLocaleString()} zero-revenue records across {s.accounts_with_zero.toLocaleString()} accounts →</button>
+      <button className="underline underline-offset-4" onClick={() => onFilter('all_zero')}>{s.all_zero_accounts.toLocaleString()} accounts with entirely zero revenue →</button>
+      <p className="text-xs text-gray-500">Zero revenue does not establish a commission error or money owed.</p>
+    </div>}
     <div className="border-t border-gray-200 px-5 py-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
       {data.prior_period ? <>
         <span className="text-gray-600">{orsc ? 'Revenue change ' : ''}vs {formatPeriod(data.prior_period)}</span>
