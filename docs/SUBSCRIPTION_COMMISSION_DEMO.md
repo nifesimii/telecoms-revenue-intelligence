@@ -74,6 +74,8 @@ Collection filters are `mon_period`, `search`, `payment_status`, `sort_by` and
 `direction`, with `limit`/`offset` (maximum 100). `/subscriptions/export` exports
 the complete filtered dealer set. `/{dealer_id}/detail` anchors the investigation
 and `/{dealer_id}/devices` loads bounded device evidence only when requested.
+Device evidence includes strict-null `filtered_summary` amounts for the entire
+matching device set, computed before pagination and shown beside the evidence.
 The original `/commissions?stream=orsc` and ORSC tools continue to report revenue.
 
 Start with June 2026, then use May to demonstrate overdue timing. Subscription
@@ -100,3 +102,43 @@ anniversary clamps to February 28. The generator rounds illustrative commission
 half-up to kobo; request-time code never applies the rate. Portfolio totals with
 missing contributions remain unknown; explicitly named known subtotals are
 partial and must not be represented as complete balances.
+
+## Implementation boundaries and operational limits
+
+`backend/data/generate_subscription_demo.py` writes the separate JSON fixtures;
+named scenarios carry stable dealer/device/evidence identities. The shared
+provenance label lives in `backend/models/subscription.py`. Runtime reads validate
+fixture labels and preserve them through the API, UI, exports and assistant.
+`backend/db/subscription_workspace.py` only groups, sums, filters and pages
+supplied records; it does not calculate policy earnings or monitor churn.
+
+The existing Presto adapter is still a stub. Live-mode revenue-only contracts
+are tested at the external adapter boundary, but a real Presto read cannot yet
+be demonstrated. No actual MTN commission terms or settlement were verified.
+No paid external LLM call was made; assistant tool/response behavior is covered
+with a substituted SDK, and UI assistant scope is covered by presentation tests.
+The JavaScript frontend has no standalone typecheck script; its production
+build retains the existing bundle-size warning.
+
+## Verification and independent review
+
+- Final independent suite: **290 backend tests passed, 28 skipped**; all **9
+  frontend tests passed** and production build passed. Focused tests used
+  red/green at the generator, public API, tool/response and presentation seams.
+- Isolated Chrome and API checks: **111 assertions** across the five narratives
+  and all eight dealers; paid/not-yet-due/overdue/unknown; January/June history;
+  exact provenance, expectations/variance, lazy bounded evidence and caching;
+  dealer/month continuity and focus return; filters/sort/CSV, empty/error/retry,
+  live-source substitutes, and whole-filter device totals before pagination.
+- Screenshots inspected at 320, 768, 1024 and 1440 pixels. Tables scroll within
+  their containers; device chains remain readable and keyboard focus visible.
+  Normal runtime console output was clean; injected HTTP 500s tested failures.
+- All six fixture files reproduce exactly, including after stable-identity
+  refactoring. Existing source CSVs and protected user artifacts match their
+  pre-implementation hashes. Browser artifacts/logs are under
+  `/tmp/subscription-validation` for this local session.
+- **Standards:** no documented-standard violations. Both maintenance findings
+  (positional scenario identities, duplicated label sources) resolved; follow-up
+  found no new actionable issues.
+- **Spec:** both gaps (device-filter totals, reachable reconciliation KB
+  ambiguity) resolved; follow-up found no new actionable issues or scope creep.
