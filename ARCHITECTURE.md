@@ -326,8 +326,19 @@ mount only their active content, and bounded TanStack Query caching is unchanged
 in `api/commission_schemas.py`. `db/commission_workspace.py` composes existing
 named queries without new SQL, recalculation, payment reads or audit execution.
 Search, class/zero filters, stable sorting and full-filter totals precede paging;
-the hard collection limit is 100. Existing `/dealers` and agent tools are unchanged.
-Activation commission and ORSC subscription revenue have separate semantics.
+the hard collection limit is 100. Existing `/dealers` remains unchanged.
+Activation commission, subscription revenue and subscription commission have
+separate semantics. The internal sample-only `get_subscription_demo_records`
+handler in `db/queries.py`, dispatched through `execute_query`, joins fictional
+upstream commission/settlement statements to existing dealer/device/month
+attribution. `db/subscription_evidence.py` validates and aggregates those recorded
+amounts. Its additive nullable commission, settled and outstanding fields
+are shared by workspace totals/detail/exports and the existing
+`get_orsc_summary` agent tool; `amount_ngn` remains subscription revenue.
+`/{dealer_id}/subscription-records` loads bounded device evidence on demand.
+Live mode does not read these fixtures and leaves unsupported commission fields
+unavailable. No commission rate is applied at runtime. See
+`docs/SUBSCRIPTION_COMMISSION_DEMO.md` for assumptions and the live-data gap.
 Absent comparison records do not become verified zero balances. Denomination
 amounts reconcile to the recorded total, including unattributed amounts.
 

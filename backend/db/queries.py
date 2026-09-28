@@ -25,6 +25,8 @@ The four tables in scope (fully qualified for Presto):
 """
 from __future__ import annotations
 
+import csv
+from decimal import Decimal
 from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
@@ -1501,7 +1503,51 @@ def _sample_get_health_scorecard(params: dict) -> pd.DataFrame:
     return result.sort_values("health_score", ascending=True).reset_index(drop=True)
 
 
+def _sample_get_subscription_demo_records(params: dict) -> pd.DataFrame:
+    """Internal sample-only device attribution plus raw fictional statement fields.
+
+    Not an agent tool or live query; callers guard sample mode before dispatch.
+    No commission policy is inferred here.
+    """
+    period = str(params['mon_period'])
+    dealer_id = params.get('distributor_code')
+    source_paths = config.SAMPLE_DATA_PATHS['fbb_comm_orsc']
+    source_path = source_paths.get(period) if isinstance(source_paths, dict) else source_paths
+    if source_path is None or not source_path.exists():
+        return pd.DataFrame()
+    source = {}
+    with source_path.open(newline='') as handle:
+        for row in csv.DictReader(handle):
+            if row['mon_period'] != period or (dealer_id and row['distributor_code'] != dealer_id):
+                continue
+            key = (row['distributor_code'], row['imei'])
+            record = source.setdefault(key, {'dealer_id': key[0], 'imei': key[1],
+                'subscription_revenue_ngn': Decimal(0), 'source_record_count': 0})
+            record['subscription_revenue_ngn'] += Decimal(row['data_subscription_amount'] or '0')
+            record['source_record_count'] += 1
+    statements = {}
+    fixture = config.SAMPLE_DATA_PATHS['subscription_commission_demo']
+    if fixture.exists():
+        with fixture.open(newline='') as handle:
+            for row in csv.DictReader(handle):
+                if row['mon_period'] != period:
+                    continue
+                key = (row['dealer_id'], row['imei'])
+                if key in statements:
+                    raise ValueError('Duplicate subscription statement device')
+                statements[key] = row
+    rows = []
+    for key, record in sorted(source.items()):
+        statement = statements.get(key, {})
+        rows.append({**record,
+            **{field: statement.get(field, '') for field in (
+                'subscription_commission_ngn', 'subscription_settled_ngn',
+                'statement_reference', 'settlement_reference')}})
+    return pd.DataFrame(rows)
+
+
 SAMPLE_HANDLERS: dict[str, Callable[[dict], pd.DataFrame]] = {
+    "get_subscription_demo_records": _sample_get_subscription_demo_records,
     "get_dealer_summary": _sample_get_dealer_summary,
     "get_zero_commission_records": _sample_get_zero_commission_records,
     "get_month_on_month_variance": _sample_get_month_on_month_variance,

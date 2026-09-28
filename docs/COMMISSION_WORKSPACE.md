@@ -10,7 +10,9 @@ conversation. Review baseline: 43e4ce26aac7b240b906ed6827ab828d1ce434bc.
 - Show account codes everywhere: duplicate names must never select an account.
 - Open denomination breakdown, period comparison and bounded zero-record
   evidence on demand, independently of payment availability.
-- Preserve ORSC as a separate subscription-revenue view, not commission payable.
+- Preserve ORSC subscription revenue separately from commission. The September 28
+  demo extension adds separate fictional recorded subscription commission and
+  settlement results in sample mode; see [Subscription commission demo](SUBSCRIPTION_COMMISSION_DEMO.md).
 - Provide contextual AI assistance with exact account/period; no automatic sends.
 - Keep sources, absent prior records, unavailable data and genuinely empty data
   distinguishable. Never infer a confirmed error from a zero amount.

@@ -4,7 +4,15 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-class CommissionAccount(BaseModel):
+class SubscriptionAmounts(BaseModel):
+    subscription_commission_ngn: float | None = None
+    subscription_settled_ngn: float | None = None
+    subscription_outstanding_ngn: float | None = None
+    subscription_commission_record_count: int = 0
+    subscription_commission_complete: bool = False
+
+
+class CommissionAccount(SubscriptionAmounts):
     dealer_id: str
     dealer_name: str
     account_profile_class: str
@@ -16,7 +24,7 @@ class CommissionAccount(BaseModel):
     delta_pct: float | None = None
 
 
-class CommissionTotals(BaseModel):
+class CommissionTotals(SubscriptionAmounts):
     account_count: int
     amount_ngn: float
     record_count: int
@@ -77,6 +85,27 @@ class ZeroRecordPage(BaseModel):
     source: str
     generated_at: str
     items: list[ZeroRecord]
+    total: int
+    limit: int
+    offset: int
+
+
+class SubscriptionRecord(BaseModel):
+    imei: str
+    subscription_revenue_ngn: float
+    subscription_commission_ngn: float | None
+    subscription_settled_ngn: float | None
+    subscription_outstanding_ngn: float | None
+    statement_reference: str | None
+    settlement_reference: str | None
+
+
+class SubscriptionRecordPage(BaseModel):
+    mon_period: str
+    dealer_id: str
+    source: str
+    generated_at: str
+    items: list[SubscriptionRecord]
     total: int
     limit: int
     offset: int

@@ -4,6 +4,8 @@ import { getCommissionDetail } from '../../api/client.js';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 import { MoneyChange } from './CommissionSummary.jsx';
 import CommissionAssistant from './CommissionAssistant.jsx';
+import SubscriptionAmounts from './SubscriptionAmounts.jsx';
+import SubscriptionEvidence from './SubscriptionEvidence.jsx';
 import ZeroCommissionEvidence from './ZeroCommissionEvidence.jsx';
 
 export default function CommissionDetail({ account, period, comparison, stream, onBack, onNavigate }) {
@@ -35,8 +37,9 @@ export default function CommissionDetail({ account, period, comparison, stream, 
             <dl className="grid sm:grid-cols-3 gap-4 mt-5 text-sm">
               <div><dt className="text-gray-500">{orsc ? 'Device records' : 'Activation records'}</dt><dd className="font-semibold mt-1">{data.account.record_count.toLocaleString()}</dd></div>
               <div><dt className="text-gray-500">{orsc ? 'Zero-amount records' : 'Zero-commission records'}</dt><dd className="font-semibold mt-1">{data.account.zero_count.toLocaleString()}</dd></div>
-              <div><dt className="text-gray-500">Change {comparison ? `vs ${formatPeriod(comparison)}` : ''}</dt><dd className="font-semibold mt-1"><MoneyChange value={data.account.delta_ngn} /></dd></div>
+              <div><dt className="text-gray-500">{orsc ? 'Revenue change' : 'Change'} {comparison ? `vs ${formatPeriod(comparison)}` : ''}</dt><dd className="font-semibold mt-1"><MoneyChange value={data.account.delta_ngn} /></dd></div>
             </dl>
+            {orsc && <div className="border-t border-gray-200 mt-5 pt-5"><SubscriptionAmounts figures={data.account} /></div>}
             {comparison && data.account.prior_amount_ngn == null && <p className="text-sm text-gray-600 mt-4">No account record in {formatPeriod(comparison)}. A percentage change cannot be established.</p>}
             <p className="mt-5 text-xs text-gray-500">{data.source} · Retrieved {new Date(data.generated_at).toLocaleString()}. {orsc ? 'Subscription revenue is not commission payable.' : 'Recorded commission is not a dealer-submitted expectation or confirmed settlement.'}</p>
           </section>
@@ -50,7 +53,8 @@ export default function CommissionDetail({ account, period, comparison, stream, 
             <div className="p-5 flex flex-wrap gap-3 border-t border-gray-200"><button className="overview-button" onClick={() => setPrompt(comparison ? 'Explain the change by denomination between the selected periods. Distinguish observed changes from verified causes.' : 'Explain this account’s recorded commission by denomination.')}>Explain {comparison ? 'change' : 'breakdown'} →</button>
               <button className="overview-button" aria-expanded={showRecords} onClick={() => setShowRecords(!showRecords)}>{showRecords ? 'Hide' : 'Inspect'} zero-commission records</button></div>
           </section>}
-          {orsc && <div className="overview-notice text-gray-600">This view reports recorded subscription amounts and zero-amount counts. The current source does not establish a subscription commission payable figure.</div>}
+          {orsc && <section className="overview-surface p-5"><h3 className="font-semibold">Device attribution and settlement evidence</h3><p className="mt-2 text-sm text-gray-600">Follow devices attributed to this dealer in the subscription source through revenue, recorded commission and settlement references.</p><button className="overview-button mt-4" aria-expanded={showRecords} onClick={() => setShowRecords(!showRecords)}>{showRecords ? 'Hide' : 'Inspect'} device records</button></section>}
+          {showRecords && orsc && <SubscriptionEvidence dealerId={account.dealer_id} period={period} />}
           {showRecords && !orsc && <ZeroCommissionEvidence dealerId={account.dealer_id} period={period} onNavigate={onNavigate} />}
         </>}
       </div>

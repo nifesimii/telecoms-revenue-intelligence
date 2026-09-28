@@ -93,3 +93,21 @@ is asserted. Blank purchase quantities remain unknown. See
 Restart the backend after regenerating cached CSVs. Search `Synthetic` in the
 Inventory tab to isolate the cohort. Saved trails from other evidence are not
 shown as verification of the synthetic quantities.
+
+## Subscription commission statements
+
+`subscription_commission_demo.csv` contains fictional recorded commission and
+settlement amounts for the existing subscription dealer/device/month keys.
+Subscription revenue remains in the original ORSC files. These statements are
+sample-only evidence, not an implementation of MTN's commission calculation.
+
+Regenerate the separate fixture with:
+
+```sh
+python -m backend.data.generate_subscription_commission_demo
+```
+
+The Commission workspace, matching-account export and subscription assistant
+share these amounts. Subscription settlements remain separate from the existing
+activation payment fixture. See `docs/SUBSCRIPTION_COMMISSION_DEMO.md` for the
+fixture assumptions, unavailable-data behavior and path to live evidence.

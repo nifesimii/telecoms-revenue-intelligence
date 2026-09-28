@@ -27,6 +27,7 @@ from backend.agent import prompts
 from backend.db import queries
 from backend.db.composite import assemble_dealer_full_context
 from backend.db.connection import execute_query
+from backend.db import subscription_evidence
 from backend.db.triage import TRIAGE_HANDLERS
 
 # Defensive cap on the number of tool-result rows we hand back to Claude.
@@ -37,6 +38,8 @@ from backend.db.triage import TRIAGE_HANDLERS
 # rows in production so existing behaviour is unaffected. Sort order on the
 # original query is preserved, so the most-actionable rows are kept.
 _TOOL_ROW_CAP = 500
+# Workspace-only fixture reads must not become callable or advertised agent tools.
+_INTERNAL_QUERY_NAMES = {"get_subscription_demo_records"}
 
 
 def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:
@@ -75,8 +78,8 @@ def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:
                 f"Tool {tool_name!r} failed: {type(exc).__name__}: {exc}",
             )
 
-    if tool_name not in queries.QUERY_NAMES:
-        valid_query = list(queries.QUERY_NAMES)
+    if tool_name not in queries.QUERY_NAMES or tool_name in _INTERNAL_QUERY_NAMES:
+        valid_query = [name for name in queries.QUERY_NAMES if name not in _INTERNAL_QUERY_NAMES]
         valid_direct = list(_DIRECT_HANDLERS.keys())
         return _error_result(
             tool_use_id,
@@ -88,6 +91,13 @@ def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:
 
     try:
         df = execute_query(tool_name, tool_input)
+        if tool_name == "get_orsc_summary" and not df.empty:
+            # Share the workspace's recorded evidence without changing revenue SQL.
+            evidence = subscription_evidence.summaries(str(tool_input["mon_period"]))
+            df = pd.DataFrame([
+                {**row, **evidence.get(str(row["dealer_id"]), subscription_evidence.unavailable())}
+                for row in df.to_dict(orient="records")
+            ])
     except KeyError as exc:
         return _error_result(
             tool_use_id,

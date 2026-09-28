@@ -1,3 +1,4 @@
+import SubscriptionAmounts from './SubscriptionAmounts.jsx';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 
 export function MoneyChange({ value }) {
@@ -28,9 +29,10 @@ export default function CommissionSummary({ data, onFilter }) {
         <p className="sm:col-span-2 text-xs text-gray-600">Zero amounts are a starting point for investigation, not proof of an error or money owed.</p>
       </div>
     </div>
+    {orsc && <div className="border-t border-gray-200 p-5 sm:p-6"><SubscriptionAmounts figures={s} /></div>}
     <div className="border-t border-gray-200 px-5 py-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
       {data.prior_period ? <>
-        <span className="text-gray-600">vs {formatPeriod(data.prior_period)}</span>
+        <span className="text-gray-600">{orsc ? 'Revenue change ' : ''}vs {formatPeriod(data.prior_period)}</span>
         <span className="font-semibold"><MoneyChange value={s.delta_ngn} /></span>
         <span className="text-gray-600">{s.prior_account_count ? `Prior total ${formatNGN(s.prior_amount_ngn)}` : 'No source records in the comparison period'}</span>
         <span className="text-xs text-gray-500">Full-period totals include changes in the account population.</span>

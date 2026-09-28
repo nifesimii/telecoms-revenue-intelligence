@@ -160,7 +160,7 @@ GET_MONTH_ON_MONTH_VARIANCE: dict[str, Any] = {
 GET_ORSC_SUMMARY: dict[str, Any] = {
     "name": "get_orsc_summary",
     "description": (
-        "Returns per-dealer subscription commission "
+        "Returns per-dealer recorded subscription "
         "revenue totals for a single reporting month from "
         "development.fbb_comm_orsc.\n\n"
         "Use this for:\n"
@@ -171,12 +171,15 @@ GET_ORSC_SUMMARY: dict[str, Any] = {
         "  * Without distributor_code: one row per dealer, sorted by "
         "total_subscription_amount_ngn descending.\n"
         "  * With distributor_code: a single row for that dealer.\n\n"
-        "Each row contains: distributor_code, distributor_name, "
+        "Each row contains: dealer_id, dealer_name, "
         "account_profile_class, device_count, total_subscription_amount_ngn, "
-        "zero_amount_count.\n\n"
-        "Important: the returned amount is recorded subscription revenue. "
-        "Do not apply an activation commission rate or present it as confirmed "
-        "subscription commission payable; the current source does not establish that figure."
+        "zero_amount_count, plus nullable subscription_commission_ngn, "
+        "subscription_settled_ngn and subscription_outstanding_ngn.\n\n"
+        "Important: total_subscription_amount_ngn is recorded subscription revenue. "
+        "The separate subscription commission and settlement fields, when available, "
+        "are fictional recorded upstream results in sample mode. Report them separately "
+        "from revenue. Null means unavailable, not zero. Follow the KB's subscription "
+        "evidence and policy limitations when explaining these fields."
     ),
     "input_schema": {
         "type": "object",

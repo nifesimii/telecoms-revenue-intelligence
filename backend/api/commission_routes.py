@@ -7,9 +7,10 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 
-from backend.api.commission_schemas import CommissionDetail, CommissionPage, ZeroRecordPage
+from backend.api.commission_schemas import CommissionDetail, CommissionPage, ZeroRecordPage, SubscriptionRecordPage
 from backend.db import commission_workspace as workspace, queries
 from backend.db.connection import execute_query
+from backend.db import subscription_evidence
 
 router = APIRouter(prefix='/commissions', tags=['Commission workspace'])
 logger = logging.getLogger(__name__)
@@ -37,7 +38,8 @@ def filtered_collection(
     search: str = Query('', max_length=100),
     partner_class: str = Query('', max_length=100),
     status: Literal['all', 'with_zero', 'all_zero'] = 'all',
-    sort_by: Literal['amount_ngn', 'dealer_name', 'delta_ngn', 'record_count', 'zero_count'] = 'amount_ngn',
+    sort_by: Literal['amount_ngn', 'dealer_name', 'delta_ngn', 'record_count', 'zero_count', 'subscription_commission_ngn',
+                     'subscription_settled_ngn', 'subscription_outstanding_ngn'] = 'amount_ngn',
     direction: Literal['asc', 'desc'] = 'desc',
 ) -> dict:
     try:
@@ -59,7 +61,10 @@ def accounts(data: dict = Depends(filtered_collection),
 def export_accounts(data: dict = Depends(filtered_collection)):
     fields = ['mon_period', 'prior_period', 'stream', 'source', 'dealer_id', 'dealer_name',
               'account_profile_class', 'amount_ngn', 'prior_amount_ngn', 'delta_ngn',
-              'delta_pct', 'record_count', 'zero_count', 'amount_basis']
+              'delta_pct', 'record_count', 'zero_count', 'amount_basis',
+              'subscription_commission_ngn', 'subscription_settled_ngn',
+              'subscription_outstanding_ngn', 'subscription_commission_record_count',
+              'subscription_commission_complete', 'subscription_commission_basis']
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=fields)
     writer.writeheader()
@@ -69,6 +74,9 @@ def export_accounts(data: dict = Depends(filtered_collection)):
             record['stream'] = 'Subscription commission'
         record['amount_basis'] = ('Recorded subscription revenue; not confirmed commission payable'
                                   if data['stream'] == 'orsc' else 'Recorded activation commission')
+        record['subscription_commission_basis'] = (
+            'Fictional upstream subscription statement; MTN rate and eligibility policy not supplied'
+            if row.get('subscription_commission_record_count', 0) else 'Not available')
         record['source'] = public_source(record['source'])
         for key, value in record.items():
             if isinstance(value, str) and value.lstrip().startswith(('=', '+', '-', '@')):
@@ -111,3 +119,19 @@ def zero_records(dealer_id: str, context: dict = Depends(selection),
         raise HTTPException(503, 'Zero-commission evidence unavailable. Retry later.') from None
     return {'mon_period': context['period'], 'dealer_id': dealer_id, **workspace.provenance(),
             'items': records, 'total': len(frame), 'limit': limit, 'offset': offset}
+
+
+@router.get('/{dealer_id}/subscription-records', response_model=SubscriptionRecordPage)
+def subscription_records(dealer_id: str, context: dict = Depends(selection),
+                         limit: int = Query(25, ge=1, le=100), offset: int = Query(0, ge=0)):
+    if context['stream'] != 'orsc':
+        raise HTTPException(422, 'Subscription evidence is subscription-only')
+    try:
+        records = subscription_evidence.records(context['period'], dealer_id)
+    except Exception:
+        logger.exception('Subscription statement evidence unavailable')
+        raise HTTPException(503, 'Subscription evidence unavailable. Retry later.') from None
+    return {'mon_period': context['period'], 'dealer_id': dealer_id,
+            **workspace.provenance(context['period'], 'orsc'),
+            'items': records[offset:offset + limit], 'total': len(records),
+            'limit': limit, 'offset': offset}

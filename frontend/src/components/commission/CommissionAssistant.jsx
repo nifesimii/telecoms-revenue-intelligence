@@ -14,7 +14,7 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
   const threadRef = useRef(null);
   const context = inventoryScope
     ? `Inventory investigation for reporting period ${inventoryScope.period}, exact dealer ${inventoryScope.dealer_id} (${inventoryScope.dealer_name}), product ${inventoryScope.product_code} (${inventoryScope.product_name}). Use only this dealer/product scope. Confirm invoice coverage, purchase window and documented Inventory KB explanations; missing evidence does not prove missing purchases or commission owed. ${inventoryScope.scenario_label ? `Synthetic scenario: ${inventoryScope.scenario_label}; fictional purchase evidence is not verified operational evidence.` : ''}`
-    : `Reporting period ${period}. ${comparison ? `Comparison period ${comparison}.` : 'No comparison period selected.'} ${account ? `Exact dealer account code ${account.dealer_id} (${account.dealer_name}); do not combine other accounts with the same name.` : 'Portfolio-level investigation.'} ${stream === 'orsc' ? 'Subscription commission review: amounts are recorded subscription revenue, not confirmed commission payable.' : stream === 'payment' ? 'Payment settlement investigation. Use recorded payment and commission evidence; do not infer causes from aggregate differences.' : 'Activation commission.'}`;
+    : `Reporting period ${period}. ${comparison ? `Comparison period ${comparison}.` : 'No comparison period selected.'} ${account ? `Exact dealer account code ${account.dealer_id} (${account.dealer_name}); do not combine other accounts with the same name.` : 'Portfolio-level investigation.'} ${stream === 'orsc' ? 'Subscription review: subscription revenue is separate from recorded upstream subscription commission, settlement and outstanding amounts. Use get_orsc_summary for available evidence. Do not infer a commission rate or eligibility policy; the actual calculation policy has not been supplied. Missing commission evidence is unavailable, not zero.' : stream === 'payment' ? 'Payment settlement investigation. Use recorded payment and commission evidence; do not infer causes from aggregate differences.' : 'Activation commission.'}`;
   useEffect(() => {
     if (!prompt) return;
     setInput(prompt);
@@ -31,7 +31,7 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
     setInput('');
   }
   const suggestions = inventoryScope ? ['Explain this dealer-product Inventory comparison and identify the evidence still needed.'] : stream === 'payment' ? ['Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.'] : stream === 'orsc'
-    ? ['Summarise recorded subscription revenue and zero-amount records.']
+    ? ['Summarise subscription revenue, recorded commission, settlement and outstanding amounts. State any missing evidence.']
     : [comparison ? 'Explain the commission change by denomination between these periods.' : 'Explain the recorded commission breakdown.', 'Investigate zero-commission records using only documented KB causes. State what remains unverified.'];
   return <section className="overview-surface overflow-hidden min-w-0" aria-label={inventoryScope ? 'Inventory assistant' : stream === 'payment' ? 'Payment assistant' : 'Commission assistant'}>
     <div className="p-5 border-b border-gray-200">

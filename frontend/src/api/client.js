@@ -85,6 +85,11 @@ export async function getCommissionZeroRecords(dealerId, params, signal) {
   return data;
 }
 
+export async function getCommissionSubscriptionRecords(dealerId, params, signal) {
+  const { data } = await api.get(`/commissions/${encodeURIComponent(dealerId)}/subscription-records`, { params, signal });
+  return data;
+}
+
 export async function getCommissionExport(params) {
   const { data } = await api.get('/commissions/export', { params, responseType: 'text' });
   return data;

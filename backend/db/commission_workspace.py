@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from backend import config
 from backend.db.connection import execute_query
+from backend.db import subscription_evidence
 
 
 STREAMS = {
@@ -25,7 +26,9 @@ def provenance(period: str | None = None, stream: str | None = None) -> dict:
 def account_rows(period: str, stream: str, dealer_id: str | None = None) -> list[dict]:
     query, amount, count, zero = STREAMS[stream]
     frame = execute_query(query, {'mon_period': period, 'distributor_code': dealer_id})
+    evidence = subscription_evidence.summaries(period) if stream == 'orsc' else {}
     return [{
+        **evidence.get(str(row['dealer_id']), subscription_evidence.unavailable()),
         'dealer_id': str(row['dealer_id']), 'dealer_name': str(row['dealer_name']),
         'account_profile_class': str(row['account_profile_class']),
         'amount_ngn': round(float(row[amount]), 2),
@@ -48,7 +51,13 @@ def compare_accounts(current: list[dict], prior: list[dict]) -> list[dict]:
 def totals(rows: list[dict], prior: list[dict] | None) -> dict:
     amount = round(sum(r['amount_ngn'] for r in rows), 2)
     prior_amount = round(sum(r['amount_ngn'] for r in prior), 2) if prior else None
-    return {'account_count': len(rows), 'amount_ngn': amount,
+    complete = bool(rows) and all(r.get('subscription_commission_complete', False) for r in rows)
+    subscription = {field: subscription_evidence.money_total(rows, field)
+                    for field in subscription_evidence.MONEY_FIELDS}
+    return {**subscription,
+            'subscription_commission_record_count': sum(r.get('subscription_commission_record_count', 0) for r in rows),
+            'subscription_commission_complete': complete,
+            'account_count': len(rows), 'amount_ngn': amount,
             'record_count': sum(r['record_count'] for r in rows),
             'zero_count': sum(r['zero_count'] for r in rows),
             'accounts_with_zero': sum(r['zero_count'] > 0 for r in rows),

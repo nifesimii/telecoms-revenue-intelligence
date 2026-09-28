@@ -5,6 +5,28 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-28 (Subscription commission demo)
+
+- Added separate fictional recorded upstream subscription commission and
+  settlement evidence linked to existing dealer/device/month records in sample
+  mode. Revenue retains its existing meaning; live unsupported commission fields
+  stay unavailable. Shared evidence supports the workspace and contextual chat.
+- Subscription account figures, totals and exports distinguish revenue,
+  commission, settled and outstanding amounts; bounded device evidence loads on
+  demand. Existing activation settlement remains separately scoped.
+- Corrected the KB's unsupported claim that subscription revenue equals payable
+  commission. Actual rate and eligibility remain unconfirmed. Assumptions and
+  the live-data path are recorded in `docs/SUBSCRIPTION_COMMISSION_DEMO.md`.
+- Validation: full backend suite 287 passed, 28 skipped, including 13 new
+  subscription API/tool regression tests. Frontend build and five existing Node
+  tests passed; isolated browser checks passed at 320/768/1024/1440px without
+  page errors or document overflow. Existing bundle-size warning remains.
+- Standards and spec reviews have no unresolved findings. CSV reads remain in
+  queries.py, and the internal fixture query is excluded from agent tools.
+  Live Presto and billed LLM calls were not exercised. No deployment performed.
+
+---
+
 ## Session — 2026-09-27 (Keep selected dealer across reporting periods)
 
 - Commission, Activation and Payment investigations retain the selected dealer

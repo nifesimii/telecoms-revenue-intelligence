@@ -79,7 +79,7 @@ function composeMarkdown(s) {
   lines.push(`**Payment data source:** ${s.payment.data_source === 'apdp' ? 'Live · APDP' : 'Demo · Synthetic — no real MTN data used'}`);
   lines.push('');
   lines.push('## Position');
-  lines.push(`- Expected commission: **${formatNGN(s.position.expected_ngn)}**`);
+  lines.push(`- Expected activation commission: **${formatNGN(s.position.expected_ngn)}**`);
   lines.push(`- Amount settled:      **${formatNGN(s.position.paid_ngn)}**`);
   lines.push(`- Outstanding:         **${formatNGN(s.position.outstanding_ngn)}** ${s.position.variance_pct != null ? `(${s.position.variance_pct.toFixed(2)}%)` : ''}`);
   lines.push(`- Verdict:             **${s.position.headline}**`);
@@ -104,9 +104,9 @@ function composeMarkdown(s) {
   }
   if (s.orsc) {
     lines.push('');
-    lines.push('## Subscription commission (informational)');
+    lines.push('## Subscription revenue (informational)');
     lines.push(`- Devices: ${s.orsc.device_count}`);
-    lines.push(`- Total subscription: ${formatNGN(s.orsc.total_subscription_amount_ngn)}`);
+    lines.push(`- Recorded subscription revenue: ${formatNGN(s.orsc.total_subscription_amount_ngn)}`);
     lines.push(`- Zero-amount records: ${s.orsc.zero_amount_count}`);
   }
   if ((s.audit_trails || []).length > 0) {
@@ -306,7 +306,7 @@ export default function DealerStatementModal({ open, onClose, dealerId, dealerNa
               {/* 2-column: commission side + payment side */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <SectionCard title="Commission side (entitlement)">
-                  <Row label="Expected commission" value={formatNGN(data.commission.expected_ngn)} bold />
+                  <Row label="Expected activation commission" value={formatNGN(data.commission.expected_ngn)} bold />
                   <Row label="Total activations" value={data.commission.total_activations.toLocaleString()} />
                   <Row label="Qualified" value={data.commission.qualified_activation_count.toLocaleString()} tone="text-emerald-700" />
                   <Row label="Zero-commission records" value={data.commission.zero_commission_count.toLocaleString()} tone={data.commission.zero_commission_count > 0 ? 'text-amber-700' : 'text-gray-900'} />
@@ -339,12 +339,12 @@ export default function DealerStatementModal({ open, onClose, dealerId, dealerNa
                 </SectionCard>
               </div>
 
-              {/* Subscription commission — informational only */}
+              {/* Subscription revenue — informational only */}
               {data.orsc && (
-                <SectionCard title="Subscription commission (informational — not part of the reconciliation)">
+                <SectionCard title="Subscription revenue (informational — not part of the reconciliation)">
                   <div className="grid grid-cols-3 gap-3">
                     <Row label="Devices" value={data.orsc.device_count.toLocaleString()} />
-                    <Row label="Total subscription" value={formatNGN(data.orsc.total_subscription_amount_ngn)} />
+                    <Row label="Recorded subscription revenue" value={formatNGN(data.orsc.total_subscription_amount_ngn)} />
                     <Row label="Zero-amount records" value={data.orsc.zero_amount_count.toLocaleString()} />
                   </div>
                 </SectionCard>

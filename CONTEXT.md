@@ -15,6 +15,20 @@ used as the revenue basis for Ongoing Revenue Service Commission (ORSC).
 Subscription revenue alone does not establish commission payable.
 _Avoid_: ORC, ORSC payable (when referring only to subscription revenue)
 
+**Subscription commission**:
+Recurring partner earnings attributed to subscriptions on devices the partner
+originally sold. Recorded subscription revenue alone does not establish these
+earnings; an approved entitlement policy and recorded commission evidence are
+needed to establish actual amounts owed.
+
+**Settled subscription commission**:
+The portion of recorded subscription commission supported by settlement evidence.
+Missing settlement evidence does not establish a paid amount of zero.
+
+**Outstanding subscription commission**:
+Recorded subscription commission less recorded settlement for the same account
+and period. It is unknown when either amount lacks evidence.
+
 **No source records**:
 No records are available for the selected revenue stream and reporting period.
 This does not establish a verified zero balance.

@@ -1,4 +1,5 @@
 import { formatNGN } from '../../lib/format.js';
+import { SubscriptionMoney } from './SubscriptionAmounts.jsx';
 import { MoneyChange } from './CommissionSummary.jsx';
 import PaginationControls from '../shared/PaginationControls.jsx';
 
@@ -8,7 +9,7 @@ export default function CommissionAccounts({ data, busy, filters, onFilter, onSe
   return <section className="overview-surface min-w-0 overflow-hidden" aria-label="Dealer accounts" aria-busy={busy}>
     <div className="p-5 space-y-4">
       <div className="flex flex-wrap justify-between gap-2">
-        <div><h2 ref={headingRef} tabIndex={-1} className="text-lg font-semibold">Dealer accounts</h2><p className="mt-1 text-sm text-gray-600">Select an account to inspect its {orsc ? 'revenue' : 'commission'} and evidence.</p></div>
+        <div><h2 ref={headingRef} tabIndex={-1} className="text-lg font-semibold">Dealer accounts</h2><p className="mt-1 text-sm text-gray-600">Select an account to inspect its {orsc ? 'subscription revenue, commission, settlement' : 'commission'} and evidence.</p></div>
         <p className="text-sm text-gray-600">{data.total.toLocaleString()} matching accounts</p>
       </div>
       <div className="flex flex-wrap gap-3">
@@ -29,25 +30,27 @@ export default function CommissionAccounts({ data, busy, filters, onFilter, onSe
       <div className="flex flex-wrap gap-3 items-center text-sm">
         <label className="flex flex-wrap gap-2 items-center text-gray-600">Sort by
           <select className="overview-select" value={filters.sort_by} onChange={(e) => onFilter('sort_by', e.target.value)}>
-            <option value="amount_ngn">{orsc ? 'Revenue' : 'Commission'}</option><option value="dealer_name">Dealer name</option><option value="delta_ngn">Period change</option><option value="record_count">Record count</option><option value="zero_count">Zero records</option>
+            <option value="amount_ngn">{orsc ? 'Revenue' : 'Commission'}</option>{orsc && <><option value="subscription_commission_ngn">Subscription commission</option><option value="subscription_settled_ngn">Subscription settled</option><option value="subscription_outstanding_ngn">Subscription outstanding</option></>}<option value="dealer_name">Dealer name</option><option value="delta_ngn">{orsc ? 'Revenue change' : 'Period change'}</option><option value="record_count">Record count</option><option value="zero_count">Zero records</option>
           </select>
         </label>
         <button className="overview-button" onClick={() => onFilter('direction', filters.direction === 'desc' ? 'asc' : 'desc')}>{filters.direction === 'desc' ? 'Descending ↓' : 'Ascending ↑'}</button>
         {activeFilters && <button className="underline" onClick={() => onFilter('reset')}>Clear filters</button>}
-        <span className="text-xs text-gray-500 ml-auto" role="status">{busy ? 'Updating accounts…' : `Matching total: ${formatNGN(data.filtered_summary.amount_ngn)}`}</span>
+        <span className="text-xs text-gray-500 ml-auto" role="status">{busy ? 'Updating accounts…' : `Matching ${orsc ? 'revenue' : 'commission'}: ${formatNGN(data.filtered_summary.amount_ngn)}`}</span>
       </div>
+      {orsc && <dl className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-gray-600">{[['subscription_commission_ngn', 'Matching commission'], ['subscription_settled_ngn', 'Matching settled'], ['subscription_outstanding_ngn', 'Matching outstanding']].map(([field, label]) => <div key={field}><dt className="inline">{label}: </dt><dd className="inline font-medium"><SubscriptionMoney value={data.filtered_summary[field]} /></dd></div>)}</dl>}
     </div>
     <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable dealer account table">
       <table className="commission-table w-full text-sm text-left">
-        <thead><tr><th>Dealer / account</th><th className="text-right">{orsc ? 'Subscription revenue' : 'Recorded commission'}</th><th className="text-right">Prior period</th><th className="text-right">Change</th><th className="text-right">{orsc ? 'Devices' : 'Activations'}</th><th className="text-right">Zero records</th><th><span className="sr-only">Investigation</span></th></tr></thead>
+        <thead><tr><th>Dealer / account</th><th className="text-right">{orsc ? 'Subscription revenue' : 'Recorded commission'}</th>{orsc && <><th className="text-right">Recorded subscription commission</th><th className="text-right">Subscription settled</th><th className="text-right">Subscription outstanding</th></>}<th className="text-right">{orsc ? 'Prior revenue' : 'Prior period'}</th><th className="text-right">{orsc ? 'Revenue change' : 'Change'}</th><th className="text-right">{orsc ? 'Devices' : 'Activations'}</th><th className="text-right">Zero records</th>{!orsc && <th><span className="sr-only">Investigation</span></th>}</tr></thead>
         <tbody>{data.items.map((row) => <tr key={row.dealer_id}>
-          <td><div className="font-medium">{row.dealer_name}</div><div className="text-xs text-gray-500 mt-1">{row.dealer_id} · {row.account_profile_class}</div></td>
+          <td>{orsc ? <button ref={(el) => { rowRefs.current[row.dealer_id] = el; }} aria-label={`View breakdown for account ${row.dealer_id}`} className="font-medium text-left underline underline-offset-4" disabled={busy} onClick={() => onSelect(row)}>{row.dealer_name}</button> : <div className="font-medium">{row.dealer_name}</div>}<div className="text-xs text-gray-500 mt-1">{row.dealer_id} · {row.account_profile_class}</div></td>
           <td className="text-right font-semibold tabular-nums whitespace-nowrap">{formatNGN(row.amount_ngn)}</td>
+          {orsc && ['subscription_commission_ngn', 'subscription_settled_ngn', 'subscription_outstanding_ngn'].map((field) => <td key={field} className="text-right tabular-nums whitespace-nowrap"><SubscriptionMoney value={row[field]} /></td>)}
           <td className="text-right tabular-nums whitespace-nowrap">{row.prior_amount_ngn == null ? <span className="text-gray-500">{data.prior_period ? 'No prior record' : '—'}</span> : formatNGN(row.prior_amount_ngn)}</td>
           <td className="text-right"><MoneyChange value={row.delta_ngn} />{row.delta_pct != null && <div className="text-xs text-gray-500 mt-1">{row.delta_pct > 0 ? '+' : ''}{row.delta_pct}%</div>}</td>
           <td className="text-right tabular-nums">{row.record_count.toLocaleString()}</td>
           <td className="text-right tabular-nums">{row.zero_count > 0 ? <span className="text-amber-900 bg-amber-50 rounded px-2 py-1">{row.zero_count.toLocaleString()}</span> : '0'}</td>
-          <td><button ref={(el) => { rowRefs.current[row.dealer_id] = el; }} aria-label={`View breakdown for account ${row.dealer_id}`} className="overview-button whitespace-nowrap" disabled={busy} onClick={() => onSelect(row)}>View breakdown →</button></td>
+          {!orsc && <td><button ref={(el) => { rowRefs.current[row.dealer_id] = el; }} aria-label={`View breakdown for account ${row.dealer_id}`} className="overview-button whitespace-nowrap" disabled={busy} onClick={() => onSelect(row)}>View breakdown →</button></td>}
         </tr>)}</tbody>
       </table>
     </div>

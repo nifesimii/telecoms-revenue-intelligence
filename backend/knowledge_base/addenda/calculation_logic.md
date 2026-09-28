@@ -25,11 +25,19 @@ AND first_activation_date != ''
 -- Step 4: commission_rate = unit_selling_price * 0.10
 ```
 
-### ORSC commission calculation
+### ORSC source preparation — subscription commission policy unconfirmed
+
+The steps below describe recorded source preparation, not an approved commission
+policy. `data_subscription_amount` is monthly subscription revenue for an IMEI.
+It is not, by itself, an established commission payable amount. The actual
+subscription commission rate, eligibility terms and upstream payable field must
+be confirmed with the business owner and source system before validating live
+subscription commission. Do not apply the activation rate to subscription revenue.
 
 ```sql
 -- Step 1: Pull ORSC summary for the reporting month
--- Same 6-month eligibility window on last_detection_date
+-- Historical source notes describe a 6-month filter on last_detection_date;
+-- this does not establish an approved subscription commission eligibility rule.
 WHERE month_period = {YYYYMM}
 AND rnk = 1  -- most recent last_detection_date per IMEI
 
@@ -37,8 +45,8 @@ AND rnk = 1  -- most recent last_detection_date per IMEI
 -- Join key: substring(imei, 1, 14) = substring(serial_no, 1, 14)  -- 14-char IMEI match
 -- IFS filter: tbl_dt BETWEEN {YYYYMM}01 AND {YYYYMM}30, bill_to_customer_account_type_name = 'External', unit_selling_price > 0
 
--- Step 3: ORSC payable = data_subscription_amount (already a monetary value from source)
--- No rate multiplication needed — data_subscription_amount IS the commission basis
+-- Step 3: retain data_subscription_amount as recorded subscription revenue.
+-- No subscription commission payable or approved rate is established here.
 ```
 
 ### Partner type enrichment (both tables)
