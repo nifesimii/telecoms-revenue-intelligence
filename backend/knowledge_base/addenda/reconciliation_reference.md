@@ -6,11 +6,5 @@ The comparison anchors Finance uses to validate the automated commission output.
 | ------------------------- | ------------------------------------- | ---------------------------------------------------------- | ------------------------------------------- |
 | Activation record count   | Finance's UDDM copy from prior months | `development.fbb_comm_dev_act` row count                   | Must match within transaction lag tolerance |
 | Unit selling price        | Finance's manual Excel reports        | USP dimension joined to dev_act                            | Must match exactly for each product_code    |
-| ORSC subscription revenue | Finance statement with explicitly comparable subscription revenue | `development.fbb_comm_orsc.data_subscription_amount` | Compare revenue per IMEI/month only; not commission payable or settlement |
+| ORSC subscription amounts | Finance's settlement statements       | `development.fbb_comm_orsc.data_subscription_amount`       | Must match per IMEI per month               |
 | Partner classification    | Finance's TAS master view             | `account_profile_class` from tas_augmented_customer_master | Mismatches indicate stale TAS join          |
-
-Subscription revenue alone cannot validate commission or payment. Such a
-reconciliation requires separately verified commission terms, recorded
-commission calculations and settlement evidence; those production subscription
-inputs are not available here. The synthetic subscription demonstration has
-its own explicitly illustrative policy and separate supplied settlement records.

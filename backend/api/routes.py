@@ -24,7 +24,6 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
-from backend.api.subscription_provenance import qualify_subscription_answer
 from backend.agent.agent import run_agent
 from backend.agent import tool_executor
 from backend.api.schemas import (
@@ -60,7 +59,6 @@ from backend import config
 from backend.assurance.registry import ASSURANCE_REGISTRY, is_implemented
 from backend.db import queries
 from backend.db.connection import execute_query
-from backend.api.subscription_routes import router as subscription_router
 from backend.api.commission_routes import router as commission_router
 from backend.api.activation_workspace_routes import router as activation_workspace_router
 from backend.api.audit_workspace_routes import router as audit_workspace_router
@@ -73,7 +71,6 @@ router = APIRouter()
 router.include_router(audit_workspace_router)
 router.include_router(financial_health_router)
 router.include_router(commission_router)
-router.include_router(subscription_router)
 router.include_router(activation_workspace_router)
 
 CHAT_FAILURE_MESSAGE = "I was unable to process that request. Please try again."
@@ -127,16 +124,14 @@ async def chat(request: ChatRequest) -> ChatResponse:
     except Exception as exc:  # noqa: BLE001 — never 500 on /chat
         logger.exception("POST /chat: run_agent raised")
         return ChatResponse(
-            response=qualify_subscription_answer(CHAT_FAILURE_MESSAGE, message=request.message, history=request.conversation_history),
+            response=CHAT_FAILURE_MESSAGE,
             tools_called=[],
             raw_data={},
             error=f"{type(exc).__name__}: {exc}",
         )
 
     return ChatResponse(
-        response=qualify_subscription_answer(result.get("response", ""), message=request.message,
-            history=request.conversation_history, raw_data=result.get("raw_data", {}),
-            tools_called=result.get("tools_called", [])),
+        response=result.get("response", ""),
         tools_called=list(result.get("tools_called", [])),
         raw_data=dict(result.get("raw_data", {})),
         error=None,

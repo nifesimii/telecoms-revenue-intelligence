@@ -1,10 +1,5 @@
 # Commission investigation workspace
 
-September 28 update: the subscription tab now has a separately scoped synthetic
-commission demonstration governed by `SUBSCRIPTION_COMMISSION_DEMO.md`. Its
-illustrative ledger and settlement evidence are distinct from the historical
-ORSC revenue view described below. Live revenue semantics are unchanged.
-
 Scope: accepted Commission Intelligence recommendations in the September 13
 conversation. Review baseline: 43e4ce26aac7b240b906ed6827ab828d1ce434bc.
 

@@ -25,7 +25,7 @@ AND first_activation_date != ''
 -- Step 4: commission_rate = unit_selling_price * 0.10
 ```
 
-### ORSC subscription revenue extraction (commission terms unverified)
+### ORSC commission calculation
 
 ```sql
 -- Step 1: Pull ORSC summary for the reporting month
@@ -37,18 +37,9 @@ AND rnk = 1  -- most recent last_detection_date per IMEI
 -- Join key: substring(imei, 1, 14) = substring(serial_no, 1, 14)  -- 14-char IMEI match
 -- IFS filter: tbl_dt BETWEEN {YYYYMM}01 AND {YYYYMM}30, bill_to_customer_account_type_name = 'External', unit_selling_price > 0
 
--- Step 3: data_subscription_amount is recorded monthly subscription revenue.
--- It does not establish commission payable. Verified production terms and
--- recorded commission calculations are not supplied by this source.
+-- Step 3: ORSC payable = data_subscription_amount (already a monetary value from source)
+-- No rate multiplication needed — data_subscription_amount IS the commission basis
 ```
-
-The source's extraction window and detection-date fields do not verify MTN
-subscription commission eligibility, rate, or payment terms. In particular,
-`first_activation_date` in this revenue extract maps to `last_detection_date`;
-it must not be used to apply the illustrative original-activation anniversary.
-Only the separate offline subscription demo generator calculates its fictional
-policy. The runtime consumes those recorded fixtures, never this revenue field
-as payable. See the core KB's illustrative subscription demonstration section.
 
 ### Partner type enrichment (both tables)
 

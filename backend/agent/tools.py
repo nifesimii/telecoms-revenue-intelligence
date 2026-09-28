@@ -604,10 +604,7 @@ COMPILE_DATA_COVERAGE_TICKET: dict[str, Any] = {
 }
 
 
-from backend.agent.subscription_tools import SUBSCRIPTION_TOOLS
-
 TOOLS: list[dict[str, Any]] = [
-    *SUBSCRIPTION_TOOLS,
     GET_DEALER_SUMMARY,
     GET_ZERO_COMMISSION_RECORDS,
     GET_MONTH_ON_MONTH_VARIANCE,

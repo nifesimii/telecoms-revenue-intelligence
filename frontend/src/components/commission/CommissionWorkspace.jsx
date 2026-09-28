@@ -9,7 +9,6 @@ import CommissionSummary from './CommissionSummary.jsx';
 import CommissionAccounts from './CommissionAccounts.jsx';
 import CommissionDetail from './CommissionDetail.jsx';
 import CommissionAssistant from './CommissionAssistant.jsx';
-import SubscriptionWorkspace from './SubscriptionWorkspace.jsx';
 
 export default function CommissionWorkspace(props) {
   const { period, error, loading } = usePeriod();
@@ -35,16 +34,16 @@ function PeriodWorkspace({ period, stream, setStream, ...props }) {
         <div><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">Finance & revenue assurance</p>
           <h1 className="text-2xl font-semibold tracking-tight mt-1">Commission Intelligence</h1>
           <p className="text-sm text-gray-600 mt-2">Understand the figure. Investigate the difference. Follow the evidence.</p></div>
-        {stream !== 'orsc' && <label className="text-sm text-gray-600 flex flex-wrap items-center gap-3">Compare {formatPeriod(period)} with
+        <label className="text-sm text-gray-600 flex flex-wrap items-center gap-3">Compare {formatPeriod(period)} with
           <select className="overview-select" value={comparison} onChange={(e) => setComparison(e.target.value)}>
             <option value="">No comparison</option>{earlier.map((p) => <option key={p} value={p}>{formatPeriod(p)}</option>)}
           </select>
-        </label>}
+        </label>
       </header>
       <div className="flex flex-wrap gap-2" role="group" aria-label="Commission revenue stream">
         {[['activation', 'Activation commission'], ['orsc', 'Subscription commission']].map(([value, label]) => <button key={value} className={`overview-button ${stream === value ? 'overview-primary' : ''}`} aria-pressed={stream === value} onClick={() => { props.onAssistantScopeClear?.(); if (value !== stream) props.setSelected(null); setStream(value); }}>{label}</button>)}
       </div>
-      {stream === 'orsc' ? <SubscriptionWorkspace period={period} {...props} /> : <AccountWorkspace key={stream} period={period} comparison={comparison} stream={stream} {...props} />}
+      <AccountWorkspace key={stream} period={period} comparison={comparison} stream={stream} {...props} />
     </div>
   </main>;
 }

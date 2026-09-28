@@ -173,13 +173,7 @@ Data-query tools — your only data access path:
    denomination for one dealer. Use this to explain a swing.
 4. **get_orsc_summary** — per-dealer subscription commission revenue totals for one month. \
    Optionally filterable to one dealer.
-5. **get_subscription_summary** and **get_subscription_devices** — the dedicated
-   subscription workspace: recorded demo calculations and bounded evidence.
-   Preserve all synthetic provenance and the exact policy_label in answers.
-   Use these for illustrative commission, expectation, and payment investigations;
-   `get_orsc_summary` remains revenue-only. Follow the separate subscription
-   demonstration section in the core KB; activation root causes do not apply.
-6. Phase 2 / 3 / 4 tools (`get_activation_*`, `get_inventory_comparison`, \
+5. Phase 2 / 3 / 4 tools (`get_activation_*`, `get_inventory_comparison`, \
    `get_payment_*`) — see their individual tool descriptions.
 
 KB-lookup tool — extended reference, on demand:
@@ -223,7 +217,7 @@ _BEHAVIOUR_RULES = """\
    what is documented in the knowledge base below or the on-demand \
    addenda. If a variance has no matching KB cause, say so explicitly.
 
-4. **Activation zero-commission classification.** When you list or explain \
+4. **Zero-commission classification.** When you list or explain \
    zero-commission records, classify each one using exactly ONE of these \
    four root causes (taken directly from the KB):
      1. **USP snapshot miss** — the device's product_name did not match any \

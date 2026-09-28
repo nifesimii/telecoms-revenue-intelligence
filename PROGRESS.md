@@ -5,44 +5,6 @@ end of each work session. Newest session on top.
 
 ---
 
-## Session — 2026-09-28 (Synthetic subscription commission demonstration)
-
-- Replaced the Commission subscription tab's revenue-only sample presentation
-  with a separate illustrative ledger: eight synthetic dealers, ten devices per
-  month, January–June. Original selling dealer, PAID activity, eligibility,
-  eligible revenue, recorded simulated commission, expectation variance and
-  subscription settlement evidence form one explorable chain.
-- Exact illustrative-policy disclosure survives API, UI, CSV and assistant
-  responses, including follow-ups/failures. Corrected both calculation and
-  reconciliation KB ambiguities. Live mode still cannot establish commission;
-  the existing Presto adapter remains a stub.
-- Offline generation alone applies the demo's 12-month window, per-device
-  NGN 5,000.00 minimum, 5% rate and next-month-end due date. Runtime consumes
-  supplied records. Payment states use the fixed 2026-07-15 evidence snapshot;
-  unknown evidence stays null and contextual churn requires sufficient history.
-- Dealer and device reads are bounded (max 100), with server filters, stable
-  sorting and whole-filter totals; TanStack caches lazy device evidence.
-  Dealer selection survives reporting-month changes. Subscription settlement
-  evidence remains separate from activation Payments and APDP.
-- Fresh Herdr backend/UI agents implemented disjoint slices; backend tests
-  passed before frontend edits. Distinct Standards and Spec reviewers ran in
-  parallel. All four findings resolved: stable scenario identities, shared and
-  validated supplied labels, device-filter totals, remaining KB ambiguity.
-- Independent final validation: **290 backend passed, 28 existing skips**;
-  **9 frontend tests passed**, production build passed (existing bundle-size
-  warning; no standalone typecheck). Red/green coverage includes fixture policy,
-  bounded APIs, nulls, history, exports, assistant provenance and filtered totals.
-- Isolated Chrome/API QA passed 111 assertions across narratives, payment timing,
-  history, lazy requests/cache, dealer continuity/focus, filters/export, empty/
-  retry/live-substitute states and 320/768/1024/1440px layouts. Normal runtime
-  console clean; deliberate HTTP 500 injections exercised error handling.
-- All six fixtures reproduce byte-for-byte. Existing CSVs and protected review/
-  presentation artifacts are unchanged. No billed AI, real Presto, production
-  writes, deployment or push. Walkthrough and limits:
-  `docs/SUBSCRIPTION_COMMISSION_DEMO.md`.
-
----
-
 ## Session — 2026-09-27 (Keep selected dealer across reporting periods)
 
 - Commission, Activation and Payment investigations retain the selected dealer

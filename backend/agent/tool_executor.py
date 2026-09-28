@@ -259,19 +259,10 @@ def _handle_compile_data_coverage_ticket(
     }
 
 
-def _subscription_result(tool_use_id, tool_input, name):
-    from backend.agent import subscription_tools
-    handler = subscription_tools.summary if name == 'get_subscription_summary' else subscription_tools.devices
-    return {'type': 'tool_result', 'tool_use_id': tool_use_id,
-            'content': json.dumps({'tool': name, 'parameters': tool_input, **handler(tool_input)}, ensure_ascii=False)}
-
-
 # Registry: tool name -> (tool_use_id, tool_input) -> tool_result dict
 _DIRECT_HANDLERS: dict[
     str, Callable[[str, dict[str, Any]], dict[str, Any]]
 ] = {
-    "get_subscription_summary": lambda id, params: _subscription_result(id, params, 'get_subscription_summary'),
-    "get_subscription_devices": lambda id, params: _subscription_result(id, params, 'get_subscription_devices'),
     "get_kb_section": _handle_get_kb_section,
     "get_dealer_full_context": _handle_get_dealer_full_context,
     "compile_data_coverage_ticket": _handle_compile_data_coverage_ticket,

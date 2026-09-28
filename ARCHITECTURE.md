@@ -338,28 +338,6 @@ on request. AI conversations are scoped by account, period, comparison and
 stream; a subscription-backed store persists answers even if a component
 unmounts while a request is pending. No question is automatically sent.
 
-### Subscription commission — a separate illustrative ledger
-
-The Commission workspace's subscription stream has a dedicated `/subscriptions`
-read contract: bounded dealer accounts, exact dealer `/detail`, bounded lazy
-`/devices` evidence and a filtered `/export`. Server filtering, deterministic
-sorting and whole-filter aggregates precede paging (maximum 100). The original
-ORSC revenue queries remain available; revenue does not establish payable.
-
-Sample mode consumes a separate synthetic ledger for January–June 2026. Only
-its offline generator applies the illustrative policy; request-time code reads
-the supplied revenue, eligibility, commission, expectation and settlement
-evidence. Subscription settlements never enter activation Payment collections
-or APDP reconciliation. A fixed evidence date makes payment and activity-history
-states reproducible, rather than introducing live churn monitoring.
-
-Every illustrative result carries synthetic provenance and the exact label
-“Illustrative subscription commission policy—not confirmed MTN terms.” Live mode
-exposes recorded subscription revenue with commission, expectation and payment
-evidence unavailable. Missing inputs stay null; contextual churn is separate
-from a device's monthly exclusion reason. See
-`docs/SUBSCRIPTION_COMMISSION_DEMO.md` for the approved policy and walkthrough.
-
 ### Activation workspace — activity, qualification and evidence
 
 `api/activation_workspace_routes.py` exposes `/activations/accounts`, its matching
