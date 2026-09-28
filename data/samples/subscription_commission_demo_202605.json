@@ -1,0 +1,593 @@
+{
+  "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+  "synthetic": true,
+  "evidence_as_of": "2026-07-15",
+  "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility.",
+  "mon_period": "202605",
+  "records": [
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2025-10-01",
+      "eligibility_end_exclusive": "2026-10-01",
+      "purchases": [
+        {
+          "date": "2026-05-10",
+          "status": "PAID",
+          "amount_ngn": 10000
+        }
+      ],
+      "paid_subscription_count": 1,
+      "recorded_subscription_revenue_ngn": 10000.0,
+      "eligible_revenue_ngn": 10000.0,
+      "qualifying_revenue_ngn": 10000.0,
+      "simulated_commission_ngn": 500.0,
+      "dealer_expectation_ngn": 500,
+      "variance_ngn": 0.0,
+      "reason": "eligible",
+      "scenario": "eligible",
+      "dealer_id": "SYN-SUB-001",
+      "dealer_name": "Synthetic Renewal Partners",
+      "account_profile_class": "FIXED BROADBAND",
+      "imei": "990000000000000",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-001",
+      "activity_evidence_complete": true,
+      "eligibility_status": "within_window",
+      "paid_subscription_dates": [
+        "2026-05-10"
+      ],
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": true
+        }
+      ],
+      "history_complete": true,
+      "churn_indicator": false,
+      "due_date": "2026-06-30",
+      "payment_status": "paid",
+      "amount_paid_ngn": 500.0,
+      "outstanding_ngn": 0.0,
+      "payment_date": "2026-05-20",
+      "payment_evidence_reference": "SYN-SUB-SETTLEMENT-202605-00",
+      "expectation_reference": "SYN-SUB-EXPECTATION-202605-00",
+      "variance_explanation": "Paid revenue qualifies; recorded commission agrees with the supplied dealer expectation.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    },
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2025-10-01",
+      "eligibility_end_exclusive": "2026-10-01",
+      "purchases": [
+        {
+          "date": "2026-05-10",
+          "status": "PAID",
+          "amount_ngn": 5000
+        }
+      ],
+      "paid_subscription_count": 1,
+      "recorded_subscription_revenue_ngn": 5000.0,
+      "eligible_revenue_ngn": 5000.0,
+      "qualifying_revenue_ngn": 5000.0,
+      "simulated_commission_ngn": 250.0,
+      "dealer_expectation_ngn": 250,
+      "variance_ngn": 0.0,
+      "reason": "eligible",
+      "scenario": "threshold",
+      "dealer_id": "SYN-SUB-002",
+      "dealer_name": "Synthetic Threshold Partners",
+      "account_profile_class": "FIXED BROADBAND",
+      "imei": "990000000000001",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-002",
+      "activity_evidence_complete": true,
+      "eligibility_status": "within_window",
+      "paid_subscription_dates": [
+        "2026-05-10"
+      ],
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": true
+        }
+      ],
+      "history_complete": true,
+      "churn_indicator": false,
+      "due_date": "2026-06-30",
+      "payment_status": "paid",
+      "amount_paid_ngn": 250.0,
+      "outstanding_ngn": 0.0,
+      "payment_date": "2026-05-20",
+      "payment_evidence_reference": "SYN-SUB-SETTLEMENT-202605-01",
+      "expectation_reference": "SYN-SUB-EXPECTATION-202605-01",
+      "variance_explanation": "Exactly NGN 5,000.00 on this device qualifies; all qualifying revenue earns the illustrative rate.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    },
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2025-10-01",
+      "eligibility_end_exclusive": "2026-10-01",
+      "purchases": [
+        {
+          "date": "2026-05-10",
+          "status": "PAID",
+          "amount_ngn": 4000
+        }
+      ],
+      "paid_subscription_count": 1,
+      "recorded_subscription_revenue_ngn": 4000.0,
+      "eligible_revenue_ngn": 0.0,
+      "qualifying_revenue_ngn": 4000.0,
+      "simulated_commission_ngn": 0.0,
+      "dealer_expectation_ngn": 200,
+      "variance_ngn": -200.0,
+      "reason": "below_minimum",
+      "scenario": "below_minimum",
+      "dealer_id": "SYN-SUB-002",
+      "dealer_name": "Synthetic Threshold Partners",
+      "account_profile_class": "FIXED BROADBAND",
+      "imei": "990000000000002",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-002",
+      "activity_evidence_complete": true,
+      "eligibility_status": "within_window",
+      "paid_subscription_dates": [
+        "2026-05-10"
+      ],
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": true
+        }
+      ],
+      "history_complete": true,
+      "churn_indicator": false,
+      "due_date": null,
+      "payment_status": "not_applicable",
+      "amount_paid_ngn": 0.0,
+      "outstanding_ngn": 0.0,
+      "payment_date": null,
+      "payment_evidence_reference": "SYN-SUB-SETTLEMENT-202605-02",
+      "expectation_reference": "SYN-SUB-EXPECTATION-202605-02",
+      "variance_explanation": "Dealer expected commission on NGN 4,000.00; this device is below the monthly minimum.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    },
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2025-10-01",
+      "eligibility_end_exclusive": "2026-10-01",
+      "purchases": [
+        {
+          "date": "2026-05-10",
+          "status": "FAILED",
+          "amount_ngn": 10000
+        }
+      ],
+      "paid_subscription_count": 0,
+      "recorded_subscription_revenue_ngn": 0.0,
+      "eligible_revenue_ngn": 0.0,
+      "qualifying_revenue_ngn": 0.0,
+      "simulated_commission_ngn": 0.0,
+      "dealer_expectation_ngn": 500,
+      "variance_ngn": -500.0,
+      "reason": "no_paid_subscription",
+      "scenario": "no_renewal",
+      "dealer_id": "SYN-SUB-003",
+      "dealer_name": "Synthetic Renewal Gap Partners",
+      "account_profile_class": "FIXED BROADBAND",
+      "imei": "990000000000003",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-003",
+      "activity_evidence_complete": true,
+      "eligibility_status": "within_window",
+      "paid_subscription_dates": [],
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": false
+        }
+      ],
+      "history_complete": true,
+      "churn_indicator": false,
+      "due_date": null,
+      "payment_status": "not_applicable",
+      "amount_paid_ngn": 0.0,
+      "outstanding_ngn": 0.0,
+      "payment_date": null,
+      "payment_evidence_reference": "SYN-SUB-SETTLEMENT-202605-03",
+      "expectation_reference": "SYN-SUB-EXPECTATION-202605-03",
+      "variance_explanation": "Dealer expected a renewal; supplied monthly activity shows no paid subscription. This is not proof of churn.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    },
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2024-12-01",
+      "eligibility_end_exclusive": "2025-12-01",
+      "purchases": [
+        {
+          "date": "2026-05-10",
+          "status": "PAID",
+          "amount_ngn": 15000
+        }
+      ],
+      "paid_subscription_count": 1,
+      "recorded_subscription_revenue_ngn": 15000.0,
+      "eligible_revenue_ngn": 0.0,
+      "qualifying_revenue_ngn": 0.0,
+      "simulated_commission_ngn": 0.0,
+      "dealer_expectation_ngn": 750,
+      "variance_ngn": -750.0,
+      "reason": "expired_eligibility",
+      "scenario": "expired",
+      "dealer_id": "SYN-SUB-004",
+      "dealer_name": "Synthetic Expired Window Partners",
+      "account_profile_class": "FIXED BROADBAND",
+      "imei": "990000000000004",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-004",
+      "activity_evidence_complete": true,
+      "eligibility_status": "expired",
+      "paid_subscription_dates": [
+        "2026-05-10"
+      ],
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": true
+        }
+      ],
+      "history_complete": true,
+      "churn_indicator": false,
+      "due_date": null,
+      "payment_status": "not_applicable",
+      "amount_paid_ngn": 0.0,
+      "outstanding_ngn": 0.0,
+      "payment_date": null,
+      "payment_evidence_reference": "SYN-SUB-SETTLEMENT-202605-04",
+      "expectation_reference": "SYN-SUB-EXPECTATION-202605-04",
+      "variance_explanation": "Dealer expected commission on a renewal after the original eligibility anniversary. Renewals do not restart it.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    },
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2025-10-01",
+      "eligibility_end_exclusive": "2026-10-01",
+      "purchases": [
+        {
+          "date": "2026-05-10",
+          "status": "PAID",
+          "amount_ngn": 12000
+        }
+      ],
+      "paid_subscription_count": 1,
+      "recorded_subscription_revenue_ngn": 12000.0,
+      "eligible_revenue_ngn": 12000.0,
+      "qualifying_revenue_ngn": 12000.0,
+      "simulated_commission_ngn": 600.0,
+      "dealer_expectation_ngn": 600,
+      "variance_ngn": 0.0,
+      "reason": "eligible",
+      "scenario": "overdue",
+      "dealer_id": "SYN-SUB-005",
+      "dealer_name": "Synthetic Settlement Review Partners",
+      "account_profile_class": "FIXED BROADBAND",
+      "imei": "990000000000005",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-005",
+      "activity_evidence_complete": true,
+      "eligibility_status": "within_window",
+      "paid_subscription_dates": [
+        "2026-05-10"
+      ],
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": true
+        }
+      ],
+      "history_complete": true,
+      "churn_indicator": false,
+      "due_date": "2026-06-30",
+      "payment_status": "overdue",
+      "amount_paid_ngn": 0.0,
+      "outstanding_ngn": 600.0,
+      "payment_date": null,
+      "payment_evidence_reference": "SYN-SUB-SETTLEMENT-202605-05",
+      "expectation_reference": "SYN-SUB-EXPECTATION-202605-05",
+      "variance_explanation": "Earnings match expectation; supplied settlement evidence shows no payment as of the evidence date. Due date determines overdue versus not yet due.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    },
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2025-10-01",
+      "eligibility_end_exclusive": "2026-10-01",
+      "purchases": [
+        {
+          "date": "2026-05-10",
+          "status": "PAID",
+          "amount_ngn": 8000
+        }
+      ],
+      "paid_subscription_count": 1,
+      "recorded_subscription_revenue_ngn": 8000.0,
+      "eligible_revenue_ngn": 8000.0,
+      "qualifying_revenue_ngn": 8000.0,
+      "simulated_commission_ngn": 400.0,
+      "dealer_expectation_ngn": 400,
+      "variance_ngn": 0.0,
+      "reason": "eligible",
+      "scenario": "unknown_payment",
+      "dealer_id": "SYN-SUB-006",
+      "dealer_name": "Synthetic Missing Payment Partners",
+      "account_profile_class": "FIXED BROADBAND",
+      "imei": "990000000000006",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-006",
+      "activity_evidence_complete": true,
+      "eligibility_status": "within_window",
+      "paid_subscription_dates": [
+        "2026-05-10"
+      ],
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": true
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": true
+        }
+      ],
+      "history_complete": true,
+      "churn_indicator": false,
+      "due_date": "2026-06-30",
+      "payment_status": "unknown",
+      "amount_paid_ngn": null,
+      "outstanding_ngn": null,
+      "payment_date": null,
+      "payment_evidence_reference": null,
+      "expectation_reference": "SYN-SUB-EXPECTATION-202605-06",
+      "variance_explanation": "Earnings match expectation; subscription settlement evidence is missing, so payment cannot be established.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    },
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2025-10-01",
+      "eligibility_end_exclusive": "2026-10-01",
+      "purchases": [],
+      "paid_subscription_count": 0,
+      "recorded_subscription_revenue_ngn": 0.0,
+      "eligible_revenue_ngn": 0.0,
+      "qualifying_revenue_ngn": 0.0,
+      "simulated_commission_ngn": 0.0,
+      "dealer_expectation_ngn": 500,
+      "variance_ngn": -500.0,
+      "reason": "no_paid_subscription",
+      "scenario": "churn_context",
+      "dealer_id": "SYN-SUB-007",
+      "dealer_name": "Synthetic History Review Partners",
+      "account_profile_class": "FIXED BROADBAND",
+      "imei": "990000000000007",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-007",
+      "activity_evidence_complete": true,
+      "eligibility_status": "within_window",
+      "paid_subscription_dates": [],
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": false
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": false
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": false
+        }
+      ],
+      "history_complete": true,
+      "churn_indicator": true,
+      "due_date": null,
+      "payment_status": "not_applicable",
+      "amount_paid_ngn": 0.0,
+      "outstanding_ngn": 0.0,
+      "payment_date": null,
+      "payment_evidence_reference": "SYN-SUB-SETTLEMENT-202605-07",
+      "expectation_reference": "SYN-SUB-EXPECTATION-202605-07",
+      "variance_explanation": "Three complete consecutive months show no paid subscriptions. Churn is contextual; exclusion is no paid subscription this month.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    },
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2025-10-01",
+      "eligibility_end_exclusive": "2026-10-01",
+      "purchases": [],
+      "paid_subscription_count": 0,
+      "recorded_subscription_revenue_ngn": 0.0,
+      "eligible_revenue_ngn": 0.0,
+      "qualifying_revenue_ngn": 0.0,
+      "simulated_commission_ngn": 0.0,
+      "dealer_expectation_ngn": 500,
+      "variance_ngn": -500.0,
+      "reason": "no_paid_subscription",
+      "scenario": "missing_history",
+      "dealer_id": "SYN-SUB-007",
+      "dealer_name": "Synthetic History Review Partners",
+      "account_profile_class": "FIXED BROADBAND",
+      "imei": "990000000000008",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-007",
+      "activity_evidence_complete": true,
+      "eligibility_status": "within_window",
+      "paid_subscription_dates": [],
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": false
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": false
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": false
+        }
+      ],
+      "history_complete": true,
+      "churn_indicator": true,
+      "due_date": null,
+      "payment_status": "not_applicable",
+      "amount_paid_ngn": 0.0,
+      "outstanding_ngn": 0.0,
+      "payment_date": null,
+      "payment_evidence_reference": "SYN-SUB-SETTLEMENT-202605-08",
+      "expectation_reference": "SYN-SUB-EXPECTATION-202605-08",
+      "variance_explanation": "Three supplied consecutive months show no paid subscriptions. Churn is contextual only.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    },
+    {
+      "mon_period": "202605",
+      "first_activation_date": "2025-10-01",
+      "eligibility_end_exclusive": "2026-10-01",
+      "purchases": [],
+      "paid_subscription_count": null,
+      "recorded_subscription_revenue_ngn": null,
+      "eligible_revenue_ngn": null,
+      "qualifying_revenue_ngn": null,
+      "simulated_commission_ngn": null,
+      "dealer_expectation_ngn": null,
+      "variance_ngn": null,
+      "reason": "unknown_evidence",
+      "scenario": "unknown_activity",
+      "dealer_id": "SYN-SUB-008",
+      "dealer_name": "Synthetic Evidence Gap Partners",
+      "account_profile_class": null,
+      "imei": "990000000000009",
+      "product_name": "Synthetic FBB Router",
+      "selling_dealer_id": "SYN-SUB-008",
+      "activity_evidence_complete": false,
+      "eligibility_status": "unknown",
+      "paid_subscription_dates": null,
+      "history": [
+        {
+          "mon_period": "202603",
+          "has_paid_subscription": null
+        },
+        {
+          "mon_period": "202604",
+          "has_paid_subscription": null
+        },
+        {
+          "mon_period": "202605",
+          "has_paid_subscription": null
+        }
+      ],
+      "history_complete": false,
+      "churn_indicator": null,
+      "due_date": null,
+      "payment_status": "unknown",
+      "amount_paid_ngn": null,
+      "outstanding_ngn": null,
+      "payment_date": null,
+      "payment_evidence_reference": null,
+      "expectation_reference": null,
+      "variance_explanation": "Monthly activity evidence is missing. Revenue, eligibility result, earnings, expectation and payment amounts remain unknown.",
+      "source": "Synthetic subscription commission fixtures",
+      "synthetic": true,
+      "policy_label": "Illustrative subscription commission policy—not confirmed MTN terms.",
+      "evidence_as_of": "2026-07-15",
+      "eligibility_boundary": "PAID purchase date >= first activation and < its 12-calendar-month anniversary; Feb 29 anniversary clamps to Feb 28. Renewals do not restart eligibility."
+    }
+  ]
+}

@@ -1553,3 +1553,16 @@ def get_available_periods() -> list[str]:
         "get_available_periods is not implemented for live Presto mode yet "
         "— to be implemented when the service account is provisioned."
     )
+
+
+def get_subscription_demo_records(mon_period: str) -> dict | None:
+    """Read supplied offline calculations, never calculate subscription policy here."""
+    import json
+    from datetime import datetime
+    datetime.strptime(mon_period, '%Y%m')
+    if len(mon_period) != 6 or not mon_period.isdigit():
+        raise ValueError('Expected YYYYMM')
+    path = config.PROJECT_ROOT / 'data' / 'samples' / f'subscription_commission_demo_{mon_period}.json'
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding='utf-8'))

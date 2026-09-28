@@ -1,5 +1,34 @@
 # ORSC demo data
 
+## Separate subscription commission demonstration
+
+`subscription_commission_demo_YYYYMM.json` supplies a wholly fictional ledger
+for January–June 2026, with eight synthetic dealers and ten devices per month.
+It is separate from the ORSC revenue CSVs and activation payment simulation.
+
+**Illustrative subscription commission policy—not confirmed MTN terms.**
+
+Regenerate only this ledger from the repository root:
+
+```sh
+python -m backend.data.generate_subscription_demo
+```
+
+The offline generator records paid activity, original activation eligibility,
+qualifying/eligible revenue, simulated commission, expectation variance,
+subscription settlement evidence and contextual activity history. The runtime
+only reads these records. Payment status uses the fixed evidence date
+2026-07-15. Stable device identities and histories agree across reporting months;
+the missing-history control has unknown pre-January activity which progressively
+becomes sufficient as reporting months accumulate. Existing CSVs are unchanged.
+
+The Commission subscription tab carries synthetic provenance through the API,
+device evidence, CSV export and assistant responses. Live mode remains
+revenue-only. See `docs/SUBSCRIPTION_COMMISSION_DEMO.md` for policy boundaries,
+dealer walkthrough and verification.
+
+## Historical ORSC revenue fixtures
+
 `fbb_comm_orsc_sample.csv` is the existing February 2026 reference sample.
 `fbb_comm_orsc_202603.csv` is **synthetic March 2026 demo data**, not a March
 source extract, validated revenue or a commission-payable figure.
