@@ -18,6 +18,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import inspect
+import time
 from typing import Any
 
 import anthropic
@@ -25,6 +27,7 @@ import anthropic
 from backend import config
 from backend.agent import prompts, tool_executor
 from backend.agent.tools import TOOLS
+from backend.agent.inference import InferenceRun, cached_system, new_client
 
 logger = logging.getLogger(__name__)
 
@@ -33,24 +36,48 @@ MODEL_NAME = "claude-sonnet-4-5"
 MAX_TOKENS = 2048
 MAX_TOOL_ITERATIONS = 5  # safety cap — protects against pathological loops
 
-# --- Rate-limit retry ---
-# When Anthropic returns 429 (RateLimitError), retry up to
-# RATE_LIMIT_MAX_RETRIES times with a fixed RATE_LIMIT_RETRY_DELAY_SECONDS
-# wait between attempts. If every retry also rate-limits, the final
-# RateLimitError propagates and the standard ``except Exception`` path in
-# run_agent returns FALLBACK_RESPONSE — no exception escapes to the caller.
-RATE_LIMIT_MAX_RETRIES = 3
-RATE_LIMIT_RETRY_DELAY_SECONDS = 20
-
 # --- User-facing fallback ---
 FALLBACK_RESPONSE = (
     "I encountered an error retrieving that data. Please try again."
 )
 
 
-async def run_agent(
+async def run_agent(user_message: str, conversation_history: list | None = None) -> dict:
+    """Run a complete conversation turn within a single 90-second budget."""
+    run = InferenceRun("chat")
+    client = None
+    status = "failed"
+    try:
+        async with asyncio.timeout(run.remaining()):
+            client = new_client(config.ANTHROPIC_API_KEY)
+            result = await _run_loop(client, run, user_message, conversation_history or [])
+            status = "complete" if result["response"].strip() and result["response"] != FALLBACK_RESPONSE else "failed"
+            if status == "complete":
+                run.log("inference_answer_ready", duration_seconds=round(time.monotonic() - run.started, 4))
+            return result
+    except asyncio.CancelledError:
+        status = "cancelled"
+        raise
+    except Exception as exc:
+        run.log("inference_failure", error_type=type(exc).__name__)
+        return _error_response()
+    finally:
+        run.finish(status)
+        if client is not None:
+            # Real SDK clients close asynchronously; old test doubles may not.
+            try:
+                closed = client.close()
+                if inspect.isawaitable(closed):
+                    await closed
+            except Exception as exc:
+                run.log("inference_close_failure", error_type=type(exc).__name__)
+
+
+async def _run_loop(
+    client: Any,
+    run: InferenceRun,
     user_message: str,
-    conversation_history: list = [],
+    conversation_history: list | None = None,
 ) -> dict:
     """Drive one user turn through Claude with a tool-use loop.
 
@@ -75,35 +102,28 @@ async def run_agent(
     """
     # Defensive copy — never mutate the caller's history list, and avoid the
     # mutable-default trap on conversation_history=[].
-    messages: list[dict[str, Any]] = list(conversation_history)
+    messages: list[dict[str, Any]] = list(conversation_history or [])
     messages.append({"role": "user", "content": user_message})
 
     tools_called: list[str] = []
     raw_data: dict[str, Any] = {}
     last_text: str = ""
 
-    try:
-        client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
-    except Exception:
-        logger.exception("Failed to construct Anthropic client")
-        return _error_response()
-
     system_prompt = prompts.get_system_prompt()
 
     for iteration in range(MAX_TOOL_ITERATIONS):
+        run.log("inference_iteration", iteration=iteration + 1)
         try:
-            response = await _create_with_rate_limit_retry(
+            response = await run.create(
                 client,
                 model=MODEL_NAME,
                 max_tokens=MAX_TOKENS,
-                system=system_prompt,
+                system=cached_system(system_prompt),
                 tools=TOOLS,
                 messages=messages,
             )
-        except Exception:
-            logger.exception(
-                "Claude API call failed on iteration %d", iteration + 1
-            )
+        except Exception as exc:
+            run.log("inference_failure", iteration=iteration + 1, error_type=type(exc).__name__)
             # If we already produced some text in an earlier iteration, return
             # it rather than the generic fallback.
             if last_text:
@@ -145,20 +165,14 @@ async def run_agent(
         tool_result_blocks: list[dict[str, Any]] = []
         for block in tool_use_blocks:
             tool_input = dict(block.input or {})
-            logger.info(
-                "Tool call iter=%d name=%s input=%s",
-                iteration + 1,
-                block.name,
-                tool_input,
+            tool_started = time.monotonic()
+            result_block = await asyncio.to_thread(
+                tool_executor.execute_tool,
+                {"id": block.id, "name": block.name, "input": tool_input},
             )
-
-            result_block = tool_executor.execute_tool(
-                {
-                    "id": block.id,
-                    "name": block.name,
-                    "input": tool_input,
-                }
-            )
+            run.log("inference_tool", iteration=iteration + 1, tool=block.name,
+                    duration_seconds=round(time.monotonic() - tool_started, 4),
+                    is_error=bool(result_block.get("is_error")))
             tool_result_blocks.append(result_block)
             tools_called.append(block.name)
 
@@ -210,39 +224,6 @@ def _error_response() -> dict[str, Any]:
         "tools_called": [],
         "raw_data": {},
     }
-
-
-async def _create_with_rate_limit_retry(client: Any, **kwargs: Any) -> Any:
-    """Call ``client.messages.create`` with retry-on-rate-limit semantics.
-
-    On :class:`anthropic.RateLimitError`, sleeps for
-    ``RATE_LIMIT_RETRY_DELAY_SECONDS`` and retries up to
-    ``RATE_LIMIT_MAX_RETRIES`` times. Other exceptions propagate immediately
-    (the existing ``except Exception`` in :func:`run_agent` turns them into
-    :data:`FALLBACK_RESPONSE`). If every retry also rate-limits, the final
-    ``RateLimitError`` propagates so the same fallback path triggers — the
-    caller never sees an exception.
-    """
-    attempt = 0
-    while True:
-        try:
-            return await client.messages.create(**kwargs)
-        except anthropic.RateLimitError:
-            attempt += 1
-            if attempt > RATE_LIMIT_MAX_RETRIES:
-                logger.error(
-                    "Rate-limited by Anthropic — exhausted %d retries; "
-                    "giving up and falling back",
-                    RATE_LIMIT_MAX_RETRIES,
-                )
-                raise
-            logger.warning(
-                "Rate-limited by Anthropic; retry %d/%d in %ds",
-                attempt,
-                RATE_LIMIT_MAX_RETRIES,
-                RATE_LIMIT_RETRY_DELAY_SECONDS,
-            )
-            await asyncio.sleep(RATE_LIMIT_RETRY_DELAY_SECONDS)
 
 
 # ---------------------------------------------------------------------------
