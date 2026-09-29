@@ -56,6 +56,7 @@ from backend.api.schemas import (
     OverviewPayment,
 )
 from backend import config
+from backend.audit.payment_data import RECON_TO_STATUS as _RECON_TO_STATUS
 from backend.assurance.registry import ASSURANCE_REGISTRY, is_implemented
 from backend.db import queries
 from backend.db.connection import execute_query
@@ -66,7 +67,10 @@ from backend.api.financial_health_routes import router as financial_health_route
 
 logger = logging.getLogger(__name__)
 
+from backend.api.explanation_routes import router as explanation_router
+
 router = APIRouter()
+router.include_router(explanation_router)
 
 router.include_router(audit_workspace_router)
 router.include_router(financial_health_router)
@@ -660,15 +664,6 @@ def _row_to_payment_record(row: dict[str, Any]) -> PaymentSummaryRecord:
 # view's reconciliation_status drives payment_status mapping; the rest of
 # the record carries the v1.3.0 enrichment fields so the UI can show
 # sales-vs-statement-vs-settlement context.
-
-_RECON_TO_STATUS = {
-    "RECONCILED":               "FULLY_PAID",
-    "PARTIALLY_PAID":           "PARTIALLY_PAID",
-    "AMOUNT_MISMATCH":          "PARTIALLY_PAID",
-    "DISPUTED":                 "DISPUTED",
-    "STATEMENT_WITHOUT_PAYMENT": "PENDING",
-    "SALES_WITHOUT_STATEMENT":  "PENDING",
-}
 
 
 def _apdp_row_to_payment_record(row: dict[str, Any]) -> PaymentSummaryRecord:

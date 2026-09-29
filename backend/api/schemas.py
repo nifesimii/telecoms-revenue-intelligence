@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 # ---------------------------------------------------------------------------
@@ -603,3 +603,28 @@ class PaymentAnalyticsPage(BaseModel):
     account_count: int
     items: list[PaymentVarianceRecord | PartnerHealthRecord]
     pagination: PaginationMeta
+
+
+class FindingScope(BaseModel):
+    """Server-verifiable finding identity; no client-supplied financial evidence."""
+
+    model_config = {'extra': 'forbid'}
+    module: str = Field(pattern=r'^(commission|activation|inventory|payment)$')
+    type: str = Field(min_length=1, max_length=80, pattern=r'^[A-Z_]+$')
+    product_code: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode='after')
+    def validate_product_scope(self):
+        if self.module == 'inventory':
+            if self.product_code is None or not self.product_code.strip():
+                raise ValueError('Inventory findings require product_code')
+        elif self.product_code is not None:
+            raise ValueError('product_code is only valid for inventory findings')
+        return self
+
+
+class ExplainFindingRequest(BaseModel):
+    model_config = {'extra': 'forbid'}
+    dealer_id: str = Field(min_length=1, max_length=100, pattern=r'^\S+$')
+    mon_period: str = Field(pattern=r'^\d{4}(0[1-9]|1[0-2])$')
+    finding: FindingScope

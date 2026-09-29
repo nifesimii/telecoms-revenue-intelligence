@@ -38,6 +38,16 @@ from backend.db.connection import execute_query
 # cascade to every module consistently.
 PAY_TOLERANCE = 1.0
 
+# Canonical projection shared by Payments and finding explanations.
+RECON_TO_STATUS = {
+    "RECONCILED":               "FULLY_PAID",
+    "PARTIALLY_PAID":           "PARTIALLY_PAID",
+    "AMOUNT_MISMATCH":          "PARTIALLY_PAID",
+    "DISPUTED":                 "DISPUTED",
+    "STATEMENT_WITHOUT_PAYMENT": "PENDING",
+    "SALES_WITHOUT_STATEMENT":  "PENDING",
+}
+
 
 def payment_lookup(period: str, source: str) -> pd.DataFrame:
     """Per-dealer payment rows for the period, from the active payment source.

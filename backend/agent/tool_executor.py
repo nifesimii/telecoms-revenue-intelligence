@@ -27,6 +27,7 @@ from backend.agent import prompts
 from backend.db import queries
 from backend.db.composite import assemble_dealer_full_context
 from backend.db.connection import execute_query
+from backend.db.explanation_evidence import FindingEvidenceUnavailable
 from backend.db import subscription_evidence
 from backend.db.triage import TRIAGE_HANDLERS
 
@@ -382,3 +383,12 @@ def _df_to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
         default_handler=str,
     )
     return json.loads(rows_json)
+
+
+
+def execute_explanation_evidence(
+    request: dict[str, Any], *, check_active: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    """Application-only route for scoped finding evidence; not a model tool."""
+    from backend.db.explanation_evidence import assemble_finding_evidence
+    return assemble_finding_evidence(request, check_active=check_active)
