@@ -387,6 +387,33 @@ The agent may fetch KB addenda mid-answer via `get_kb_section`, and may call
 `get_dealer_full_context` to get commission+activation+inventory+payment in one
 shot instead of four calls.
 
+### Explain Findings — scoped evidence and streamed generation
+
+Overview's Explain Findings action carries an exact dealer, month, finding
+module/type and, for inventory, required product code. After explicit submission,
+`POST /chat/explain` validates this identity against existing assurance/query
+evidence through `tool_executor.execute_explanation_evidence` and
+`db/explanation_evidence.py`. It then makes one explanation-generation call,
+without a model-selected tool round trip. The full core KB remains in the
+system prompt. Source provenance, missing-evidence qualifications and bounded
+detail counts accompany the evidence; a zero-record sample cannot establish
+population-wide root-cause counts.
+
+The response is NDJSON: incremental `text` events followed by one `complete`
+event carrying the existing response/tool/data metadata, or a sanitized `error`
+event. Partial answers remain visibly incomplete. Scoped conversations survive
+workspace navigation, and Stop cancels the active request. Edited questions and
+follow-ups retain the general chat loop. See `docs/INFERENCE_LATENCY.md` for
+the wire contract, timing measurements and operational validation limits.
+
+Both paths share `agent/inference.py`: SDK retries are disabled, one application
+retry is permitted within a 90-second request deadline, and HTTP timeouts are
+explicit. Stable system/tool prefixes use provider prompt caching. Payload-free
+logs separate evidence, model calls, retries, first text, total duration and
+token/cache usage. Streaming cannot retry after emitting answer text. Blocking
+read-only data work runs in a worker thread; cancellation stops the waiting
+request but cannot forcibly terminate that worker's underlying read.
+
 ### Flow B — a bounded data panel (e.g. Payment Intelligence)
 ```
 Browser panel → api/client.js GET /payments?mon_period=YYYYMM&limit=50&offset=0

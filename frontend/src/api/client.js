@@ -5,8 +5,9 @@
 // don't have to dig past `.data`.
 
 import axios from 'axios';
+import { readExplanationStream } from './explanationStream.js';
 
-const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const baseURL = import.meta.env?.VITE_API_URL ?? 'http://localhost:8000';
 
 const api = axios.create({
   baseURL,
@@ -34,10 +35,10 @@ export async function getFinancialReport(dealerId, period, signal) {
  * @param {string|null} mon_period Optional reporting period to pin (YYYYMM).
  * @returns {Promise<{response: string, tools_called: string[], raw_data: object, error: string|null}>}
  */
-export async function sendMessage(message, conversation_history = [], mon_period = null) {
+export async function sendMessage(message, conversation_history = [], mon_period = null, signal) {
   const payload = { message, conversation_history };
   if (mon_period) payload.mon_period = mon_period;
-  const { data } = await api.post('/chat', payload);
+  const { data } = await api.post('/chat', payload, { signal });
   return data;
 }
 
@@ -404,4 +405,32 @@ export async function getAuditEvidence(subject, module, mon_period, signal, trai
 export async function getAuditExport(params) {
   const { data } = await api.get('/assurance/audit/records/export', { params, responseType: 'text' });
   return data;
+}
+
+/** Structured explanation transport; all fetch configuration stays at the API boundary. */
+export async function explainFinding(payload, { signal, onText } = {}) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
+  try {
+    const response = await fetch(`${baseURL.replace(/\/$/, '')}/chat/explain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
+      body: JSON.stringify(payload), signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Explanation unavailable (HTTP ${response.status}). Please retry.`);
+    if (!response.headers.get('content-type')?.toLowerCase().includes('application/x-ndjson')) {
+      throw new Error('Invalid explanation response. Please retry.');
+    }
+    return await readExplanationStream(response, { signal: controller.signal, onText });
+  } catch (error) {
+    if (timedOut) throw new Error('Explanation timed out. Please retry.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+  }
 }

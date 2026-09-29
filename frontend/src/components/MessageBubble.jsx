@@ -255,6 +255,7 @@ export default function MessageBubble({ message }) {
   return (
     <div className="flex justify-start mb-3">
       <div className="max-w-[90%] bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm text-sm text-gray-800 leading-relaxed">
+        {message.incomplete && <p className="text-xs text-amber-800 mb-2">{message.status === 'streaming' ? 'Writing explanation…' : message.status === 'stopped' ? 'Stopped · incomplete answer' : 'Interrupted · incomplete answer'}</p>}
         <ToolPills tools_called={message.tools_called} period={message.mon_period} />
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
           {message.content || ''}

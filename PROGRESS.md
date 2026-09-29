@@ -5,6 +5,39 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-29 (Explain Findings latency)
+
+- Overview Explain Findings now carries exact dealer/month/finding/product scope
+  into a deterministic evidence read and one streamed explanation generation.
+  Full core KB, source provenance, synthetic-data qualifications, missing-evidence
+  caveats and bounded zero-record samples are preserved. Edited questions and
+  follow-ups keep the general agent loop.
+- Shared inference policy disables SDK retry amplification, permits one bounded
+  application retry, respects provider retry guidance and applies a 90-second
+  overall deadline with explicit HTTP timeouts. Stable prefixes request provider
+  prompt caching; payload-free logs record evidence/model/retry/token timings.
+- Browser renders progressive text with Stop/Retry, marks partial answers
+  incomplete, preserves final metadata and keeps dealer/month/product threads
+  isolated through navigation and reload. Local performance entries separate
+  first rendered text, network completion and rendered completion.
+- Delegated implementation and review used subagents and visible Herdr workers.
+  Review fixes require an actual provider completion event, validate inventory
+  product identity, stop further evidence operations after cancellation, retain
+  synthetic activation provenance, and separate buffered answer-readiness logs.
+- Final sample-mode backend suite: 323 passed, 28 skipped. All 14 frontend Node
+  tests and the production build pass (existing bundle-size
+  warning remains). Isolated Chrome checks pass for streaming, scope isolation,
+  cancellation, retry, reload, narrow layout and existing Payment/Commission chat.
+  No standalone typecheck is configured; changed Python modules compile.
+- Mocked persistent 429 comparison: 12 HTTP attempts / 65.019 seconds of intended
+  waits before, 2 attempts / 1 second after. This verifies failure recovery only.
+  No live-model, warm-cache or production speedup is claimed. No deployment,
+  Presto access, billed model requests, dependency changes or source writes.
+  Measurements, contract and remaining operational checks:
+  `docs/INFERENCE_LATENCY.md`.
+
+---
+
 ## Session — 2026-09-28 (Subscription layout consistency)
 
 - Inspected rendered Commission, Subscriptions and Payments views in isolated

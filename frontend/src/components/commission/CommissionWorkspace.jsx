@@ -108,7 +108,7 @@ function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptC
         <button className="overview-button" aria-expanded={showAssistant} onClick={() => setShowAssistant(!showAssistant)}>{showAssistant ? 'Hide assistant' : 'Ask a question'}</button></div>
     </div>
     {exportError && <p role="alert" className="text-sm text-red-800">{exportError}</p>}
-    {showAssistant && <CommissionAssistant key={`${period}:${comparison}:${stream}:${JSON.stringify(assistantScope || null)}`} inventoryScope={assistantScope} onInventoryScopeClear={onAssistantScopeClear} period={period} comparison={comparison} stream={stream} prompt={pendingPrompt} onPromptConsumed={onPromptConsumed} />}
+    {showAssistant && <CommissionAssistant key={assistantScope ? JSON.stringify(assistantScope) : `${period}:${comparison}:${stream}`} inventoryScope={assistantScope} onInventoryScopeClear={onAssistantScopeClear} period={period} comparison={comparison} stream={stream} prompt={pendingPrompt} onPromptConsumed={onPromptConsumed} />}
     {query.isError && <div role="alert" className="overview-notice text-red-800">Commission data unavailable. {data ? 'The figures below are the last successful result; they have not been refreshed.' : 'No balance can be established.'} <button className="underline" onClick={() => query.refetch()}>Retry</button></div>}
     {!data && query.isPending && <div role="status" aria-label="Loading commission workspace" className="space-y-5 animate-pulse"><div className="h-56 bg-gray-200 rounded-lg" /><div className="h-80 bg-gray-200 rounded-lg" /></div>}
     {data && <>

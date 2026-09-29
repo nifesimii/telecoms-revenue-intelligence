@@ -63,7 +63,11 @@ export default function InvestigationQueue({ data, busy, search, setSearch, seve
             <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
               <div className="text-xs text-gray-500">Recorded outstanding <span className="block text-sm font-semibold text-gray-900 tabular-nums mt-0.5">{row.amount_outstanding === null ? 'Payment evidence unavailable' : formatNGN(row.amount_outstanding)}</span></div>
               <div className="flex flex-wrap items-center gap-3">
-                {onAsk && <button disabled={busy} className="text-xs text-gray-600 underline" onClick={() => onAsk(`Explain the findings for ${row.dealer_name} (dealer code ${row.dealer_id}) for ${formatPeriod(period)}. Start with: ${row.lead_finding.description}. Use the evidence and documented rules; distinguish missing evidence from confirmed discrepancies.`)}>Explain findings</button>}
+                {onAsk && <button disabled={busy} className="text-xs text-gray-600 underline" onClick={() => onAsk(`Explain the findings for ${row.dealer_name} (dealer code ${row.dealer_id}) for ${formatPeriod(period)}. Start with: ${row.lead_finding.description}. Use the evidence and documented rules; distinguish missing evidence from confirmed discrepancies.`, {
+                  kind: 'findings', period, dealer_id: row.dealer_id, dealer_name: row.dealer_name,
+                  finding: { module: row.lead_finding.module, type: row.lead_finding.type,
+                    ...(row.lead_finding.module === 'inventory' && row.lead_finding.product_code ? { product_code: row.lead_finding.product_code } : {}) },
+                })}>Explain findings</button>}
                 <button disabled={busy} aria-expanded={evidence?.dealer === row.dealer_id} aria-label={`View evidence for ${row.dealer_name}, dealer ${row.dealer_id}`} className="overview-button" onClick={(event) => showEvidence(event, row.dealer_id, row.lead_finding.module)}>View evidence →</button>
               </div>
             </div>
