@@ -106,6 +106,36 @@ numbers are test-harness timings, not model latency estimates.
 
 ## Remaining operational validation
 
+### Live provider check — September 29, 2026
+
+After implementation QA, a bounded live check used the configured Anthropic
+provider with one synthetic June 2026 commission finding. It made one original
+buffered request from commit `87c0dc3` and two successive current structured
+requests. No production source or hosted deployment was involved. Only timing
+and token metrics were recorded; prompts, generated financial text and credentials
+were not included in the measurement output.
+
+| Path | Model calls | First streamed text | Return/completion | Cache creation tokens | Cache read tokens |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Original buffered path | 3 | Buffered | 59.992s | Not recorded | Not recorded |
+| Structured, first observation | 1 | 2.033s | 22.179s | 8,425 | 0 |
+| Structured, repeat observation | 1 | 1.597s | 21.817s | 0 | 8,425 |
+
+Both structured runs received confirmed successful provider completion, with
+941 and 869 output tokens respectively, and no retries. Their uncached input was
+3,135 tokens each. The original request's final model call produced 2,048 output
+tokens, exhausting its configured budget; its stop reason was not captured, so
+the buffered return time does not establish answer completeness. The original
+three calls consumed 14,593, 17,910 and 30,455 input tokens respectively.
+
+This confirms real provider streaming and prompt-cache reuse. It does not isolate
+the latency contribution of caching: output lengths differ and the two completion
+times are close. One baseline and two new-path observations on one synthetic
+finding are insufficient to estimate typical or tail latency. First text here is
+observed at the backend generator, not measured as live browser-visible text.
+
+### Target-environment follow-up
+
 Run the same representative dealer/finding requests repeatedly in the target
 environment. Separate healthy calls, rate-limit failures and timeouts. Record
 browser first-visible-text and complete-answer duration independently. Compare

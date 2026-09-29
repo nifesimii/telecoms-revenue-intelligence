@@ -5,6 +5,25 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-29 (Live inference validation follow-up)
+
+- Resumed from the clean committed implementation and ran three bounded provider
+  requests using a synthetic June commission finding: one original buffered path
+  and two current structured requests. No production data or deployment.
+- Original buffered return: 59.992s and three model calls; final call used its
+  full 2,048-token output budget and completeness was not established by this
+  probe. Current path completed successfully in 22.179s and 21.817s, with first
+  backend-streamed text at 2.033s and 1.597s, one model call each and no retries.
+- Provider caching verified: first request created an 8,425-token prefix; repeat
+  read all 8,425 tokens from cache. This confirms reuse, not an isolated caching
+  speedup or production latency guarantee. Recorded metrics contain no prompts,
+  financial text or credentials. Full results and measurement limits are in
+  `docs/INFERENCE_LATENCY.md`.
+- Documentation-only follow-up; existing implementation QA remains 323 backend
+  passes/28 skips, 14 frontend passes, browser regressions and build passing.
+
+---
+
 ## Session — 2026-09-29 (Explain Findings latency)
 
 - Overview Explain Findings now carries exact dealer/month/finding/product scope
