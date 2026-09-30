@@ -577,29 +577,39 @@ def _sample_get_dealer_summary(params: dict) -> pd.DataFrame:
     df["commission_rate"] = df["commission_rate"].fillna(0).astype(float)
     df["product_denomination"] = df["product_denomination"].fillna("")
 
-    rows: list[dict[str, Any]] = []
-    for dist_code, group in df.groupby("distributor_code", sort=False):
-        denom_group = group[group["product_denomination"] != ""]
-        commission_by_denom = (
-            denom_group.groupby("product_denomination")["commission_rate"].sum().to_dict()
-            if not denom_group.empty
-            else {}
-        )
-        commission_by_denom = {k: float(v) for k, v in commission_by_denom.items()}
+    df["_zero_commission"] = df["commission_rate"].eq(0)
+    grouped = df.groupby("distributor_code", sort=False)
+    summary = grouped.agg(
+        total_activations=("commission_rate", "size"),
+        # Keep Series.sum's reduction order: GroupBy.sum can change the last
+        # float bits (and hence tied ordering) of existing financial results.
+        total_commission_ngn=("commission_rate", lambda values: values.sum()),
+        zero_commission_count=("_zero_commission", "sum"),
+    )
+    # first() skips nulls; the contract is the literal first source row.
+    first_rows = grouped.nth(0).set_index("distributor_code")
+    summary = summary.join(first_rows[["distributor_name", "account_profile_class"]])
 
+    denomination_totals = (
+        df.loc[df["product_denomination"] != ""]
+        .groupby(["distributor_code", "product_denomination"])["commission_rate"]
+        .sum()
+    )
+    denominations: dict[Any, dict[Any, float]] = {}
+    for (dist_code, denomination), amount in denomination_totals.items():
+        denominations.setdefault(dist_code, {})[denomination] = float(amount)
+
+    rows: list[dict[str, Any]] = []
+    for row in summary.itertuples():
         rows.append(
             {
-                # API convention: dealer_id / dealer_name in the response.
-                # Raw column in fbb_comm_dev_act is distributor_code — we
-                # keep that name inside the DataFrame and rename at the
-                # return boundary. See ARCHITECTURE.md "Naming conventions".
-                "dealer_id": _norm_str(dist_code),
-                "dealer_name": str(group["distributor_name"].iloc[0]),
-                "account_profile_class": str(group["account_profile_class"].iloc[0]),
-                "total_activations": int(len(group)),
-                "total_commission_ngn": float(group["commission_rate"].sum()),
-                "zero_commission_count": int((group["commission_rate"] == 0).sum()),
-                "commission_by_denomination": commission_by_denom,
+                "dealer_id": _norm_str(row.Index),
+                "dealer_name": str(row.distributor_name),
+                "account_profile_class": str(row.account_profile_class),
+                "total_activations": int(row.total_activations),
+                "total_commission_ngn": float(row.total_commission_ngn),
+                "zero_commission_count": int(row.zero_commission_count),
+                "commission_by_denomination": denominations.get(row.Index, {}),
             }
         )
 
