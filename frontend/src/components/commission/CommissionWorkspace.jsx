@@ -105,7 +105,7 @@ function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptC
       <p className="text-sm text-gray-500">{formatPeriod(period)} · {stream === 'orsc' ? 'Subscription revenue & commission' : 'Activation commission ledger'}</p>
       <div className="flex flex-wrap gap-2"><button className="overview-button" onClick={() => query.refetch()} disabled={busy}>Refresh</button>
         <button className="overview-button" onClick={exportMatching} disabled={!data || query.isError || busy || exporting}>{exporting ? 'Exporting…' : 'Export matching accounts ↓'}</button>
-        <button className="overview-button" aria-expanded={showAssistant} onClick={() => setShowAssistant(!showAssistant)}>{showAssistant ? 'Hide assistant' : 'Ask a question'}</button></div>
+        <button className="overview-button" aria-expanded={showAssistant} onClick={() => setShowAssistant(!showAssistant)}>{showAssistant ? 'Hide Atlas' : 'Ask Atlas'}</button></div>
     </div>
     {exportError && <p role="alert" className="text-sm text-red-800">{exportError}</p>}
     {showAssistant && <CommissionAssistant key={assistantScope ? JSON.stringify(assistantScope) : `${period}:${comparison}:${stream}`} inventoryScope={assistantScope} onInventoryScopeClear={onAssistantScopeClear} period={period} comparison={comparison} stream={stream} prompt={pendingPrompt} onPromptConsumed={onPromptConsumed} />}

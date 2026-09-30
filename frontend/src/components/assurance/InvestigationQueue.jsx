@@ -67,7 +67,7 @@ export default function InvestigationQueue({ data, busy, search, setSearch, seve
                   kind: 'findings', period, dealer_id: row.dealer_id, dealer_name: row.dealer_name,
                   finding: { module: row.lead_finding.module, type: row.lead_finding.type,
                     ...(row.lead_finding.module === 'inventory' && row.lead_finding.product_code ? { product_code: row.lead_finding.product_code } : {}) },
-                })}>Explain findings</button>}
+                })}>Ask Atlas about these findings</button>}
                 <button disabled={busy} aria-expanded={evidence?.dealer === row.dealer_id} aria-label={`View evidence for ${row.dealer_name}, dealer ${row.dealer_id}`} className="overview-button" onClick={(event) => showEvidence(event, row.dealer_id, row.lead_finding.module)}>View evidence →</button>
               </div>
             </div>

@@ -37,6 +37,11 @@ commission do we owe dealer X for this month", "why did their payout change",
 prove, step by step, that a partner was or wasn't paid". Its users are Finance,
 Revenue Assurance, and FBB Operations.
 
+**Atlas** is the shared AI assistant across Commission (including Subscriptions),
+Payments, Inventory, and Findings. Its description is “Your commission intelligence
+assistant.” The platform retains its existing name; Atlas identifies the assistant
+in the UI, accessibility labels, and system prompt.
+
 **APDP — African Payment Data Platform** (`apdp/`) is the payment-data
 pipeline. The full production path is Kafka → Flink → Postgres, but
 because the Flink Docker build is broken and the Kafka→Postgres sink was
@@ -830,7 +835,7 @@ remains deferred pending measured query plans.
 
 Activation verification uses dealer-period TanStack Query state; saved payment
 reconciliation trails load on request without initiating audits. Payment-scoped AI
-threads reuse the Commission assistant lifecycle. Exact Activation navigation now
+threads reuse the shared Atlas conversation lifecycle. Exact Activation navigation now
 opens account detail rather than a substring-search list. Source selection,
 retrieval time and saved assessment provenance remain distinct. Full contract,
 limitations and verification: `docs/PAYMENT_WORKSPACE.md`.

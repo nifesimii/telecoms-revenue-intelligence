@@ -32,7 +32,7 @@ export default function PaymentDetail({ dealerId, period, comparison, onBack, on
         <p className="text-xs text-gray-500 mt-4">{query.data.data_source} · Retrieved {new Date(query.data.generated_at).toLocaleString()}. Retrieval time does not establish source freshness.</p>
         <div className="flex flex-wrap gap-3 mt-5">
           <button className="overview-button" onClick={() => navigate('commission')}>View commission</button><button className="overview-button" onClick={() => navigate('activation')}>View activations</button>
-          <button className="overview-button" aria-expanded={Boolean(composerRequest)} onClick={() => setComposerRequest({ prompt: 'Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.' })}>Ask about this payment</button>
+          <button className="overview-button" aria-expanded={Boolean(composerRequest)} onClick={() => setComposerRequest({ prompt: 'Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.' })}>Ask Atlas about this payment</button>
           <button ref={disputeButton} className="overview-button overview-primary" onClick={() => setDispute(true)}>Prepare dispute response</button>
         </div>
       </section>

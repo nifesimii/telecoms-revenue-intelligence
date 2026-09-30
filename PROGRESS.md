@@ -5,6 +5,23 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-30 (Atlas assistant identity)
+
+- Named the shared AI assistant Atlas across Commission, Subscriptions, Payments,
+  Inventory and Findings, with “Your commission intelligence assistant” beneath
+  the heading. Updated launch/return controls, accessible naming, placeholder,
+  backend self-identity, documentation and browser selectors.
+- Preserved the platform name, account/period/product context, conversation
+  isolation and existing explanation behavior.
+- Validation: 323 backend tests passed / 28 skipped; all 14 frontend unit tests,
+  Payment/Commission and Findings/Inventory browser regressions, and production
+  build passed. Python prompt module compiles; no standalone typecheck is
+  configured. Existing bundle-size warning remains.
+- Standards and spec reviews have no remaining findings. No live model requests
+  or deployment performed.
+
+---
+
 ## Session — 2026-09-29 (Live inference validation follow-up)
 
 - Resumed from the clean committed implementation and ran three bounded provider

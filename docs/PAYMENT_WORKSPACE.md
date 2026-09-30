@@ -41,7 +41,7 @@ work requiring measured query plans.
 The Health explanation discloses its existing missing-evidence and over-settlement
 limitations. No scores, classifications, commission calculations or SQL change.
 AI threads use exact account, reporting period, comparison and payment scope, using
-the existing Commission assistant lifecycle. **Ask about this payment** reveals the assistant,
+the shared Atlas conversation lifecycle. **Ask Atlas about this payment** reveals Atlas,
 prefills the payment question, scrolls the composer into view and focuses it.
 Select **Send question** to request an answer; opening never sends automatically.
 Repeated activation preserves an unsent draft and the existing thread, including

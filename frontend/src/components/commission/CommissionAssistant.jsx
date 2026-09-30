@@ -65,12 +65,13 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
   const suggestions = findingsScope ? ['Explain the selected finding and identify the evidence still needed.'] : inventoryScope ? ['Explain this dealer-product Inventory comparison and identify the evidence still needed.'] : stream === 'payment' ? ['Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.'] : stream === 'orsc'
     ? ['Summarise subscription revenue, recorded commission, settlement and outstanding amounts. State any missing evidence.']
     : [comparison ? 'Explain the commission change by denomination between these periods.' : 'Explain the recorded commission breakdown.', 'Investigate zero-commission records using only documented KB causes. State what remains unverified.'];
-  return <section className="overview-surface overflow-hidden min-w-0" aria-label={findingsScope ? 'Findings assistant' : inventoryScope ? 'Inventory assistant' : stream === 'payment' ? 'Payment assistant' : 'Commission assistant'}>
+  return <section className="overview-surface overflow-hidden min-w-0" aria-label="Atlas">
     <div className="p-5 border-b border-gray-200">
-      <div className="flex justify-between gap-3 items-center"><h2 className="font-semibold">Ask about these figures</h2>{messages.length > 0 && <button className="text-xs underline" disabled={isLoading} onClick={clearChat}>Clear thread</button>}</div>
+      <div className="flex justify-between gap-3 items-center"><h2 className="font-semibold">Atlas</h2>{messages.length > 0 && <button className="text-xs underline" disabled={isLoading} onClick={clearChat}>Clear thread</button>}</div>
+      <p className="text-sm text-gray-600 mt-1">Your commission intelligence assistant</p>
       <p className="text-xs text-gray-600 mt-2">{findingsScope ? `Findings · Account ${findingsScope.dealer_id}${findingsScope.finding.product_code ? ` · Product ${findingsScope.finding.product_code}` : ''}` : inventoryScope ? `Inventory · Account ${inventoryScope.dealer_id} · Product ${inventoryScope.product_code}` : account ? `Account ${account.dealer_id}` : 'All accounts'} · {formatPeriod(inventoryScope?.period || period)}{!inventoryScope && comparison ? ` vs ${formatPeriod(comparison)}` : ''} · {findingsScope ? `${findingsScope.finding.module} · ${findingsScope.finding.type.replaceAll('_', ' ').toLowerCase()}` : inventoryScope ? 'Inventory comparison' : stream === 'orsc' ? 'Subscriptions' : stream === 'payment' ? 'Payments' : 'Activation commission'}</p>
     </div>
-    {inventoryScope && <button className="overview-button m-4 mb-0" onClick={onInventoryScopeClear}>Return to Commission assistant</button>}
+    {inventoryScope && <button className="overview-button m-4 mb-0" onClick={onInventoryScopeClear}>Return to Atlas for Commission</button>}
     <div ref={threadRef} className="p-4 max-h-96 overflow-y-auto commission-conversation" aria-live="polite" aria-busy={isLoading}>
       {!messages.length && <><p className="text-sm text-gray-600 mb-4">Use the records as the starting point. Ask for an explanation when you need more context.</p>
         <div className="space-y-2">{suggestions.map((text) => <button key={text} className="overview-button text-left w-full" onClick={() => { setInput(text); inputRef.current?.focus(); }}>{text}</button>)}</div></>}
@@ -81,7 +82,7 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
     {canRetry && <button className="overview-button mx-4 mb-3" onClick={retryMessage}>Retry explanation</button>}
     <form ref={composerRef} tabIndex={-1} className="p-4 border-t border-gray-200" onSubmit={submit}>
       <label className="text-xs font-medium text-gray-600" htmlFor={questionId}>Your question</label>
-      <textarea id={questionId} ref={inputRef} className="overview-select w-full mt-2 resize-y" rows={3} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask about this account, its commission or the evidence…" disabled={isLoading} />
+      <textarea id={questionId} ref={inputRef} className="overview-select w-full mt-2 resize-y" rows={3} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask Atlas about this account, its commission or the evidence…" disabled={isLoading} />
       <div className="flex flex-wrap justify-between items-center gap-3 mt-3"><p className="text-xs text-gray-500">AI explanation · verify against source evidence</p><span className="flex gap-2">{isLoading && <button type="button" className="overview-button" onClick={stopMessage}>Stop</button>}<button className="overview-button overview-primary" disabled={isLoading || !input.trim()}>{isLoading ? 'Working…' : 'Send question →'}</button></span></div>
     </form>
   </section>;

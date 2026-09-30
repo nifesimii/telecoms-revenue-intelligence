@@ -51,7 +51,7 @@ export default function CommissionDetail({ account, period, comparison, stream, 
               <tbody>{data.denominations.map((r) => <tr key={r.denomination}><td>{r.denomination}</td><td className="text-right whitespace-nowrap tabular-nums">{formatNGN(r.amount_ngn)}</td><td className="text-right whitespace-nowrap tabular-nums">{r.prior_amount_ngn == null ? '—' : formatNGN(r.prior_amount_ngn)}</td><td className="text-right"><MoneyChange value={r.delta_ngn} /></td></tr>)}</tbody>
             </table></div>
             {!data.denominations.length && <p className="p-5 text-sm text-gray-500">No denomination breakdown recorded.</p>}
-            <div className="p-5 flex flex-wrap gap-3 border-t border-gray-200"><button className="overview-button" onClick={() => setPrompt(comparison ? 'Explain the change by denomination between the selected periods. Distinguish observed changes from verified causes.' : 'Explain this account’s recorded commission by denomination.')}>Explain {comparison ? 'change' : 'breakdown'} →</button>
+            <div className="p-5 flex flex-wrap gap-3 border-t border-gray-200"><button className="overview-button" onClick={() => setPrompt(comparison ? 'Explain the change by denomination between the selected periods. Distinguish observed changes from verified causes.' : 'Explain this account’s recorded commission by denomination.')}>Ask Atlas to explain {comparison ? 'change' : 'breakdown'} →</button>
               <button className="overview-button" aria-expanded={showRecords} onClick={() => setShowRecords(!showRecords)}>{showRecords ? 'Hide' : 'Inspect'} zero-commission records</button></div>
           </section>}
           {orsc && <section className="overview-surface overflow-hidden" aria-label="Subscription evidence">
@@ -59,7 +59,7 @@ export default function CommissionDetail({ account, period, comparison, stream, 
               <p className="mt-2 text-sm text-gray-600">Inspect device revenue, recorded commission and settlement references for this account.</p>
             </div>
             <div className="px-5 py-4 flex flex-wrap gap-3 border-t border-gray-200">
-              <button className="overview-button" onClick={() => setPrompt('Explain this account’s subscription revenue, recorded commission, settled and outstanding amounts. Distinguish recorded evidence from missing evidence.')}>Explain figures →</button>
+              <button className="overview-button" onClick={() => setPrompt('Explain this account’s subscription revenue, recorded commission, settled and outstanding amounts. Distinguish recorded evidence from missing evidence.')}>Ask Atlas to explain figures →</button>
               <button className="overview-button" aria-expanded={showRecords} aria-controls="subscription-device-evidence" onClick={() => setShowRecords(!showRecords)}>{showRecords ? 'Hide' : 'Inspect'} device records</button>
             </div>
             <div id="subscription-device-evidence">{showRecords && <SubscriptionEvidence dealerId={account.dealer_id} period={period} />}</div>

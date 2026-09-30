@@ -27,9 +27,9 @@ try {
   await page.goto(process.env.APP_URL || 'http://localhost:5173');
   await page.getByRole('button', { name: 'Payments', exact: true }).click();
   await page.getByRole('button', { name: 'View evidence for River Isle Ventures, 296065', exact: true }).click();
-  const opener = page.getByRole('button', { name: /^(Explain this payment|Ask about this payment)$/ });
+  const opener = page.getByRole('button', { name: /^Ask Atlas about this payment$/ });
   await opener.click();
-  const assistant = page.getByRole('region', { name: 'Payment assistant', exact: true });
+  const assistant = page.getByRole('region', { name: 'Atlas', exact: true });
   const input = assistant.getByRole('textbox');
   await input.waitFor();
   await page.waitForFunction((text) => document.querySelector('textarea')?.value === text, question);
@@ -112,8 +112,8 @@ try {
   await page.screenshot({ path: '/tmp/payment-composer-desktop.png' });
   console.log('PASS reporting-period isolation and narrow/desktop composer visibility');
   await page.getByRole('button', { name: 'Commission', exact: true }).click();
-  await page.getByRole('button', { name: 'Ask a question', exact: true }).click();
-  const commission = page.getByRole('region', { name: 'Commission assistant', exact: true });
+  await page.getByRole('button', { name: 'Ask Atlas', exact: true }).click();
+  const commission = page.getByRole('region', { name: 'Atlas', exact: true });
   await commission.getByRole('button', { name: 'Explain the commission change by denomination between these periods.', exact: true }).click();
   assert.equal(await commission.getByRole('textbox').inputValue(), 'Explain the commission change by denomination between these periods.');
   assert.equal(await commission.getByRole('textbox').evaluate((el) => el === document.activeElement), true);

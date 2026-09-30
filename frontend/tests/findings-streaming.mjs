@@ -27,11 +27,11 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 page.on('pageerror', (error) => errors.push(error.message));
 const appURL = process.env.APP_URL || 'http://localhost:5173';
-const assistant = page.getByRole('region', { name: 'Findings assistant', exact: true });
+const assistant = page.getByRole('region', { name: 'Atlas', exact: true });
 const input = assistant.getByRole('textbox');
 const send = () => assistant.getByRole('button', { name: 'Send question' }).click();
 const open = async () => {
-  await page.getByRole('button', { name: 'Explain findings', exact: true }).click();
+  await page.getByRole('button', { name: 'Ask Atlas about these findings', exact: true }).click();
   await page.waitForFunction(() => document.querySelector('textarea')?.value.startsWith('Explain the findings'));
 };
 const waitUntil = async (condition) => { for (let i = 0; i < 200; i++) { if (condition()) return; await new Promise((resolve) => setTimeout(resolve, 25)); } throw new Error('Fixture condition timed out'); };
@@ -48,7 +48,7 @@ try {
   });
   // Verify the production Overview → Commission wiring before scoped permutations.
   await page.goto(appURL);
-  await page.getByRole('button', { name: 'Explain findings', exact: true }).first().click();
+  await page.getByRole('button', { name: 'Ask Atlas about these findings', exact: true }).first().click();
   await input.waitFor();
   assert.match(await input.inputValue(), /Explain the findings/);
   assert.equal(requests.length, 0);
@@ -159,7 +159,7 @@ try {
   assert.ok(rect.x >= 0 && rect.x + rect.width <= 320 && rect.y >= 0 && rect.y + rect.height <= 844);
   await page.screenshot({ path: '/tmp/findings-streaming-narrow.png' });
   await page.getByRole('button', { name: 'Inventory opener', exact: true }).click();
-  const inventory = page.getByRole('region', { name: 'Inventory assistant', exact: true });
+  const inventory = page.getByRole('region', { name: 'Atlas', exact: true });
   await inventory.getByRole('button', { name: 'Send question' }).click();
   await inventory.getByText('General fixture answer.', { exact: true }).waitFor();
   assert.equal(requests.length, 7);
