@@ -378,19 +378,27 @@ See `docs/ACTIVATION_WORKSPACE.md` for the acceptance and verification record.
 
 ### Flow A — a chat question ("why did dealer 74050 earn zero commission?")
 ```
-Browser (CommissionAssistant) → api/client.js POST /chat
-  → routes.py → agent.run_agent()
+Browser (CommissionAssistant) → api/client.js POST /chat/stream
+  → explanation_routes.py → agent.run_agent_stream()
     → Claude decides to call a tool (e.g. get_zero_commission_records)
       → tool_executor routes it → db/connection.execute_query()
         → db/queries.py SAMPLE_HANDLERS[name] reads data/samples/*.csv (pandas)
       ← tool result returned to Claude
     ← Claude composes the English answer (grounded in the injected KB)
-  ← routes.py returns {response, tools_called, ...}
-← rendered as markdown in the chat
+  ← NDJSON status/text events, then {type: complete, response, tools_called, ...}
+← progressive markdown with an explicit incomplete-draft state
 ```
 The agent may fetch KB addenda mid-answer via `get_kb_section`, and may call
 `get_dealer_full_context` to get commission+activation+inventory+payment in one
 shot instead of four calls.
+
+The buffered `POST /chat` API remains available for existing callers. Both
+transports share the same conversation/tool loop and full KB. Ordinary Atlas
+requests now stream provisional text and tool progress; selecting a tool clears
+planning prose before presenting the next draft. Only a verified successful
+provider completion can finalize the answer. Truncation, interruption and tool
+iteration exhaustion leave the answer incomplete, with Stop/Retry and scoped
+history handled by the shared conversation store.
 
 ### Explain Findings — scoped evidence and streamed generation
 
@@ -618,6 +626,15 @@ mislabel a data gap as not-paid?"), which a text blob can't support.
 **`PeriodContext` (frontend).** The selected reporting month is global app state,
 synced to the URL, so all panels stay on the same period and links are shareable.
 
+**Workspace loading and activity.** `App.jsx` loads workspaces on demand with
+per-workspace loading/error boundaries. Visited workspaces stay mounted to retain
+dealer selections, filters and investigations. `WorkspaceActivityBoundary`
+freezes a hidden workspace's reporting context, and `useWorkspaceQuery` disables
+its query observers. Returning delivers the current global month immediately;
+old-month placeholder figures are not relabeled as current evidence. Initial
+collection reads wait for period metadata so the default comparison is known.
+See `docs/PERFORMANCE_IMPROVEMENTS.md` for measurements and verification.
+
 **Bounded intelligence collections (`PaginationMeta` + page response models).**
 Inventory and Payment never return an unbounded array to their main tables.
 The server owns search, filters, deterministic sorting, total counts, and
@@ -639,6 +656,12 @@ not a source of truth; the backend remains authoritative.
 **HTTP performance observability (`backend/main.py`).** Every response includes
 a `Server-Timing` duration and emits a payload-free structured timing log. The
 middleware intentionally logs no SQL or financial record contents.
+
+**Sample activation aggregation (`db/queries.py`).** Dealer metadata, counts and
+denomination totals are grouped in batches instead of repeating pandas grouping
+for each dealer. Dealer totals retain the original `Series.sum` semantics and
+literal first-row metadata (including nulls). This is an optimization of recorded
+source aggregation, not commission recalculation or a cached financial balance.
 
 **Optional APDP seed loading (`backend/main.py::_seed_apdp_if_empty` +
 `infra/postgres/apdp_seed.sql`).** On backend startup, when

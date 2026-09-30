@@ -7,17 +7,20 @@
 // Period state lives in <PeriodProvider> so switching tabs preserves the
 // user's selection — see context/PeriodContext.jsx.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import CommissionWorkspace from './components/commission/CommissionWorkspace.jsx';
-import ActivationIntelligencePanel from './components/activation/ActivationIntelligencePanel.jsx';
-import AssuranceStatusPanel from './components/assurance/AssuranceStatusPanel.jsx';
-import InventoryIntelligencePanel from './components/inventory/InventoryIntelligencePanel.jsx';
-import PaymentIntelligencePanel from './components/payment/PaymentIntelligencePanel.jsx';
-import AuditTrailPanel from './components/audit/AuditTrailPanel.jsx';
-import FinancialHealthWorkspace from './components/financial/FinancialHealthWorkspace.jsx';
+import { lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { PeriodProvider, usePeriod } from './context/PeriodContext.jsx';
+import { WorkspaceActivityBoundary } from './context/WorkspaceActivityContext.jsx';
 import { getHealth } from './api/client.js';
+import LazySection from './components/shared/LazySection.jsx';
 import { formatPeriod } from './lib/format.js';
+
+const CommissionWorkspace = lazy(() => import('./components/commission/CommissionWorkspace.jsx'));
+const ActivationIntelligencePanel = lazy(() => import('./components/activation/ActivationIntelligencePanel.jsx'));
+const AssuranceStatusPanel = lazy(() => import('./components/assurance/AssuranceStatusPanel.jsx'));
+const InventoryIntelligencePanel = lazy(() => import('./components/inventory/InventoryIntelligencePanel.jsx'));
+const PaymentIntelligencePanel = lazy(() => import('./components/payment/PaymentIntelligencePanel.jsx'));
+const AuditTrailPanel = lazy(() => import('./components/audit/AuditTrailPanel.jsx'));
+const FinancialHealthWorkspace = lazy(() => import('./components/financial/FinancialHealthWorkspace.jsx'));
 
 const VIEWS = [
   { id: 'overview', label: 'Overview' },
@@ -28,6 +31,14 @@ const VIEWS = [
   { id: 'financial-health', label: 'Financial Health' },
   { id: 'audit', label: 'Audit Trails' },
 ];
+
+function WorkspacePanel({ active, children }) {
+  return <div className={active ? 'h-full' : 'hidden'}>
+    <WorkspaceActivityBoundary active={active}>
+      <LazySection label="workspace" active={active}>{children}</LazySection>
+    </WorkspaceActivityBoundary>
+  </div>;
+}
 
 function DataModeBadge({ financialDemo = false }) {
   const [mode, setMode] = useState(null); // null | 'sample' | 'live' | 'unknown'
@@ -168,10 +179,6 @@ function Shell() {
     switchView('commission');
   };
 
-  // 'h-full' when active, 'hidden' (display:none) when not — sibling panels
-  // don't stack because display:none removes them from layout flow entirely.
-  const panelClass = (id) => (view === id ? 'h-full' : 'hidden');
-
   return (
     <div className="h-full flex flex-col">
       <header className="app-header shrink-0 border-b border-gray-200 bg-white">
@@ -214,14 +221,14 @@ function Shell() {
       </header>
 
       <div className="flex-1 overflow-hidden">
-        {view === 'financial-health' && <FinancialHealthWorkspace />}
+        {mounted['financial-health'] && <WorkspacePanel active={view === 'financial-health'}><FinancialHealthWorkspace /></WorkspacePanel>}
         {mounted.overview && (
-          <div className={panelClass('overview')}>
+          <WorkspacePanel active={view === 'overview'}>
             <AssuranceStatusPanel onNavigate={switchView} onAsk={askClaude} />
-          </div>
+          </WorkspacePanel>
         )}
         {mounted.commission && (
-          <div className={panelClass('commission')}>
+          <WorkspacePanel active={view === 'commission'}>
             <CommissionWorkspace
               key={navigation.commission?.revision}
               navigation={navigation.commission}
@@ -231,32 +238,32 @@ function Shell() {
               onAssistantScopeClear={() => setAssistantScope(null)}
               onPromptConsumed={() => setPendingPrompt('')}
             />
-          </div>
+          </WorkspacePanel>
         )}
         {mounted.activation && (
-          <div className={panelClass('activation')}>
+          <WorkspacePanel active={view === 'activation'}>
             <ActivationIntelligencePanel key={navigation.activation?.revision} navigation={navigation.activation} onNavigate={switchView} />
-          </div>
+          </WorkspacePanel>
         )}
         {mounted.inventory && (
-          <div className={panelClass('inventory')}>
+          <WorkspacePanel active={view === 'inventory'}>
             <InventoryIntelligencePanel key={navigation.inventory?.revision} navigation={navigation.inventory} onAsk={askClaude} />
-          </div>
+          </WorkspacePanel>
         )}
         {mounted.payment && (
-          <div className={panelClass('payment')}>
+          <WorkspacePanel active={view === 'payment'}>
             <PaymentIntelligencePanel key={navigation.payment?.revision} navigation={navigation.payment} onNavigate={switchView} onAsk={askClaude} />
-          </div>
+          </WorkspacePanel>
         )}
         {mounted.audit && (
-          <div className={panelClass('audit')}>
+          <WorkspacePanel active={view === 'audit'}>
             <AuditTrailPanel key={navigation.audit?.revision} navigation={navigation.audit}
               onReturn={auditOrigin.current ? () => {
                 const origin = auditOrigin.current;
                 switchView(origin.view);
                 requestAnimationFrame(() => { if (origin.focus?.isConnected) origin.focus.focus(); });
               } : undefined} />
-          </div>
+          </WorkspacePanel>
         )}
       </div>
     </div>

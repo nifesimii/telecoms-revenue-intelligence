@@ -11,7 +11,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { getPeriods } from '../api/client.js';
 
-const PeriodContext = createContext(null);
+export const PeriodContext = createContext(null);
 
 // Read ?period=YYYYMM from the URL on mount. Returns null if absent or malformed.
 function _readPeriodFromUrl() {

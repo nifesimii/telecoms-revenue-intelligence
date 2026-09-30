@@ -1,4 +1,5 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
+import { useQueryClient } from '@tanstack/react-query';
 import { runAuditModule } from '../../api/client.js';
 
 const RUN_KEY = ['audit-replacement'];

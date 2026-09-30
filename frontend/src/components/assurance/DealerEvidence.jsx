@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
+
 import { getAuditTrail, getDealerVerification, getDealerStatement } from '../../api/client.js';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 

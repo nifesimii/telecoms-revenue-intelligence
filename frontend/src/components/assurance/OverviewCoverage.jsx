@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
+
 import { getAuditModules, getAuditBreakdown } from '../../api/client.js';
 import { openEvidence } from './InvestigationQueue.jsx';
 

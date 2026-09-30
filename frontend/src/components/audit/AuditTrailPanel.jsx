@@ -1,5 +1,7 @@
+import { useWorkspaceActive } from '../../context/WorkspaceActivityContext.jsx';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useEffect, useRef, useState } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatPeriod } from '../../lib/format.js';
 import { downloadCsv } from '../../lib/csv.js';
@@ -14,23 +16,32 @@ const DEFAULTS = { search: '', conclusion: '', confidence: '', caveats: 'all', c
 export default function AuditTrailPanel(props) {
   const { period, loading, error } = usePeriod();
   const [module, setModule] = useState(props.navigation?.module || 'zero_commission');
-  if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
-  return <AuditWorkspace key={period} period={period} module={module} setModule={setModule} {...props} />;
+  if (loading || !period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
+  return <AuditWorkspace period={period} module={module} setModule={setModule} {...props} />;
 }
 function AuditWorkspace({ period, module, setModule, navigation, onReturn }) {
+  const active = useWorkspaceActive();
   const [filters, setFilters] = useState(() => ({ ...DEFAULTS, search: navigation?.subject ? '' : navigation?.search || '' }));
   const [subject, setSubject] = useState(navigation?.subject || '');
-  const [trailId, setTrailId] = useState(null);
+  const [selectedTrail, setTrailId] = useState(null);
+  const trailId = selectedTrail?.period === period ? selectedTrail.id : null;
   const [notice, setNotice] = useState('');
   const { replacement, run: runReplacement } = useAuditReplacement();
   const running = replacement?.status === 'pending';
   const [exporting, setExporting] = useState(false);
-  const [runAcknowledged, setRunAcknowledged] = useState(false);
+  const runScope = `${module}:${period}`;
+  const [acknowledgement, setAcknowledgement] = useState({ scope: runScope, checked: false });
+  // Reset before committing a new scope, including when returning to an earlier
+  // month. Consent for one replacement must never enable another replacement.
+  if (acknowledgement.scope !== runScope) setAcknowledgement({ scope: runScope, checked: false });
+  const runAcknowledged = acknowledgement.scope === runScope && acknowledgement.checked;
+  const setRunAcknowledged = (checked) => setAcknowledgement({ scope: runScope, checked });
   const rows = useRef({});
   const returnFocus = useRef('');
   const heading = useRef(null);
   const queryClient = useQueryClient();
   const search = useDebouncedValue(filters.search);
+  useEffect(() => { setFilters((current) => ({ ...current, offset: 0 })); }, [period]);
   const params = { ...filters, search, mon_period: period, module };
   const registry = useQuery({ queryKey: ['audit-modules'], queryFn: getAuditModules });
   const query = useQuery({ queryKey: ['audit-records', params], queryFn: ({ signal }) => getAuditRecords(params, signal), enabled: !subject, retry: false });
@@ -39,13 +50,13 @@ function AuditWorkspace({ period, module, setModule, navigation, onReturn }) {
   const busy = query.isFetching || search !== filters.search || Boolean(invalidOffset);
   const activeModule = registry.data?.find((item) => item.name === module);
   useEffect(() => {
-    if (invalidOffset) {
+    if (active && invalidOffset) {
       // The cached first page may predate the shrink and still be considered
       // fresh. Refetch it when recovering instead of restoring stale totals.
       queryClient.invalidateQueries({ queryKey: ['audit-records', { ...params, offset: 0 }], exact: true });
       setFilters((current) => ({ ...current, offset: 0 }));
     }
-  }, [invalidOffset, queryClient, params]);
+  }, [active, invalidOffset, queryClient, params]);
   useEffect(() => {
     if (!subject && returnFocus.current && !busy) {
       (rows.current[returnFocus.current] || heading.current)?.focus();
@@ -108,7 +119,7 @@ function AuditWorkspace({ period, module, setModule, navigation, onReturn }) {
         {busy && <p role="status">Loading matching saved assessments…</p>}
         {data && <section className="overview-surface overflow-hidden">
           <div className="p-5 border-b border-gray-200"><h2 ref={heading} tabIndex={-1} className="font-semibold">Saved assessments</h2><p className="text-sm text-gray-600 mt-2">{data.pagination.total.toLocaleString()} matching trails</p></div>
-          {data.items.length ? <AuditResults rows={data.items} rowRefs={rows} onSelect={(row) => { setSubject(row.partner_code); setTrailId(row.trail_id); }} busy={busy || running} /> : <div className="p-6" role="status"><h3 className="font-semibold">{data.summary.trail_count ? 'No matching saved trails' : 'No saved evidence for this module and period'}</h3><p className="text-sm text-gray-600 mt-2">{data.summary.trail_count ? 'Change or reset filters to see other saved assessments.' : 'This does not establish whether payments or exceptions exist, or whether an audit has ever run.'}</p>{data.summary.trail_count > 0 && <button className="overview-button mt-4" onClick={() => setFilters({ ...DEFAULTS })}>Reset filters</button>}</div>}
+          {data.items.length ? <AuditResults rows={data.items} rowRefs={rows} onSelect={(row) => { setSubject(row.partner_code); setTrailId({ id: row.trail_id, period }); }} busy={busy || running} /> : <div className="p-6" role="status"><h3 className="font-semibold">{data.summary.trail_count ? 'No matching saved trails' : 'No saved evidence for this module and period'}</h3><p className="text-sm text-gray-600 mt-2">{data.summary.trail_count ? 'Change or reset filters to see other saved assessments.' : 'This does not establish whether payments or exceptions exist, or whether an audit has ever run.'}</p>{data.summary.trail_count > 0 && <button className="overview-button mt-4" onClick={() => setFilters({ ...DEFAULTS })}>Reset filters</button>}</div>}
           <div className="p-4 border-t border-gray-200 flex flex-wrap justify-between items-center gap-3 text-sm">
             <span>{data.pagination.total ? filters.offset + 1 : 0}–{filters.offset + data.items.length} of {data.pagination.total.toLocaleString()}</span>
             <div className="flex flex-wrap items-center gap-3"><label>Rows per page <select className="overview-select" value={filters.limit} onChange={(e) => update('limit', Number(e.target.value))}>{[25, 50, 100].map((n) => <option key={n}>{n}</option>)}</select></label><button className="overview-button" disabled={busy || !filters.offset} onClick={() => setFilters((f) => ({ ...f, offset: Math.max(0, f.offset - f.limit) }))}>Previous</button><button className="overview-button" disabled={busy || !data.pagination.has_more} onClick={() => setFilters((f) => ({ ...f, offset: f.offset + f.limit }))}>Next</button></div>

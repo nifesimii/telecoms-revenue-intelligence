@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
+
 import { money, statusLabel, findingLabel } from './paymentPresentation.js';
 
 export default function PaymentSummaryTable({ rows, onSelect, rowRefs, period }) {

@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
+import { useEffect, useState } from 'react';
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query';
 import { getOverview, getOverviewExport, getPaymentPosition } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatPeriod } from '../../lib/format.js';
@@ -11,10 +12,10 @@ import OverviewCoverage from './OverviewCoverage.jsx';
 
 export default function AssuranceStatusPanel(props) {
   const { period, loading, error } = usePeriod();
-  if (!period) return <div className="p-6" role="status">
+  if (loading || !period) return <div className="p-6" role="status">
     {error ? 'Reporting periods unavailable. Reload the page to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}
   </div>;
-  return <OverviewPeriod key={period} period={period} {...props} />;
+  return <OverviewPeriod period={period} {...props} />;
 }
 
 function OverviewPeriod({ period, onNavigate, onAsk }) {
@@ -22,14 +23,16 @@ function OverviewPeriod({ period, onNavigate, onAsk }) {
   const { periods } = usePeriod();
   const comparisons = periods.filter((p) => p < period).sort().reverse();
   const [selectedComparison, setComparison] = useState(null);
-  const comparison = selectedComparison ?? comparisons[0] ?? '';
+  const comparison = selectedComparison === '' || comparisons.includes(selectedComparison) ? selectedComparison : comparisons[0] || '';
   const [search, setSearch] = useState('');
   const [severity, setSeverity] = useState('');
   const [module, setModule] = useState('');
   const [offset, setOffset] = useState(0);
+  const [evidence, setEvidence] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const debouncedSearch = useDebouncedValue(search);
+  useEffect(() => { setOffset(0); }, [period]);
   const params = { mon_period: period, limit: 5, offset,
     search: debouncedSearch, severity: severity || undefined, module: module || undefined };
   const query = useQuery({ queryKey: ['overview', params],
@@ -78,7 +81,7 @@ function OverviewPeriod({ period, onNavigate, onAsk }) {
           <FinancialPosition payment={data.payment} prior={prior} comparison={comparison}
             comparisons={comparisons} setComparison={setComparison} onNavigate={onNavigate} />
           <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_18rem] gap-6 items-start">
-            <InvestigationQueue data={data} busy={query.isFetching || search !== debouncedSearch}
+            <InvestigationQueue evidence={evidence} setEvidence={setEvidence} data={data} busy={query.isFetching || search !== debouncedSearch}
               search={search} setSearch={updateFilter(setSearch)} severity={severity} setSeverity={updateFilter(setSeverity)}
               module={module} setModule={updateFilter(setModule)} offset={offset} setOffset={setOffset}
               onNavigate={onNavigate} onAsk={onAsk} period={period} />

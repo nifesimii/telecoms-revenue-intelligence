@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 import DealerEvidence, { AUDIT_MODULE } from './DealerEvidence.jsx';
 
@@ -17,8 +17,7 @@ export function openEvidence(onNavigate, module, dealerId = '', productCode = ''
 }
 
 export default function InvestigationQueue({ data, busy, search, setSearch, severity, setSeverity,
-  module, setModule, offset, setOffset, onNavigate, onAsk, period }) {
-  const [evidence, setEvidence] = useState(null);
+  module, setModule, offset, setOffset, onNavigate, onAsk, period, evidence, setEvidence }) {
   const evidenceTrigger = useRef(null);
   const showEvidence = (event, dealer, selectedModule) => {
     evidenceTrigger.current = event.currentTarget;

@@ -1,5 +1,6 @@
+import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useEffect, useRef, useState } from 'react';
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData } from '@tanstack/react-query';
 import { getActivationAccounts, getActivationExport } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatPeriod } from '../../lib/format.js';
@@ -21,14 +22,15 @@ export default function ActivationIntelligencePanel(props) {
   const navigationConsumed = useRef(false);
   if (period && !initialPeriod.current) initialPeriod.current = period;
   if (initialPeriod.current && period !== initialPeriod.current) navigationConsumed.current = true;
-  if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
-  return <ActivationWorkspace key={period} period={period} {...props} selected={selected} setSelected={setSelected} navigation={!navigationConsumed.current ? props.navigation : undefined} />;
+  if (loading || !period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
+  return <ActivationWorkspace period={period} {...props} selected={selected} setSelected={setSelected} navigation={!navigationConsumed.current ? props.navigation : undefined} />;
 }
 
 function ActivationWorkspace({ period, navigation, onNavigate, selected, setSelected }) {
   const { periods } = usePeriod();
   const earlier = periods.filter((p) => p < period).sort().reverse();
-  const [comparison, setComparison] = useState(() => navigation?.prior_period === '' || earlier.includes(navigation?.prior_period) ? navigation.prior_period : earlier[0] || '');
+  const [selectedComparison, setComparison] = useState(() => navigation?.prior_period === '' || earlier.includes(navigation?.prior_period) ? navigation.prior_period : null);
+  const comparison = selectedComparison === '' || earlier.includes(selectedComparison) ? selectedComparison : earlier[0] || '';
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, view: navigationView(navigation?.tab), search: navigation?.search || '', sort_by: navigation?.tab === 'exceptions' ? 'severity' : 'activation_count' }));
   const workspaceRef = useRef(null);
   const [exporting, setExporting] = useState(false);
@@ -37,6 +39,7 @@ function ActivationWorkspace({ period, navigation, onNavigate, selected, setSele
   const returnFocus = useRef(null);
   const previousNavigation = useRef(navigation);
   const search = useDebouncedValue(filters.search);
+  useEffect(() => { setFilters((current) => ({ ...current, offset: 0 })); }, [period]);
   const params = { ...filters, search, mon_period: period, prior_period: comparison || undefined };
   const query = useQuery({ queryKey: ['activation-accounts', params], queryFn: ({ signal }) => getActivationAccounts(params, signal), placeholderData: keepPreviousData });
   const data = query.data;

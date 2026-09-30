@@ -1,5 +1,5 @@
+import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { getDataCoverageIssues } from '../../api/client.js';
 import { formatPeriod } from '../../lib/format.js';
 

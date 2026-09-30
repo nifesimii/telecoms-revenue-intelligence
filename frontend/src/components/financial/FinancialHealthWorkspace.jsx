@@ -1,5 +1,5 @@
+import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { getFinancialDealers } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
@@ -9,7 +9,7 @@ import './financial.css';
 
 export default function FinancialHealthWorkspace() {
   const { period, loading, error } = usePeriod();
-  if (!period) return <p role="status" className="p-6">{loading ? 'Loading reporting periods…' : error ? 'Reporting periods unavailable. Reload to retry.' : 'No reporting periods available.'}</p>;
+  if (loading || !period) return <p role="status" className="p-6">{loading ? 'Loading reporting periods…' : error ? 'Reporting periods unavailable. Reload to retry.' : 'No reporting periods available.'}</p>;
   return <Workspace period={period} />;
 }
 

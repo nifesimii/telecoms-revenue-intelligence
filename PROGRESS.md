@@ -5,6 +5,34 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-09-30 (Preview responsiveness)
+
+- Three visible Herdr workers implemented sample commission aggregation,
+  workspace loading/activity, and ordinary Atlas streaming. Independent Standards
+  and Spec reviewers checked the combined change against `e0ecf96`.
+- March/February sample commission API median improved from 641 ms to 91 ms
+  locally; exact-result differential checks cover all six fixture months. No
+  financial rule or balance cache change. Initial Commission JavaScript fell
+  from 593 kB to approximately 285 kB by deferring workspaces and Atlas rendering.
+- Hidden workspace query observers stop initiating reads and receive the new
+  reporting month when reopened. Dealer/filter/investigation state is preserved;
+  initial requests wait for period metadata and cross-month placeholders are
+  suppressed. Browser history, audit return and assistant handoffs are tested.
+- Ordinary Atlas uses additive `/chat/stream` with progressive provisional text,
+  tool progress, Stop/Retry and scoped history. Buffered `/chat`, full KB, model
+  and budgets remain intact. Unconfirmed/truncated answers cannot complete;
+  automatic retries stop after any text has streamed across tool rounds.
+- Full backend suite: 353 passed, 28 skipped; final streaming file: 14 passed.
+  Frontend unit/transport tests: 16 passed; production build, Python compilation
+  and mocked assistant browser regressions passed. Navigation scope regressions
+  cover audit acknowledgement, automatic comparisons and Inventory matches beyond
+  the first 100 results. Standards and Spec re-reviews have no remaining findings.
+  No standalone frontend typecheck configured.
+- No deployment, hosting/model setting changes, live Presto or billed provider
+  calls. Measurements and operational limits: `docs/PERFORMANCE_IMPROVEMENTS.md`.
+
+---
+
 ## Session — 2026-09-30 (Atlas assistant identity)
 
 - Named the shared AI assistant Atlas across Commission, Subscriptions, Payments,

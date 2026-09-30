@@ -1,5 +1,5 @@
+import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { getCommissionSubscriptionRecords } from '../../api/client.js';
 import { formatNGN } from '../../lib/format.js';
 import { SubscriptionMoney } from './SubscriptionAmounts.jsx';

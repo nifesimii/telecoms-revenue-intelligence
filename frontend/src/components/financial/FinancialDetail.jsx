@@ -1,5 +1,5 @@
+import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { getFinancialReport } from '../../api/client.js';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 import { downloadCsv } from '../../lib/csv.js';

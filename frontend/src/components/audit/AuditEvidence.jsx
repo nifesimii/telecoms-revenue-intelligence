@@ -1,5 +1,5 @@
+import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useEffect, useRef } from 'react';
-import { useQuery } from '@tanstack/react-query';
 import { getAuditEvidence } from '../../api/client.js';
 import { label, measureLabel, measureValue, savedTime, qualifications, detailText, downloadEvidence } from './auditPresentation.js';
 

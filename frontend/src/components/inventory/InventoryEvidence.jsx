@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
+
 import { getAuditTrail } from '../../api/client.js';
 import { formatPeriod } from '../../lib/format.js';
 

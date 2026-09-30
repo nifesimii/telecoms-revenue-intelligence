@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
+import { lazy, useEffect, useRef, useState } from 'react';
 import { getCommissionDetail } from '../../api/client.js';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 import { MoneyChange } from './CommissionSummary.jsx';
-import CommissionAssistant from './CommissionAssistant.jsx';
+import LazySection from '../shared/LazySection.jsx';
+
+const CommissionAssistant = lazy(() => import('./CommissionAssistant.jsx'));
 import SubscriptionAmounts from './SubscriptionAmounts.jsx';
 import SubscriptionEvidence from './SubscriptionEvidence.jsx';
 import ZeroCommissionEvidence from './ZeroCommissionEvidence.jsx';
@@ -67,7 +69,7 @@ export default function CommissionDetail({ account, period, comparison, stream, 
           {showRecords && !orsc && <ZeroCommissionEvidence dealerId={account.dealer_id} period={period} onNavigate={onNavigate} />}
         </>}
       </div>
-      <CommissionAssistant key={`${account.dealer_id}:${period}:${comparison}:${stream}`} account={currentAccount || account} period={period} comparison={comparison} stream={stream} prompt={prompt} onPromptConsumed={() => setPrompt('')} />
+      <LazySection label="Atlas"><CommissionAssistant key={`${account.dealer_id}:${period}:${comparison}:${stream}`} account={currentAccount || account} period={period} comparison={comparison} stream={stream} prompt={prompt} onPromptConsumed={() => setPrompt('')} /></LazySection>
     </div>
   </div>;
 }

@@ -1,5 +1,6 @@
+import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useEffect, useRef, useState } from 'react';
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQueryClient } from '@tanstack/react-query';
 import { getPayments, getPaymentPosition, getPaymentExport, getPaymentAnalytics } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatPeriod } from '../../lib/format.js';
@@ -24,8 +25,8 @@ export default function PaymentIntelligencePanel(props) {
   const [view, setView] = useState(props.navigation?.tab === 'variance' ? 'comparison' : VIEWS.some(([id]) => id === props.navigation?.tab) ? props.navigation.tab : 'exceptions');
   if (period && !initialPeriod.current) initialPeriod.current = period;
   if (initialPeriod.current && period !== initialPeriod.current) navigationConsumed.current = true;
-  if (!period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
-  return <PaymentWorkspace key={period} period={period} {...props} view={view} setView={setView} selected={selected} setSelected={setSelected} navigation={!navigationConsumed.current ? props.navigation : undefined} />;
+  if (loading || !period) return <p className="p-6" role="status">{error ? 'Reporting periods unavailable. Reload to retry.' : loading ? 'Loading reporting periods…' : 'No reporting periods available.'}</p>;
+  return <PaymentWorkspace period={period} {...props} view={view} setView={setView} selected={selected} setSelected={setSelected} navigation={!navigationConsumed.current ? props.navigation : undefined} />;
 }
 
 function PaymentWorkspace({ period, navigation, onNavigate, view, setView, selected, setSelected }) {
@@ -33,7 +34,7 @@ function PaymentWorkspace({ period, navigation, onNavigate, view, setView, selec
   const { periods } = usePeriod();
   const earlier = periods.filter((p) => p < period).sort().reverse();
   const [selectedComparison, setComparison] = useState(() => navigation?.prior_period === '' || earlier.includes(navigation?.prior_period) ? navigation.prior_period : null);
-  const comparison = selectedComparison ?? earlier[0] ?? '';
+  const comparison = selectedComparison === '' || earlier.includes(selectedComparison) ? selectedComparison : earlier[0] || '';
   const [filters, setFilters] = useState({ ...DEFAULTS, search: navigation?.search || '' });
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
@@ -43,6 +44,7 @@ function PaymentWorkspace({ period, navigation, onNavigate, view, setView, selec
   const returnFocus = useRef(null);
   const search = useDebouncedValue(filters.search);
   const main = view === 'exceptions' || view === 'all';
+  useEffect(() => { setFilters((current) => ({ ...current, offset: 0 })); }, [period]);
   const params = { mon_period: period, search, payment_status: filters.status || (view === 'exceptions' ? 'DISPUTED,PARTIALLY_PAID,PENDING' : undefined), sort_by: filters.sort_by, sort_direction: filters.sort_direction, limit: filters.limit, offset: filters.offset };
   const accounts = useQuery({ queryKey: ['payments-page', params], queryFn: ({ signal }) => getPayments(params, signal), placeholderData: keepPreviousData, enabled: main });
   const position = useQuery({ queryKey: ['payment-position', period], queryFn: ({ signal }) => getPaymentPosition(period, signal), enabled: !main });
