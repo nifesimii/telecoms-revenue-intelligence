@@ -1,5 +1,5 @@
 // NDJSON records may cross arbitrary network/UTF-8 chunk boundaries.
-export async function readExplanationStream(response, { onText = () => {}, signal } = {}) {
+export async function readExplanationStream(response, { onText = () => {}, onStatus = () => {}, signal } = {}) {
   if (!response.body) throw new Error('Explanation stream unavailable. Please retry.');
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -15,6 +15,13 @@ export async function readExplanationStream(response, { onText = () => {}, signa
     try { event = JSON.parse(line); } catch { throw new Error('Invalid explanation stream. Please retry.'); }
     if (event?.type === 'text' && typeof event.text === 'string') {
       onText(event.text);
+      return null;
+    }
+    if (event?.type === 'status' && ['thinking', 'tool_start', 'tool_complete'].includes(event.phase) &&
+        typeof event.reset === 'boolean' && (event.phase === 'thinking' || typeof event.tool === 'string') &&
+        (event.tools_called === undefined || (Array.isArray(event.tools_called) && event.tools_called.every((tool) => typeof tool === 'string'))) &&
+        (event.raw_data === undefined || (event.raw_data && typeof event.raw_data === 'object' && !Array.isArray(event.raw_data)))) {
+      onStatus(event);
       return null;
     }
     if (event?.type === 'complete' && typeof event.response === 'string' &&

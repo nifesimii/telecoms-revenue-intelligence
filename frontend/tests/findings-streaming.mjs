@@ -42,9 +42,9 @@ const complete = (response = 'Completed fixture explanation.') => {
 };
 try {
   await page.route('**/chat/explain', (route) => route.continue({ url: fixtureURL }));
-  await page.route('**/chat', async (route) => {
+  await page.route('**/chat/stream', async (route) => {
     chats.push(route.request().postDataJSON());
-    await route.fulfill({ json: { response: 'General fixture answer.', tools_called: [], raw_data: {}, error: null } });
+    await route.fulfill({ contentType: 'application/x-ndjson', body: JSON.stringify({ type: 'complete', response: 'General fixture answer.', tools_called: [], raw_data: {}, error: null }) + '\n' });
   });
   // Verify the production Overview → Commission wiring before scoped permutations.
   await page.goto(appURL);

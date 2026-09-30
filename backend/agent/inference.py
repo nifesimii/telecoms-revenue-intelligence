@@ -63,6 +63,7 @@ class InferenceRun:
         self.deadline = self.started + REQUEST_DEADLINE_SECONDS
         self.retry_count = 0
         self.model_calls = 0
+        self.chat_text_emitted = False
 
     def remaining(self) -> float:
         remaining = self.deadline - time.monotonic()
@@ -142,6 +143,43 @@ class InferenceRun:
             except Exception as exc:
                 finished = time.monotonic()
                 if not await self._retry(exc, emitted=emitted):
+                    raise
+            finally:
+                self.log("inference_call", model_call=self.model_calls, status=status,
+                         duration_seconds=round((finished or time.monotonic()) - started, 4))
+
+    async def create_streamed(self, client: Any, emit, **kwargs: Any) -> Any:
+        """Tool-enabled generation; text stays provisional until verified end turn."""
+        while True:
+            started = time.monotonic()
+            self.model_calls += 1
+            status = "failed"
+            finished = None
+            try:
+                async with asyncio.timeout(self.remaining()):
+                    async with client.messages.stream(**kwargs) as stream:
+                        message_stopped = False
+                        async for event in stream:
+                            if event.type == "message_stop":
+                                message_stopped = True
+                            elif event.type == "text" and event.text:
+                                if not self.chat_text_emitted:
+                                    self.log("inference_first_text", duration_seconds=round(time.monotonic() - self.started, 4))
+                                self.chat_text_emitted = True
+                                await emit({"type": "text", "text": event.text})
+                            elif event.type == "content_block_start" and event.content_block.type == "tool_use":
+                                # Clear planning prose immediately when a tool is selected.
+                                await emit({"type": "status", "phase": "tool_start",
+                                            "tool": event.content_block.name, "reset": True})
+                        response = await stream.get_final_message()
+                        self.record_usage(response)
+                        if not message_stopped or response.stop_reason not in ("end_turn", "stop_sequence", "tool_use"):
+                            raise RuntimeError("Chat stream did not complete successfully")
+                status = "complete"
+                return response
+            except Exception as exc:
+                finished = time.monotonic()
+                if not await self._retry(exc, emitted=self.chat_text_emitted):
                     raise
             finally:
                 self.log("inference_call", model_call=self.model_calls, status=status,

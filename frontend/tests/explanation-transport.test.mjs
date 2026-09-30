@@ -81,3 +81,25 @@ test('central wrapper forwards user cancellation while waiting for headers', asy
   controller.abort();
   await assert.rejects(pending, { name: 'AbortError' });
 });
+
+test('chat status and tool evidence arrive in order without completing the provisional answer', async () => {
+  const seen = [];
+  const status = { type: 'status', phase: 'tool_complete', tool: 'get_dealer_summary', reset: true,
+    tools_called: ['get_dealer_summary'], raw_data: { get_dealer_summary: { source: 'sample' } } };
+  const result = await readExplanationStream(response(JSON.stringify(status) + '\n' + JSON.stringify(complete)), {
+    onStatus: (event) => seen.push(event),
+  });
+  assert.deepEqual(seen, [status]);
+  assert.deepEqual(result, complete);
+});
+
+test('ordinary chat transport uses additive stream endpoint with exact history and period', async (t) => {
+  const { streamMessage } = await import('../src/api/client.js');
+  const history = [{ role: 'assistant', content: 'Prior complete answer with caveat.' }];
+  t.mock.method(globalThis, 'fetch', async (url, options) => {
+    assert.equal(url, 'http://localhost:8000/chat/stream');
+    assert.deepEqual(JSON.parse(options.body), { message: 'Explain', conversation_history: history, mon_period: '202606' });
+    return response(JSON.stringify(complete));
+  });
+  assert.deepEqual(await streamMessage('Explain', history, '202606'), complete);
+});

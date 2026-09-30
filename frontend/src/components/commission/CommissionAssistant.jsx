@@ -76,8 +76,14 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
       {!messages.length && <><p className="text-sm text-gray-600 mb-4">Use the records as the starting point. Ask for an explanation when you need more context.</p>
         <div className="space-y-2">{suggestions.map((text) => <button key={text} className="overview-button text-left w-full" onClick={() => { setInput(text); inputRef.current?.focus(); }}>{text}</button>)}</div></>}
       {messages.map((message, i) => message.status === 'streaming' && !message.content ? null : <MessageBubble key={i} message={message} />)}
-      {isLoading && <><p className="sr-only" role="status">Preparing an evidence-based answer…</p>{!messages.at(-1)?.content && <LoadingBubble />}</>}
+      {isLoading && !messages.at(-1)?.content && <LoadingBubble />}
     </div>
+    {isLoading && <p className="mx-4 mb-3 text-sm text-gray-600" role="status">
+      {messages.at(-1)?.content ? 'Draft in progress · not a completed evidence answer. More checks may follow.'
+        : messages.at(-1)?.phase === 'tool_start' ? `Checking evidence with ${messages.at(-1).tool}…`
+        : messages.at(-1)?.phase === 'tool_complete' ? `Evidence returned by ${messages.at(-1).tool}. Preparing the answer…`
+        : 'Atlas is preparing an evidence-based answer…'}
+    </p>}
     {error && <p className="mx-4 mb-3 text-sm text-red-800" role="alert">The explanation could not be completed. Your figures remain available. {error}</p>}
     {canRetry && <button className="overview-button mx-4 mb-3" onClick={retryMessage}>Retry explanation</button>}
     <form ref={composerRef} tabIndex={-1} className="p-4 border-t border-gray-200" onSubmit={submit}>

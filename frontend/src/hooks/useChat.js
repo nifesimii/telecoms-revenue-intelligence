@@ -1,7 +1,7 @@
 // Conversations outlive their presentation. Navigation during a request must
 // not discard the answer or mix it into another account's thread.
 import { useSyncExternalStore } from 'react';
-import { sendMessage as apiSendMessage, explainFinding } from '../api/client.js';
+import { streamMessage, explainFinding } from '../api/client.js';
 import { startExplanationTiming, measureExplanationTiming } from '../lib/explanationTiming.js';
 
 const STORAGE_KEY = 'fbb.chat.thread';
@@ -52,7 +52,7 @@ export default function useChat({ scope } = {}) {
     const request = { text: trimmed, monPeriod, explanation };
     const messages = [...previous, { role: 'user', content: trimmed, tools_called: [], raw_data: {}, mon_period: monPeriod }, {
       role: 'assistant', content: '', tools_called: [], raw_data: {}, mon_period: monPeriod,
-      incomplete: true, status: 'streaming', request, timingId: explanation ? startExplanationTiming() : null,
+      incomplete: true, status: 'streaming', request, phase: 'thinking', timingId: startExplanationTiming(),
     }];
     const controller = new AbortController();
     conversation.controller = controller;
@@ -62,12 +62,20 @@ export default function useChat({ scope } = {}) {
     };
     conversation.update({ messages, isLoading: true, error: null });
     try {
+      const options = { signal: controller.signal, onText: (text) => {
+        if (!controller.signal.aborted) updateAnswer({ content: conversation.snapshot().messages.at(-1).content + text });
+      }, onStatus: (event) => {
+        if (controller.signal.aborted) return;
+        updateAnswer({ phase: event.phase, tool: event.tool,
+          ...(event.reset ? { content: '' } : {}),
+          ...(event.tools_called ? { tools_called: event.tools_called } : {}),
+          ...(event.raw_data ? { raw_data: event.raw_data } : {}),
+        });
+      } };
       const data = explanation
-        ? await explainFinding(explanation, { signal: controller.signal, onText: (text) => {
-          if (!controller.signal.aborted) updateAnswer({ content: conversation.snapshot().messages.at(-1).content + text });
-        } })
-        : await apiSendMessage(trimmed, history, monPeriod, controller.signal);
-      if (explanation) measureExplanationTiming(messages.at(-1).timingId, 'network-complete');
+        ? await explainFinding(explanation, options)
+        : await streamMessage(trimmed, history, monPeriod, options);
+      measureExplanationTiming(messages.at(-1).timingId, 'network-complete');
       if (controller.signal.aborted) throw new DOMException('Explanation stopped.', 'AbortError');
       if (data.error) throw new Error('The explanation could not be completed. Please retry.');
       updateAnswer({ content: data.response || '',

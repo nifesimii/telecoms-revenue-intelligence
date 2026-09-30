@@ -14,7 +14,7 @@ try {
   let failNext = false;
   const runtimeErrors = [];
   page.on('pageerror', (error) => runtimeErrors.push(error.message));
-  await page.route('**/chat', async (route) => {
+  await page.route('**/chat/stream', async (route) => {
     requests.push(route.request().postDataJSON());
     await new Promise((resolve) => { release = resolve; captured.emit('request'); });
     if (failNext) {
@@ -22,7 +22,7 @@ try {
       await route.fulfill({ status: 503, json: { detail: 'Temporary test failure. Please retry.' } });
       return;
     }
-    await route.fulfill({ json: { response: 'Recorded payment answer', tools_called: [], raw_data: {}, error: null } });
+    await route.fulfill({ contentType: 'application/x-ndjson', body: JSON.stringify({ type: 'complete', response: 'Recorded payment answer', tools_called: [], raw_data: {}, error: null }) + '\n' });
   });
   await page.goto(process.env.APP_URL || 'http://localhost:5173');
   await page.getByRole('button', { name: 'Payments', exact: true }).click();

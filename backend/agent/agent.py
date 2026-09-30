@@ -8,7 +8,8 @@ prompt — that lives in :mod:`backend.agent.prompts`. It does not know the
 tool definitions — those live in :mod:`backend.agent.tools`.
 
 Public surface:
-    * :func:`run_agent` — single async entry point.
+    * :func:`run_agent` — buffered compatibility entry point.
+    * :func:`run_agent_stream` — progressive delivery over the shared tool loop.
 
 A bottom-of-file ``if __name__ == "__main__":`` smoke test exercises the
 loop end-to-end against the sample CSVs.
@@ -73,11 +74,60 @@ async def run_agent(user_message: str, conversation_history: list | None = None)
                 run.log("inference_close_failure", error_type=type(exc).__name__)
 
 
+async def run_agent_stream(user_message: str, conversation_history: list | None = None):
+    """Progressive delivery over the same tool loop; cancellation owns provider I/O."""
+    run = InferenceRun("chat_stream")
+    events = asyncio.Queue(maxsize=1)
+
+    async def produce():
+        client = None
+        status = "failed"
+        try:
+            async with asyncio.timeout(run.remaining()):
+                client = new_client(config.ANTHROPIC_API_KEY)
+                result = await _run_loop(client, run, user_message, conversation_history or [], emit=events.put)
+                if not result["response"].strip():
+                    raise RuntimeError("Empty answer")
+                status = "complete"
+                await events.put({"type": "complete", **result, "error": None})
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
+        except Exception as exc:
+            run.log("inference_failure", error_type=type(exc).__name__)
+            code = "deadline_exceeded" if isinstance(exc, TimeoutError) else "chat_failed"
+            await events.put({"type": "error", "error": code,
+                              "message": "The answer could not be completed. Please retry."})
+        finally:
+            run.finish(status)
+            if client is not None:
+                try:
+                    await client.close()
+                except Exception as exc:
+                    run.log("inference_close_failure", error_type=type(exc).__name__)
+
+    task = asyncio.create_task(produce())
+    try:
+        yield {"type": "status", "phase": "thinking", "reset": False}
+        while True:
+            event = await events.get()
+            if event["type"] in ("complete", "error"):
+                await task
+            yield event
+            if event["type"] in ("complete", "error"):
+                break
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
 async def _run_loop(
     client: Any,
     run: InferenceRun,
     user_message: str,
     conversation_history: list | None = None,
+    *, emit=None,
 ) -> dict:
     """Drive one user turn through Claude with a tool-use loop.
 
@@ -114,8 +164,10 @@ async def _run_loop(
     for iteration in range(MAX_TOOL_ITERATIONS):
         run.log("inference_iteration", iteration=iteration + 1)
         try:
-            response = await run.create(
+            generate = run.create if emit is None else run.create_streamed
+            response = await generate(
                 client,
+                **({"emit": emit} if emit is not None else {}),
                 model=MODEL_NAME,
                 max_tokens=MAX_TOKENS,
                 system=cached_system(system_prompt),
@@ -124,6 +176,8 @@ async def _run_loop(
             )
         except Exception as exc:
             run.log("inference_failure", iteration=iteration + 1, error_type=type(exc).__name__)
+            if emit is not None:
+                raise
             # If we already produced some text in an earlier iteration, return
             # it rather than the generic fallback.
             if last_text:
@@ -146,7 +200,11 @@ async def _run_loop(
         tool_use_blocks = [
             block for block in response.content if block.type == "tool_use"
         ]
+        if emit is not None and ((response.stop_reason == "tool_use") != bool(tool_use_blocks)):
+            raise RuntimeError("Inconsistent tool completion")
         if not tool_use_blocks:
+            if emit is not None and not text_pieces:
+                raise RuntimeError("Empty final answer")
             return {
                 "response": last_text,
                 "tools_called": tools_called,
@@ -165,6 +223,9 @@ async def _run_loop(
         tool_result_blocks: list[dict[str, Any]] = []
         for block in tool_use_blocks:
             tool_input = dict(block.input or {})
+            if emit is not None:
+                run.remaining()
+                await emit({"type": "status", "phase": "tool_start", "tool": block.name, "reset": True})
             tool_started = time.monotonic()
             result_block = await asyncio.to_thread(
                 tool_executor.execute_tool,
@@ -188,9 +249,17 @@ async def _run_loop(
                     "is_error": bool(result_block.get("is_error")),
                 }
 
+            if emit is not None:
+                await emit({"type": "status", "phase": "tool_complete", "tool": block.name,
+                            "reset": True, "tools_called": list(tools_called), "raw_data": dict(raw_data)})
+
+        if emit is not None:
+            await emit({"type": "status", "phase": "thinking", "reset": True})
         # Feed tool results back as a user turn — required by the API.
         messages.append({"role": "user", "content": tool_result_blocks})
 
+    if emit is not None:
+        raise RuntimeError("Tool iteration limit reached without a final answer")
     # Hit the iteration cap without Claude returning a clean final response.
     logger.warning(
         "Hit MAX_TOOL_ITERATIONS=%d without end_turn — returning last text",

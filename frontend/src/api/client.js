@@ -408,7 +408,17 @@ export async function getAuditExport(params) {
 }
 
 /** Structured explanation transport; all fetch configuration stays at the API boundary. */
-export async function explainFinding(payload, { signal, onText } = {}) {
+export function explainFinding(payload, options = {}) {
+  return streamAnswer('/chat/explain', payload, options);
+}
+
+export function streamMessage(message, conversation_history = [], mon_period = null, options = {}) {
+  const payload = { message, conversation_history };
+  if (mon_period) payload.mon_period = mon_period;
+  return streamAnswer('/chat/stream', payload, options);
+}
+
+async function streamAnswer(path, payload, { signal, onText, onStatus } = {}) {
   const controller = new AbortController();
   const abort = () => controller.abort();
   signal?.addEventListener('abort', abort, { once: true });
@@ -416,7 +426,7 @@ export async function explainFinding(payload, { signal, onText } = {}) {
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
   try {
-    const response = await fetch(`${baseURL.replace(/\/$/, '')}/chat/explain`, {
+    const response = await fetch(`${baseURL.replace(/\/$/, '')}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
       body: JSON.stringify(payload), signal: controller.signal,
@@ -425,7 +435,7 @@ export async function explainFinding(payload, { signal, onText } = {}) {
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/x-ndjson')) {
       throw new Error('Invalid explanation response. Please retry.');
     }
-    return await readExplanationStream(response, { signal: controller.signal, onText });
+    return await readExplanationStream(response, { signal: controller.signal, onText, onStatus });
   } catch (error) {
     if (timedOut) throw new Error('Explanation timed out. Please retry.');
     throw error;
