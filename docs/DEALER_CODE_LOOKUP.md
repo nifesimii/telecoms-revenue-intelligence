@@ -29,6 +29,13 @@ Validate through the public data query and tool executor using small known
 fixtures, then exercise the bundled demo data. The live Presto executor remains
 unimplemented project-wide; parameterized SQL belongs only in `db/queries.py`.
 
+Regression coverage lives in `backend/tests/test_dealer_code_lookup.py` at the
+public `execute_query` and `execute_tool` boundaries. Run it with
+`.venv/bin/python -m pytest backend/tests/test_dealer_code_lookup.py -q`.
+The fixtures cover exact name normalization, duplicate observations, leading-zero
+codes, both sources, inclusive/open month bounds, empty coverage, pagination,
+invalid inputs, missing files, and both supported CSV configuration layouts.
+
 ## Live connection limitation
 
 The existing Presto executor is a stub. Before enabling this tool in live mode,
