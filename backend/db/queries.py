@@ -26,6 +26,7 @@ The four tables in scope (fully qualified for Presto):
 from __future__ import annotations
 
 import csv
+import re
 from decimal import Decimal
 from math import isfinite
 from pathlib import Path
@@ -533,7 +534,34 @@ ORDER BY ABS(b.amount_paid - a.amount_paid) DESC
 """
 
 
+_SQL_GET_DEALER_CODES = """
+WITH observations AS (
+    SELECT distributor_code, distributor_name, mon_period,
+           'fbb_comm_dev_act' AS source
+    FROM hive5.development.fbb_comm_dev_act
+    WHERE mon_period BETWEEN %(start_period)s AND %(end_period)s
+      AND LOWER(TRIM(distributor_name)) = LOWER(TRIM(%(dealer_name)s))
+    UNION ALL
+    SELECT distributor_code, distributor_name, mon_period,
+           'fbb_comm_orsc' AS source
+    FROM hive5.development.fbb_comm_orsc
+    WHERE mon_period BETWEEN %(start_period)s AND %(end_period)s
+      AND LOWER(TRIM(distributor_name)) = LOWER(TRIM(%(dealer_name)s))
+)
+SELECT CAST(distributor_code AS VARCHAR) AS dealer_id,
+       ARRAY_SORT(ARRAY_AGG(DISTINCT distributor_name)) AS recorded_names,
+       MIN(mon_period) AS first_observed_period,
+       MAX(mon_period) AS last_observed_period,
+       ARRAY_SORT(ARRAY_AGG(DISTINCT source)) AS sources
+FROM observations
+WHERE distributor_code IS NOT NULL
+  AND TRIM(CAST(distributor_code AS VARCHAR)) <> ''
+GROUP BY distributor_code
+ORDER BY CAST(distributor_code AS VARCHAR)
+"""
+
 SQL: dict[str, str] = {
+    "get_dealer_codes": _SQL_GET_DEALER_CODES.strip(),
     "get_dealer_summary": _SQL_GET_DEALER_SUMMARY.strip(),
     "get_zero_commission_records": _SQL_GET_ZERO_COMMISSION_RECORDS.strip(),
     "get_month_on_month_variance": _SQL_GET_MONTH_ON_MONTH_VARIANCE.strip(),
@@ -1556,7 +1584,97 @@ def _sample_get_subscription_demo_records(params: dict) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _sample_get_dealer_codes(params: dict) -> pd.DataFrame:
+    """Exact normalized name associations across bounded reporting months.
+
+    Metadata survives empty results via DataFrame.attrs and is included by the
+    tool executor. Codes are read as strings to preserve leading zeroes.
+    """
+    name = params.get("dealer_name")
+    if not isinstance(name, str) or not name.strip() or len(name) > 300:
+        raise ValueError("dealer_name must be a non-empty string of at most 300 characters")
+    normalized_name = name.strip().lower()
+    bounds: dict[str, str | None] = {}
+    for key in ("start_period", "end_period"):
+        value = params.get(key)
+        if value is not None and (
+            not isinstance(value, str)
+            or not re.fullmatch(r"[0-9]{4}(0[1-9]|1[0-2])", value)
+        ):
+            raise ValueError(f"{key} must be a valid YYYYMM string")
+        bounds[key] = value
+    start, end = bounds["start_period"], bounds["end_period"]
+    if start and end and start > end:
+        raise ValueError("start_period must not be later than end_period")
+    page = params.get("page", 1)
+    page_size = params.get("page_size", 100)
+    if type(page) is not int or page < 1:
+        raise ValueError("page must be a positive integer")
+    if type(page_size) is not int or not 1 <= page_size <= 100:
+        raise ValueError("page_size must be an integer between 1 and 100")
+
+    associations: dict[str, dict] = {}
+    coverage: dict[str, list[str]] = {}
+    for source in ("fbb_comm_dev_act", "fbb_comm_orsc"):
+        entry = config.SAMPLE_DATA_PATHS[source]
+        paths = (
+            [path for period, path in sorted(entry.items())
+             if (not start or period >= start) and (not end or period <= end)]
+            if isinstance(entry, dict) else [entry]
+        )
+        searched = set()
+        for path in paths:
+            # Do not silently skip missing configured evidence files.
+            with path.open(newline="") as handle:
+                for row in csv.DictReader(handle):
+                    period = row["mon_period"]
+                    if (start and period < start) or (end and period > end):
+                        continue
+                    searched.add(period)
+                    recorded_name = row["distributor_name"]
+                    code = row["distributor_code"]
+                    if recorded_name.strip().lower() != normalized_name or not code.strip():
+                        continue
+                    item = associations.setdefault(code, {
+                        "names": set(), "periods": set(), "sources": set(),
+                    })
+                    item["names"].add(recorded_name)
+                    item["periods"].add(period)
+                    item["sources"].add(source)
+        coverage[source] = sorted(searched)
+
+    codes = sorted(associations)
+    offset = (page - 1) * page_size
+    rows = []
+    for code in codes[offset:offset + page_size]:
+        item = associations[code]
+        rows.append({
+            "dealer_id": code,
+            "recorded_names": sorted(item["names"]),
+            "first_observed_period": min(item["periods"]),
+            "last_observed_period": max(item["periods"]),
+            "sources": sorted(item["sources"]),
+        })
+    result = pd.DataFrame(rows, columns=[
+        "dealer_id", "recorded_names", "first_observed_period",
+        "last_observed_period", "sources",
+    ])
+    result.attrs["lookup_metadata"] = {
+        "coverage_by_source": coverage,
+        "total_codes": len(codes), "page": page, "page_size": page_size,
+        "has_more": offset + page_size < len(codes),
+        "data_source": "SAMPLE",
+        "association_note": (
+            "Recorded name-code associations only; not verified branches or legal entities. "
+            "First/last observations are within searched months and do not prove continuity. "
+            "Coverage is limited to the source records available in this dataset."
+        ),
+    }
+    return result
+
+
 SAMPLE_HANDLERS: dict[str, Callable[[dict], pd.DataFrame]] = {
+    "get_dealer_codes": _sample_get_dealer_codes,
     "get_subscription_demo_records": _sample_get_subscription_demo_records,
     "get_dealer_summary": _sample_get_dealer_summary,
     "get_zero_commission_records": _sample_get_zero_commission_records,

@@ -607,7 +607,39 @@ COMPILE_DATA_COVERAGE_TICKET: dict[str, Any] = {
 }
 
 
+GET_DEALER_CODES: dict[str, Any] = {
+    "name": "get_dealer_codes",
+    "description": (
+        "List distinct dealer codes associated with a selected complete dealer name "
+        "across activation and subscription revenue records. Match ignores case and "
+        "surrounding whitespace only; no fuzzy, partial-name or branch inference. "
+        "Use for 'list all codes attached to [dealer name]'. Omit period bounds to "
+        "search all available months, even when the workspace has a selected month; "
+        "only set bounds when the user requests a date range. Returns recorded name "
+        "variants, first/last observed month within the search, sources, and coverage "
+        "metadata even when no codes match. State the searched coverage and sample "
+        "data status. These associations do not establish branches or common legal "
+        "ownership; observation endpoints do not establish continuous association. "
+        "Fetch successive pages while has_more is true before claiming to list all "
+        "codes. If no matches, ask for the complete recorded name; do not invent codes."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "dealer_name": {"type": "string", "minLength": 1, "maxLength": 300},
+            "start_period": _MON_PERIOD_SCHEMA,
+            "end_period": _MON_PERIOD_SCHEMA,
+            "page": {"type": "integer", "minimum": 1, "default": 1},
+            "page_size": {"type": "integer", "minimum": 1, "maximum": 100, "default": 100},
+        },
+        "required": ["dealer_name"],
+        "additionalProperties": False,
+    },
+}
+
+
 TOOLS: list[dict[str, Any]] = [
+    GET_DEALER_CODES,
     GET_DEALER_SUMMARY,
     GET_ZERO_COMMISSION_RECORDS,
     GET_MONTH_ON_MONTH_VARIANCE,

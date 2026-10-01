@@ -351,6 +351,8 @@ def _success_result(
             "row_count": total_rows,
             "rows": _df_to_records(df),
         }
+    if tool_name == "get_dealer_codes":
+        envelope.update(df.attrs.get("lookup_metadata", {}))
     return {
         "type": "tool_result",
         "tool_use_id": tool_use_id,
