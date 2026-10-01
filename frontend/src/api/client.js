@@ -415,6 +415,7 @@ export function explainFinding(payload, options = {}) {
 export function streamMessage(message, conversation_history = [], mon_period = null, options = {}) {
   const payload = { message, conversation_history };
   if (mon_period) payload.mon_period = mon_period;
+  if (options.investigationContext) payload.investigation_context = options.investigationContext;
   return streamAnswer('/chat/stream', payload, options);
 }
 

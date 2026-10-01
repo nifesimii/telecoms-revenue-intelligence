@@ -2,7 +2,7 @@
 
 ## Objective and authorization
 
-MTN Finance can review a fictional dealer's whole-business balance sheet, income
+MTN Finance and Operations can review synthetic whole-business balance sheet, income
 statement, cash flow statement and six basic KPIs to understand the proposed
 funding-review capability. The user authorized implementation on 2026-09-16;
 all data is synthetic. This execution spec supersedes the planning-only boundary
@@ -11,7 +11,7 @@ needed for the demo defaults below.
 
 ## Demo defaults
 
-- Four expressly fictional businesses with separate `DEMO-` identities. Scenarios:
+- Twenty existing sample dealer identities from `data/samples/financial_health_dealers.json`. These exact codes and names also occur in the commission workspace. Financial figures and assigned scenarios remain entirely fictional. Scenarios:
   cash-generating operations, profitable but working-capital constrained,
   operating losses/debt pressure, and a missing repayment schedule.
 - One whole business per dealer, including non-MTN activity; no outlet drill-down.
@@ -46,7 +46,7 @@ needed for the demo defaults below.
    responsive checks. No new dependencies or database schema changes.
 
 All financial logic lives in the backend demo module; no SQL is introduced.
-Existing payment reads, commissions and LLM tools retain their behavior.
+Existing payment reads and commissions retain their behavior. Atlas reads the same financial service through two direct, read-only tools.
 The synthetic endpoints stay synthetic regardless of the application's data mode.
 
 ## API contract
@@ -109,5 +109,52 @@ reporting cadence. These do not block the synthetic demonstration.
 - Browser-downloaded CSV checked: 55 rows covering all statements, six KPIs,
   source evidence and assumptions; synthetic provenance retained on every row.
 
-Demo limitations are deliberate: prepared month-end records, four fictional
-businesses, no real-time ingestion, live source integration or funding decisions.
+Demo limitations are deliberate: prepared month-end records, 20 shared sample dealer identities, no real-time ingestion, live source integration or funding decisions.
+
+
+## Shared dealer cohort and Atlas — 2026-10-01
+
+User-authorized extension: Finance and Operations can browse 20 existing sample
+dealers and ask Atlas about their statements or compare the cohort. The frozen
+cohort samples evenly spaced March activation-volume ranks among codes present
+in all six months. Selection volume does not determine financial condition.
+Names are not legal-entity identifiers; each scenario stays attached to one
+exact dealer code and does not imply consolidation of similarly named accounts.
+The modeled scope is whole-business for demonstration only, not verified scope.
+
+Four accounting scenarios recur at five scales, scaling opening balances and
+all monetary movements together. Financial Health is always synthetic, including
+when the rest of the application is configured for live data. Commission income
+is independently modeled and does not claim to equal recorded MTN commissions.
+No data feeds, financial uploads, new SQL, or production writes are introduced.
+
+- `get_financial_health_report(mon_period, distributor_code)` returns the exact
+  workspace report, or an explicit unavailable result for unsupported accounts
+  or months. It includes source, assumptions, prior month, and evidence.
+- `get_financial_health_summary(mon_period, search?, sort_by?, direction?, limit?,
+  offset?)` shares the bounded workspace collection (maximum 100), including
+  six KPIs with inputs, statuses, and prior values for the returned page.
+- Atlas is available at cohort and dealer level in Financial Health, loaded on
+  demand through the existing assistant. Every request carries the exact dealer
+  and period, and conversation threads are isolated by workspace/dealer/month.
+- Explanations are grounded in the returned statements and the Financial Health
+  KB section. Missing schedules, missing reports and invalid ratios retain their
+  explicit statuses. No credit scores, lending thresholds or recommendations.
+
+Acceptance: all 120 dealer-month reports reconcile; the frozen identities match
+existing fixtures every month; API and Atlas reports agree exactly; comparisons
+are bounded; follow-ups and dealer/month switches preserve correct context;
+provenance is visible in the workspace, tool evidence and exported report.
+
+
+Verification of this extension: backend full suite **393 passed, 28 skipped**;
+frontend unit tests **5 passed**; production build passed. Isolated Chrome
+verified the actual local workspace/API with only AI replies mocked: all three
+statements, CSV export, cohort and dealer conversations, plain visible questions,
+context on follow-ups, dealer/month isolation, missing evidence, and narrow
+layout. Standards and Spec reviews reported no findings. No live model-quality
+evaluation was run. The JavaScript frontend has no configured typecheck script;
+Vite compilation and the runtime browser journeys provide frontend validation.
+
+Browser check (with local sample API and Vite running):
+`PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/financial-health.mjs`.

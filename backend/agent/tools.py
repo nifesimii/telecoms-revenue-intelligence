@@ -638,7 +638,53 @@ GET_DEALER_CODES: dict[str, Any] = {
 }
 
 
+GET_FINANCIAL_HEALTH_REPORT: dict[str, Any] = {
+    "name": "get_financial_health_report",
+    "description": (
+        "Read the same synthetic whole-business financial report shown in Financial Health "
+        "for one exact existing dealer code and month. Returns income statement, balance "
+        "sheet, cash flow, prior-month amounts, six KPIs with formulas/inputs/status, "
+        "observations and evidence. Always disclose synthetic provenance. These are not "
+        "actual dealer accounts or MTN commission/settlement evidence. Missing reports "
+        "and ratios are unavailable, not zero. No credit score or lending recommendation. "
+        "Use get_financial_health_summary to find supported dealers by name first. "
+        "For arbitrary month comparisons retrieve each month's report."
+    ),
+    "input_schema": {
+        "type": "object", "properties": {
+            "mon_period": _MON_PERIOD_SCHEMA,
+            "distributor_code": _DISTRIBUTOR_CODE_SCHEMA,
+        }, "required": ["mon_period", "distributor_code"], "additionalProperties": False,
+    },
+}
+
+GET_FINANCIAL_HEALTH_SUMMARY: dict[str, Any] = {
+    "name": "get_financial_health_summary",
+    "description": (
+        "Find or compare the 20 existing sample dealers with synthetic Financial Health "
+        "statements, January–June 2026. Search name, exact code or scenario; returns "
+        "bounded dealer summaries and six KPIs with prior-month values and missing-evidence "
+        "statuses. Same source as the Financial Health tab. Always disclose synthetic data "
+        "and reporting month. This cohort is not the entire dealer portfolio. Fetch pages "
+        "until has_more is false before claiming a whole-cohort comparison. Inspect exact "
+        "reports for statement explanations. Do not assign credit scores or recommend lending."
+    ),
+    "input_schema": {
+        "type": "object", "properties": {
+            "mon_period": _MON_PERIOD_SCHEMA,
+            "search": {"type": "string", "maxLength": 200},
+            "sort_by": {"type": "string", "enum": ["dealer_name", "revenue", "net_profit"]},
+            "direction": {"type": "string", "enum": ["asc", "desc"]},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
+            "offset": {"type": "integer", "minimum": 0, "default": 0},
+        }, "required": ["mon_period"], "additionalProperties": False,
+    },
+}
+
+
 TOOLS: list[dict[str, Any]] = [
+    GET_FINANCIAL_HEALTH_REPORT,
+    GET_FINANCIAL_HEALTH_SUMMARY,
     GET_DEALER_CODES,
     GET_DEALER_SUMMARY,
     GET_ZERO_COMMISSION_RECORDS,

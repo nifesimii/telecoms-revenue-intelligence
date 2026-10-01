@@ -477,3 +477,19 @@ def test_kb_grounding_returns_5g_router_commission_rate() -> None:
         "Expected '8,215.81' (the KB-documented 5G ROUTER commission rate) "
         f"in the response, but got:\n\n{result['response']}"
     )
+
+
+def test_financial_report_tool_reaches_atlas_with_same_statement_evidence(monkeypatch):
+    from backend.db.financial_health import get_report
+    captured = _install_anthropic_mock(monkeypatch, responses=[
+        _FakeResponse([_FakeToolUseBlock('finance-report', 'get_financial_health_report',
+            {'distributor_code': '74050', 'mon_period': '202603'})], stop_reason='tool_use'),
+        _FakeResponse([_FakeTextBlock('Synthetic March 2026 net profit: NGN 2,240,000.00.')]),
+    ])
+    result = asyncio.run(run_agent('Explain the financial statements for dealer 74050 in March 2026.'))
+    assert not result.get('error')
+    assert 'get_financial_health_report' in result['tools_called']
+    tool_message = next(m for m in captured[1]['messages'] if m['role'] == 'user' and isinstance(m['content'], list))
+    evidence = json.loads(tool_message['content'][0]['content'])
+    assert evidence['report'] == get_report('74050', '202603')
+    assert evidence['report']['kpis'][0]['value'] == 40

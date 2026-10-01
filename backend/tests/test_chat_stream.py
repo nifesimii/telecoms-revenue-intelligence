@@ -57,6 +57,45 @@ def provider(monkeypatch, *rounds):
     return fake
 
 
+def test_followup_includes_selected_account_even_without_opening_context(monkeypatch):
+    fake = provider(monkeypatch, Stream('Product evidence answer'))
+    question = 'what products entitle this dealer for commission this month'
+    history = [
+        {'role': 'user', 'content': 'Explain the balance'},
+        {'role': 'assistant', 'content': 'Recorded balance explained.'},
+        {'role': 'user', 'content': 'What remains unverified?'},
+        {'role': 'assistant', 'content': 'Payment verification is pending.'},
+    ]
+    context = 'Exact dealer account code 296065 (River Isle Ventures); do not combine other accounts with the same name.'
+    with TestClient(app) as client:
+        response = client.post('/chat/stream', json={
+            'message': question, 'mon_period': '202606',
+            'conversation_history': history, 'investigation_context': context,
+        })
+    assert response.status_code == 200
+    sent = fake.calls[0]['messages']
+    assert sent[:-1] == history
+    assert context in sent[-1]['content']
+    assert '202606' in sent[-1]['content']
+    assert question in sent[-1]['content']
+    assert 'this dealer' in sent[-1]['content']
+
+
+def test_buffered_chat_also_receives_active_context(monkeypatch):
+    from backend.api import routes
+
+    run = AsyncMock(return_value={'response': 'Answer', 'tools_called': [], 'raw_data': {}, 'error': None})
+    monkeypatch.setattr(routes, 'run_agent', run)
+    with TestClient(app) as client:
+        response = client.post('/chat', json={
+            'message': 'What about this dealer?',
+            'investigation_context': 'Exact dealer account code 001.',
+        })
+    assert response.status_code == 200
+    assert 'Exact dealer account code 001.' in run.call_args.args[0]
+    assert 'What about this dealer?' in run.call_args.args[0]
+
+
 def test_chat_stream_yields_partial_before_provider_completion(monkeypatch):
     async def exercise():
         gate = asyncio.Event()
@@ -222,6 +261,67 @@ def test_real_sdk_chat_stream_confirms_terminal_stop(monkeypatch, stop, terminal
     assert len(calls) == 1
     assert calls[0]['stream'] is True
     assert calls[0]['system'] == inference.cached_system(prompts.get_system_prompt())
+
+
+def test_real_sdk_streamed_tool_round_can_be_sent_back_to_provider(monkeypatch):
+    """SDK-only parsed_output metadata must not leak into the next API request."""
+    import anthropic
+    import httpx
+
+    calls = []
+
+    def respond(request):
+        payload = json.loads(request.content)
+        calls.append(payload)
+        followup = len(calls) == 2
+        if followup:
+            blocks = payload['messages'][1]['content']
+            if 'parsed_output' in blocks[0]:
+                return httpx.Response(400, json={'type': 'error', 'error': {
+                    'type': 'invalid_request_error',
+                    'message': 'messages.1.content.0.text.parsed_output: Extra inputs are not permitted'}})
+            assert blocks[0]['text'] == 'Checking records.'
+            assert blocks[1]['input'] == {'mon_period': '202606'}
+            assert payload['messages'][2]['content'][0]['tool_use_id'] == 'tool_1'
+        events = [
+            {'type': 'message_start', 'message': {'id': 'msg_test', 'type': 'message',
+                'role': 'assistant', 'model': agent.MODEL_NAME, 'content': [],
+                'stop_reason': None, 'stop_sequence': None,
+                'usage': {'input_tokens': 1, 'output_tokens': 0}}},
+            {'type': 'content_block_start', 'index': 0, 'content_block': {'type': 'text', 'text': ''}},
+            {'type': 'content_block_delta', 'index': 0, 'delta': {'type': 'text_delta',
+                'text': 'NGN 100.00; verification pending.' if followup else 'Checking records.'}},
+            {'type': 'content_block_stop', 'index': 0},
+        ]
+        if not followup:
+            events.extend([
+                {'type': 'content_block_start', 'index': 1, 'content_block': {
+                    'type': 'tool_use', 'id': 'tool_1', 'name': 'get_dealer_summary', 'input': {}}},
+                {'type': 'content_block_delta', 'index': 1, 'delta': {
+                    'type': 'input_json_delta', 'partial_json': '{"mon_period":"202606"}'}},
+                {'type': 'content_block_stop', 'index': 1},
+            ])
+        events.extend([
+            {'type': 'message_delta', 'delta': {'stop_reason': 'end_turn' if followup else 'tool_use',
+                'stop_sequence': None}, 'usage': {'output_tokens': 8}},
+            {'type': 'message_stop'},
+        ])
+        body = ''.join(f"event: {event['type']}\ndata: {json.dumps(event)}\n\n" for event in events)
+        return httpx.Response(200, headers={'content-type': 'text/event-stream'}, text=body)
+
+    async def exercise():
+        client = anthropic.AsyncAnthropic(api_key='test', max_retries=0,
+            http_client=httpx.AsyncClient(transport=httpx.MockTransport(respond)))
+        monkeypatch.setattr(agent, 'new_client', lambda key: client)
+        monkeypatch.setattr(agent.tool_executor, 'execute_tool', lambda call: {
+            'type': 'tool_result', 'tool_use_id': call['id'], 'content': '{}'})
+        events = [event async for event in agent.run_agent_stream('Explain June')]
+        assert events[-1]['type'] == 'complete'
+        assert events[-1]['response'] == 'NGN 100.00; verification pending.'
+        assert events[-1]['tools_called'] == ['get_dealer_summary']
+
+    asyncio.run(exercise())
+    assert len(calls) == 2
 
 
 def test_chat_stream_never_retries_after_text_in_an_earlier_tool_round(monkeypatch):

@@ -36,7 +36,7 @@ function conversationFor(key) {
   return conversation;
 }
 
-export default function useChat({ scope } = {}) {
+export default function useChat({ scope, investigationContext } = {}) {
   const conversation = conversationFor(scope ? `${STORAGE_KEY}.${scope}` : STORAGE_KEY);
   const state = useSyncExternalStore(conversation.subscribe, conversation.snapshot);
 
@@ -62,7 +62,7 @@ export default function useChat({ scope } = {}) {
     };
     conversation.update({ messages, isLoading: true, error: null });
     try {
-      const options = { signal: controller.signal, onText: (text) => {
+      const options = { investigationContext, signal: controller.signal, onText: (text) => {
         if (!controller.signal.aborted) updateAnswer({ content: conversation.snapshot().messages.at(-1).content + text });
       }, onStatus: (event) => {
         if (controller.signal.aborted) return;

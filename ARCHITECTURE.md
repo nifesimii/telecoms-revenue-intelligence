@@ -21,8 +21,12 @@ This repository is one product built in two stacked layers.
 
 **Dealer Financial Health demonstration** adds a separate whole-business review
 workspace at `?view=financial-health`. Its read-only `/financial-health` API uses
-`backend/db/financial_health.py` to generate four explicitly fictional businesses
-with reconciled monthly statements and six KPIs. It does not read APDP, Presto,
+`backend/db/financial_health.py` to generate synthetic statements for 20 existing sample dealer identities
+with reconciled monthly statements and six KPIs. The frozen cohort lives in
+`data/samples/financial_health_dealers.json`; shared identity is not evidence of
+actual financial condition. Atlas reads this same service through
+`get_financial_health_summary` and `get_financial_health_report`, with Financial
+Health conversation scope isolated by dealer and period. It does not read APDP, Presto,
 or real dealer accounts, even when other workspaces use live data. The collection
 is bounded and searched/sorted on the backend; exact dealer-month detail is loaded
 on demand through TanStack Query. The React workspace lives in
@@ -38,9 +42,16 @@ prove, step by step, that a partner was or wasn't paid". Its users are Finance,
 Revenue Assurance, and FBB Operations.
 
 **Atlas** is the shared AI assistant across Commission (including Subscriptions),
-Payments, Inventory, and Findings. Its description is “Your commission intelligence
+Payments, Inventory, Findings, and Financial Health. Its description is “Your commission intelligence
 assistant.” The platform retains its existing name; Atlas identifies the assistant
 in the UI, accessibility labels, and system prompt.
+
+Every ordinary Atlas request carries the active workspace scope in the optional
+`investigation_context` field, separately from the displayed question. Both chat
+routes attach it to the model's current turn, so references such as “this dealer”
+resolve to the selected exact account without depending on earlier chat text.
+Commission openings still record the scope; Financial Health questions and all
+follow-ups display only the user's question. Account/period conversation isolation remains in the shared chat store.
 
 **APDP — African Payment Data Platform** (`apdp/`) is the payment-data
 pipeline. The full production path is Kafka → Flink → Postgres, but

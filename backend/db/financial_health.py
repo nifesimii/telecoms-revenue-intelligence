@@ -7,25 +7,39 @@ paid in the reporting month; capital/owner drawings are unchanged.
 from calendar import monthrange
 from copy import deepcopy
 from functools import lru_cache
+import json
+from pathlib import Path
 
 PERIODS = ('202601', '202602', '202603', '202604', '202605', '202606')
-DEALERS = (
-    dict(dealer_id='DEMO-001', dealer_name='Cedar Connect', scenario='Cash-generating operations',
+SCENARIOS = (
+    dict(scenario_id='cash_generation', scenario='Cash-generating operations',
          revenue=12_000_000, growth=1_000_000, cost_pct=60, expenses=2_100_000,
          interest=100_000, receivables_change=200_000, inventory_change=100_000,
          payables_change=50_000, capex=300_000, borrowing=0, principal=100_000),
-    dict(dealer_id='DEMO-002', dealer_name='Harbour Digital', scenario='Cash tied up in working capital',
+    dict(scenario_id='working_capital', scenario='Cash tied up in working capital',
          revenue=10_000_000, growth=500_000, cost_pct=65, expenses=2_000_000,
          interest=120_000, receivables_change=2_000_000, inventory_change=800_000,
          payables_change=200_000, capex=100_000, borrowing=200_000, principal=100_000),
-    dict(dealer_id='DEMO-003', dealer_name='Northstar Devices', scenario='Operating losses and debt pressure',
+    dict(scenario_id='losses', scenario='Operating losses and debt pressure',
          revenue=8_000_000, growth=-200_000, cost_pct=85, expenses=2_000_000,
          interest=180_000, receivables_change=0, inventory_change=-100_000,
          payables_change=100_000, capex=50_000, borrowing=600_000, principal=200_000),
-    dict(dealer_id='DEMO-004', dealer_name='Orchard Telecom', scenario='Repayment schedule unavailable',
+    dict(scenario_id='missing_schedule', scenario='Repayment schedule unavailable',
          revenue=9_000_000, growth=500_000, cost_pct=60, expenses=1_700_000,
          interest=90_000, receivables_change=100_000, inventory_change=50_000,
          payables_change=30_000, capex=150_000, borrowing=0, principal=100_000),
+)
+
+
+# Frozen selection from existing sample dealer identities, spread across March
+# activation-volume ranks and present in every demo month. No live account reads.
+_COHORT_PATH = Path(__file__).resolve().parents[2] / 'data/samples/financial_health_dealers.json'
+PROVENANCE = ('Synthetic demonstration using existing sample dealer identities; '
+              'not actual dealer financial records. Scenario assignments do not '
+              'establish these businesses’ real financial condition.')
+DEALERS = tuple(
+    {**SCENARIOS[index % len(SCENARIOS)], **identity, 'scale': 1 + index // len(SCENARIOS)}
+    for index, identity in enumerate(json.loads(_COHORT_PATH.read_text()))
 )
 
 
@@ -76,7 +90,7 @@ def _month(dealer, opening, index):
     v['gross_profit'] = v['revenue'] - v['cost_of_sales']
     v['operating_expenses'] = dealer['expenses']
     v['ebitda'] = v['gross_profit'] - v['operating_expenses']
-    v['depreciation'] = 200_000
+    v['depreciation'] = 200_000 * dealer['scale']
     v['operating_profit'] = v['ebitda'] - v['depreciation']
     v['interest'] = dealer['interest']
     v['profit_before_tax'] = v['operating_profit'] - v['interest']
@@ -108,7 +122,7 @@ def _month(dealer, opening, index):
     v['liabilities_and_equity'] = v['total_liabilities'] + v['total_equity']
     # Actual principal payment remains observable; a missing contractual schedule
     # does not prove whether that payment met the obligation.
-    v['scheduled_principal'] = None if dealer['dealer_id'] == 'DEMO-004' else dealer['principal']
+    v['scheduled_principal'] = None if dealer['scenario_id'] == 'missing_schedule' else dealer['principal']
     return v
 
 
@@ -139,12 +153,18 @@ def _records():
         v = dict(cash=8_000_000, receivables=3_000_000, inventory=4_000_000,
                  fixed_assets=5_000_000, payables=2_000_000, current_debt=1_500_000,
                  long_term_debt=3_500_000, capital=10_000_000, retained_earnings=3_000_000)
-        if dealer['dealer_id'] == 'DEMO-003':
+        if dealer['scenario_id'] == 'losses':
             v.update(cash=4_000_000, receivables=1_000_000, inventory=2_000_000,
                      fixed_assets=3_000_000, payables=3_000_000, current_debt=2_000_000,
                      long_term_debt=7_000_000, capital=1_000_000, retained_earnings=-3_000_000)
+        # Scale the complete accounting scenario, including opening balances,
+        # so every dealer remains reconciled across months.
+        scale = dealer['scale']
+        v = {key: amount * scale for key, amount in v.items()}
+        modeled_dealer = {key: value * scale if isinstance(value, int) and key not in ('cost_pct', 'scale') else value
+                         for key, value in dealer.items()}
         for index, period in enumerate(PERIODS):
-            v = _month(dealer, v, index)
+            v = _month(modeled_dealer, v, index)
             records[(dealer['dealer_id'], period)] = v
     return records
 
@@ -178,7 +198,7 @@ def get_report(dealer_id, period):
     for metric in kpis:
         metric['prior_value'] = prior_kpis.get(metric['id'], {}).get('value')
     return dict(dealer_id=dealer_id, dealer_name=dealer['dealer_name'], scenario=dealer['scenario'],
-                source='synthetic', mon_period=period, prior_period=prior_period, as_of=date,
+                source='synthetic', provenance=PROVENANCE, mon_period=period, prior_period=prior_period, as_of=date,
                 currency='NGN', scope='Whole dealer business • all outlets and business lines',
                 values=values, statements=statements, kpis=kpis, observations=observations,
                 evidence=[
@@ -197,5 +217,8 @@ def list_dealers(period, search='', sort_by='dealer_name', direction='asc', limi
         items.append({key: dealer[key] for key in ('dealer_id', 'dealer_name', 'scenario')} | {key: values[key] for key in ('revenue', 'net_profit', 'operating_cash_flow')})
     items.sort(key=lambda row: (row[sort_by], row['dealer_id']), reverse=direction == 'desc')
     total = len(items)
-    return dict(source='synthetic', mon_period=period, available_periods=PERIODS,
-                items=items[offset:offset + limit], pagination=dict(total=total, limit=limit, offset=offset, has_more=offset + limit < total))
+    page = items[offset:offset + limit]
+    for row in page:
+        row['kpis'] = get_report(row['dealer_id'], period)['kpis']
+    return dict(source='synthetic', provenance=PROVENANCE, mon_period=period, available_periods=PERIODS,
+                items=page, pagination=dict(total=total, limit=limit, offset=offset, has_more=offset + limit < total))

@@ -281,10 +281,15 @@ async def _run_loop(
 def _block_to_dict(block: Any) -> dict[str, Any]:
     """Serialise an Anthropic ContentBlock pydantic model to plain dict."""
     if hasattr(block, "model_dump"):
-        return block.model_dump()
-    if hasattr(block, "dict"):
-        return block.dict()
-    return dict(block)
+        data = block.model_dump()
+    elif hasattr(block, "dict"):
+        data = block.dict()
+    else:
+        data = dict(block)
+    # Streaming returns ParsedTextBlock, whose parsed_output is SDK-only
+    # metadata. Sending it back in conversation history causes HTTP 400.
+    data.pop("parsed_output", None)
+    return data
 
 
 def _error_response() -> dict[str, Any]:

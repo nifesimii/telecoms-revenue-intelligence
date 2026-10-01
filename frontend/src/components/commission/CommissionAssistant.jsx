@@ -12,17 +12,20 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
     : inventoryScope
     ? `inventory.${inventoryScope.period}.${inventoryScope.dealer_id}.${inventoryScope.product_code}`
     : `${period}.${comparison || 'none'}.${stream}.${account?.dealer_id || 'all'}`;
-  const { messages, isLoading, error, sendMessage, clearChat, stopMessage, retryMessage, canRetry } = useChat({ scope });
   const [input, setInput] = useState('');
   const inputRef = useRef(null);
   const initialFindingPrompt = useRef(null);
   const composerRef = useRef(null);
   const threadRef = useRef(null);
-  const context = findingsScope
+  const financial = stream === 'financial';
+  const context = financial
+    ? `Financial Health for reporting period ${period}. ${account ? `Exact dealer account code ${account.dealer_id} (${account.dealer_name}); do not combine other accounts with the same name.` : 'Compare only the 20-dealer Financial Health cohort, not the whole portfolio.'} Use get_financial_health_report for statements and get_financial_health_summary for discovery and comparisons. These are synthetic whole-business statements for January–June 2026, not actual dealer finances or commission/settlement evidence. Disclose synthetic provenance; explain only supplied statement figures, KPI formulas and evidence. Missing reports or repayment schedules are unavailable, not zero. No credit scores or lending recommendations.`
+    : findingsScope
     ? `Findings investigation for reporting period ${findingsScope.period}. Exact dealer account code ${findingsScope.dealer_id} (${findingsScope.dealer_name}); do not combine other accounts with the same name. Finding module ${findingsScope.finding.module}, type ${findingsScope.finding.type}.${findingsScope.finding.product_code ? ` Exact product code ${findingsScope.finding.product_code}.` : ''} Use the evidence and documented rules; distinguish missing evidence from confirmed discrepancies.`
     : inventoryScope
     ? `Inventory investigation for reporting period ${inventoryScope.period}, exact dealer ${inventoryScope.dealer_id} (${inventoryScope.dealer_name}), product ${inventoryScope.product_code} (${inventoryScope.product_name}). Use only this dealer/product scope. Confirm invoice coverage, purchase window and documented Inventory KB explanations; missing evidence does not prove missing purchases or commission owed. ${inventoryScope.scenario_label ? `Synthetic scenario: ${inventoryScope.scenario_label}; fictional purchase evidence is not verified operational evidence.` : ''}`
     : `Reporting period ${period}. ${comparison ? `Comparison period ${comparison}.` : 'No comparison period selected.'} ${account ? `Exact dealer account code ${account.dealer_id} (${account.dealer_name}); do not combine other accounts with the same name.` : 'Portfolio-level investigation.'} ${stream === 'orsc' ? 'Subscription review: subscription revenue is separate from recorded upstream subscription commission, settlement and outstanding amounts. Use get_orsc_summary for available evidence. Do not infer a commission rate or eligibility policy; the actual calculation policy has not been supplied. Missing commission evidence is unavailable, not zero.' : stream === 'payment' ? 'Payment settlement investigation. Use recorded payment and commission evidence; do not infer causes from aggregate differences.' : 'Activation commission.'}`;
+  const { messages, isLoading, error, sendMessage, clearChat, stopMessage, retryMessage, canRetry } = useChat({ scope, investigationContext: context });
   useEffect(() => {
     if (!prompt) return;
     initialFindingPrompt.current = prompt;
@@ -59,17 +62,23 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
     const explanation = findingsScope && initialFindingPrompt.current !== null && input.trim() === initialFindingPrompt.current.trim()
       ? { dealer_id: findingsScope.dealer_id, mon_period: findingsScope.period, finding: findingsScope.finding } : null;
     initialFindingPrompt.current = null;
-    sendMessage(`${context}\n\n${input.trim()}`, inventoryScope?.period || period, explanation);
+    // Keep the visible scope introduction on the opening turn only. Active
+    // context also travels separately on every request, including follow-ups.
+    const hasContext = messages.some((message) => message.role === 'assistant' && !message.incomplete);
+    sendMessage(financial || hasContext ? input.trim() : `${context}\n\n${input.trim()}`, inventoryScope?.period || period, explanation);
     setInput('');
   }
-  const suggestions = findingsScope ? ['Explain the selected finding and identify the evidence still needed.'] : inventoryScope ? ['Explain this dealer-product Inventory comparison and identify the evidence still needed.'] : stream === 'payment' ? ['Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.'] : stream === 'orsc'
+  const suggestions = financial
+    ? account ? ['Explain this dealer’s income statement, balance sheet and cash flow.', 'Why does net profit differ from operating cash flow?', 'What changed since the prior month, and which indicators need more evidence?']
+      : ['Compare profitability and operating cash flow across the 20 dealers.', 'Which dealers have missing repayment evidence or ratios that are not meaningful?']
+    : findingsScope ? ['Explain the selected finding and identify the evidence still needed.'] : inventoryScope ? ['Explain this dealer-product Inventory comparison and identify the evidence still needed.'] : stream === 'payment' ? ['Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.'] : stream === 'orsc'
     ? ['Summarise subscription revenue, recorded commission, settlement and outstanding amounts. State any missing evidence.']
     : [comparison ? 'Explain the commission change by denomination between these periods.' : 'Explain the recorded commission breakdown.', 'Investigate zero-commission records using only documented KB causes. State what remains unverified.'];
   return <section className="overview-surface overflow-hidden min-w-0" aria-label="Atlas">
     <div className="p-5 border-b border-gray-200">
       <div className="flex justify-between gap-3 items-center"><h2 className="font-semibold">Atlas</h2>{messages.length > 0 && <button className="text-xs underline" disabled={isLoading} onClick={clearChat}>Clear thread</button>}</div>
-      <p className="text-sm text-gray-600 mt-1">Your commission intelligence assistant</p>
-      <p className="text-xs text-gray-600 mt-2">{findingsScope ? `Findings · Account ${findingsScope.dealer_id}${findingsScope.finding.product_code ? ` · Product ${findingsScope.finding.product_code}` : ''}` : inventoryScope ? `Inventory · Account ${inventoryScope.dealer_id} · Product ${inventoryScope.product_code}` : account ? `Account ${account.dealer_id}` : 'All accounts'} · {formatPeriod(inventoryScope?.period || period)}{!inventoryScope && comparison ? ` vs ${formatPeriod(comparison)}` : ''} · {findingsScope ? `${findingsScope.finding.module} · ${findingsScope.finding.type.replaceAll('_', ' ').toLowerCase()}` : inventoryScope ? 'Inventory comparison' : stream === 'orsc' ? 'Subscriptions' : stream === 'payment' ? 'Payments' : 'Activation commission'}</p>
+      <p className="text-sm text-gray-600 mt-1">{financial ? 'Your financial statement assistant · synthetic demonstration' : 'Your commission intelligence assistant'}</p>
+      <p className="text-xs text-gray-600 mt-2">{findingsScope ? `Findings · Account ${findingsScope.dealer_id}${findingsScope.finding.product_code ? ` · Product ${findingsScope.finding.product_code}` : ''}` : inventoryScope ? `Inventory · Account ${inventoryScope.dealer_id} · Product ${inventoryScope.product_code}` : account ? `Account ${account.dealer_id}` : financial ? '20-dealer cohort' : 'All accounts'} · {formatPeriod(inventoryScope?.period || period)}{!inventoryScope && comparison ? ` vs ${formatPeriod(comparison)}` : ''} · {findingsScope ? `${findingsScope.finding.module} · ${findingsScope.finding.type.replaceAll('_', ' ').toLowerCase()}` : inventoryScope ? 'Inventory comparison' : stream === 'orsc' ? 'Subscriptions' : stream === 'payment' ? 'Payments' : financial ? 'Financial Health · synthetic statements' : 'Activation commission'}</p>
     </div>
     {inventoryScope && <button className="overview-button m-4 mb-0" onClick={onInventoryScopeClear}>Return to Atlas for Commission</button>}
     <div ref={threadRef} className="p-4 max-h-96 overflow-y-auto commission-conversation" aria-live="polite" aria-busy={isLoading}>
@@ -88,7 +97,7 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
     {canRetry && <button className="overview-button mx-4 mb-3" onClick={retryMessage}>Retry explanation</button>}
     <form ref={composerRef} tabIndex={-1} className="p-4 border-t border-gray-200" onSubmit={submit}>
       <label className="text-xs font-medium text-gray-600" htmlFor={questionId}>Your question</label>
-      <textarea id={questionId} ref={inputRef} className="overview-select w-full mt-2 resize-y" rows={3} value={input} onChange={(e) => setInput(e.target.value)} placeholder="Ask Atlas about this account, its commission or the evidence…" disabled={isLoading} />
+      <textarea id={questionId} ref={inputRef} className="overview-select w-full mt-2 resize-y" rows={3} value={input} onChange={(e) => setInput(e.target.value)} placeholder={financial ? 'Ask Atlas about financial statements, cash flow or indicators…' : 'Ask Atlas about this account, its commission or the evidence…'} disabled={isLoading} />
       <div className="flex flex-wrap justify-between items-center gap-3 mt-3"><p className="text-xs text-gray-500">AI explanation · verify against source evidence</p><span className="flex gap-2">{isLoading && <button type="button" className="overview-button" onClick={stopMessage}>Stop</button>}<button className="overview-button overview-primary" disabled={isLoading || !input.trim()}>{isLoading ? 'Working…' : 'Send question →'}</button></span></div>
     </form>
   </section>;

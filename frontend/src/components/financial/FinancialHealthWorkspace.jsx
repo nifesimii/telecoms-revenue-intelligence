@@ -1,11 +1,14 @@
 import useQuery from '../../hooks/useWorkspaceQuery.js';
-import { useEffect, useRef, useState } from 'react';
+import { lazy, useEffect, useRef, useState } from 'react';
 import { getFinancialDealers } from '../../api/client.js';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
 import useDebouncedValue from '../../hooks/useDebouncedValue.js';
 import FinancialDetail from './FinancialDetail.jsx';
+import LazySection from '../shared/LazySection.jsx';
 import './financial.css';
+
+const CommissionAssistant = lazy(() => import('../commission/CommissionAssistant.jsx'));
 
 export default function FinancialHealthWorkspace() {
   const { period, loading, error } = usePeriod();
@@ -18,6 +21,7 @@ function Workspace({ period }) {
   const [sort, setSort] = useState('dealer_name');
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState(null);
+  const [showAssistant, setShowAssistant] = useState(false);
   useEffect(() => { setOffset(0); }, [period]);
   const rowRefs = useRef({});
   const returnFocus = useRef(null);
@@ -37,7 +41,10 @@ function Workspace({ period }) {
     <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
       <header><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">Dealer business intelligence</p>
         <h1 className="text-2xl font-semibold tracking-tight mt-1">Financial Health</h1>
-        <p className="text-sm text-gray-600 mt-2">Understand the business behind the dealer. Review profitability, cash and financial position.</p></header>
+        <p className="text-sm text-gray-600 mt-2">Understand the business behind the dealer. Review profitability, cash and financial position.</p>
+        <p className="text-xs text-amber-900 mt-3">Synthetic financial statements for 20 existing sample dealer identities · January–June 2026. Figures and scenarios do not describe actual dealer finances.</p>
+        <button className="fh-button mt-4" aria-expanded={showAssistant} onClick={() => setShowAssistant(!showAssistant)}>{showAssistant ? 'Hide Atlas' : selected ? 'Ask Atlas about this dealer' : 'Ask Atlas to compare dealers'}</button></header>
+      {showAssistant && <LazySection label="Atlas"><CommissionAssistant key={`financial.${period}.${selected?.dealer_id || 'all'}`} period={period} stream="financial" account={selected} /></LazySection>}
       {selected ? <FinancialDetail dealer={selected} period={period} onBack={() => { returnFocus.current = selected.dealer_id; setSelected(null); }} /> : <>
         <section className="fh-paper" aria-label="Dealer businesses">
           <div className="p-5 sm:p-6 border-b border-gray-200">

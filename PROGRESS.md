@@ -5,6 +5,25 @@ end of each work session. Newest session on top.
 
 ---
 
+## Session — 2026-10-01 (Shared dealer Financial Health and Atlas)
+
+- Expanded Financial Health to 20 existing sample dealer codes/names across
+  January–June 2026, with all 120 reports reconciled. Frozen cohort covers varied
+  activation-volume ranks; fictional scenarios do not describe actual finances.
+- Added two read-only Atlas tools backed by the same bounded collection and
+  exact report service as the UI, with six KPIs, prior values, provenance and
+  explicit missing-evidence statuses. Documented interpretation in the full KB.
+- Financial Health now opens Atlas for a dealer or the cohort, retaining exact
+  dealer/month context on every request and separate conversation threads.
+- Verification: backend full suite 393 passed / 28 skipped; five frontend unit
+  tests passed; production build passed. Isolated Chrome with mocked provider
+  replies verified statements, export, cohort/dealer questions, follow-ups,
+  account/month isolation, missing schedules, and mobile overflow. Independent
+  Standards and Spec reviews returned no findings. Live model answer quality
+  was not evaluated; tools and context were verified without provider calls.
+- No new dependencies or SQL; synthetic reports remain independent of live
+  Presto/APDP data. Existing unrelated working-tree edits are preserved.
+
 ## Session — 2026-09-30 (Preview responsiveness)
 
 - Three visible Herdr workers implemented sample commission aggregation,

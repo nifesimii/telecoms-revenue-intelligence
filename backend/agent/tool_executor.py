@@ -19,12 +19,14 @@ the agent loop forwards them to Claude so it can recover or apologise.
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from typing import Any, Callable, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 import pandas as pd
 
 from backend.agent import prompts
-from backend.db import queries
+from backend.db import queries, financial_health
 from backend.db.composite import assemble_dealer_full_context
 from backend.db.connection import execute_query
 from backend.db.explanation_evidence import FindingEvidenceUnavailable
@@ -270,10 +272,56 @@ def _handle_compile_data_coverage_ticket(
     }
 
 
+class _FinancialPeriod(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    mon_period: str = Field(pattern=r'^\d{4}(0[1-9]|1[0-2])$')
+
+
+class _FinancialReportInput(_FinancialPeriod):
+    distributor_code: str = Field(min_length=1, max_length=100)
+
+
+class _FinancialSummaryInput(_FinancialPeriod):
+    search: str = Field(default='', max_length=200)
+    sort_by: Literal['dealer_name', 'revenue', 'net_profit'] = 'dealer_name'
+    direction: Literal['asc', 'desc'] = 'asc'
+    limit: int = Field(default=25, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
+
+
+def _handle_financial_report(tool_use_id, tool_input):
+    request = _FinancialReportInput.model_validate(tool_input)
+    report = financial_health.get_report(request.distributor_code, request.mon_period)
+    return {
+        'type': 'tool_result', 'tool_use_id': tool_use_id,
+        'content': json.dumps({
+            'tool': 'get_financial_health_report', 'parameters': request.model_dump(),
+            'source': 'synthetic', 'provenance': financial_health.PROVENANCE,
+            'status': 'available' if report else 'unavailable', 'report': report,
+            'available_periods': financial_health.PERIODS,
+            'reason': None if report else 'No synthetic statement exists for this dealer and month. Use the financial summary to find supported dealers; missing data is not zero.',
+        }, ensure_ascii=False),
+    }
+
+
+def _handle_financial_summary(tool_use_id, tool_input):
+    request = _FinancialSummaryInput.model_validate(tool_input)
+    parameters = request.model_dump()
+    period = parameters.pop('mon_period')
+    summary = financial_health.list_dealers(period, **parameters)
+    return {
+        'type': 'tool_result', 'tool_use_id': tool_use_id,
+        'content': json.dumps({'tool': 'get_financial_health_summary',
+                               'parameters': request.model_dump(), **summary}, ensure_ascii=False),
+    }
+
+
 # Registry: tool name -> (tool_use_id, tool_input) -> tool_result dict
 _DIRECT_HANDLERS: dict[
     str, Callable[[str, dict[str, Any]], dict[str, Any]]
 ] = {
+    "get_financial_health_report": _handle_financial_report,
+    "get_financial_health_summary": _handle_financial_summary,
     "get_kb_section": _handle_get_kb_section,
     "get_dealer_full_context": _handle_get_dealer_full_context,
     "compile_data_coverage_ticket": _handle_compile_data_coverage_ticket,

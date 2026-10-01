@@ -111,3 +111,13 @@ The Commission workspace, matching-account export and subscription assistant
 share these amounts. Subscription settlements remain separate from the existing
 activation payment fixture. See `docs/SUBSCRIPTION_COMMISSION_DEMO.md` for the
 fixture assumptions, unavailable-data behavior and path to live evidence.
+
+
+### Financial Health cohort
+
+`financial_health_dealers.json` freezes 20 existing sample dealer codes/names,
+selected across March activation-volume ranks among codes present January–June
+2026. `backend/db/financial_health.py` assigns fictional accounting scenarios to
+these identities; selection and scenario assignment do not describe actual dealer
+financial condition. Financial Health figures remain synthetic in every data
+mode, and modeled commission income is independent of commission fixtures.

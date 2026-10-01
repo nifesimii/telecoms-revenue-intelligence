@@ -108,20 +108,13 @@ def _bounded_page(df: pd.DataFrame, limit: int, offset: int) -> pd.DataFrame:
 async def chat(request: ChatRequest) -> ChatResponse:
     """Drive a single agent turn and return Claude's answer + raw tool data.
 
-    If ``mon_period`` is on the request, prepend it to the question as
-    explicit context for the agent. The original ``conversation_history`` is
-    forwarded untouched.
+    Attach the reporting period and active investigation context to the
+    model's current question. Forward ``conversation_history`` untouched.
 
     Any internal exception is swallowed into the response envelope — this
     endpoint must never 500 on a well-formed request.
     """
-    if request.mon_period:
-        message = (
-            f"Context: reporting period is {request.mon_period}. "
-            f"Question: {request.message}"
-        )
-    else:
-        message = request.message
+    message = request.contextual_message()
 
     try:
         result = await run_agent(message, list(request.conversation_history))

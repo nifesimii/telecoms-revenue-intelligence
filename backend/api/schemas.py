@@ -41,6 +41,24 @@ class ChatRequest(BaseModel):
             "agent."
         ),
     )
+    investigation_context: str | None = Field(
+        default=None, max_length=4000,
+        description="Active workspace scope, supplied on every turn independently of chat history.",
+    )
+
+    def contextual_message(self) -> str:
+        """Attach workspace context for inference without changing displayed chat text."""
+        message = (f"Context: reporting period is {self.mon_period}. Question: {self.message}"
+                   if self.mon_period else self.message)
+        if self.investigation_context:
+            message = (
+                f"Active investigation context: {self.investigation_context}\n"
+                'Resolve references such as "this dealer", "this account" and "this month" '
+                'using this active selection unless the user explicitly names a different scope. '
+                'Do not ask the user to repeat a dealer code already supplied here.\n\n'
+                f"{message}"
+            )
+        return message
 
 
 class ChatResponse(BaseModel):
