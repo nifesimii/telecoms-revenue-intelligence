@@ -160,18 +160,15 @@ def _read_queue(period):
     try:
         summary, queue, _ = asyncio.run(overview_snapshot(period))
     except UnknownOverviewPeriod:
-        return (f"The investigation queue is unavailable for {period}: "
-                "no data is recorded for this month."), None, None, None
+        return "no data is recorded for this month.", None, None, None
     except Exception:
         logger.exception("Investigation queue unavailable: %s", period)
-        return (f"The investigation queue is unavailable for {period}: "
-                "the overview could not be computed."), None, None, None
+        return "the overview could not be computed.", None, None, None
     statuses = {m["module"]: m["status"] for m in summary["modules"]}
     unchecked = [name for name, status in statuses.items() if status in UNCHECKED_STATUSES]
     if len(unchecked) == len(statuses):
         # No module ran, so an empty queue is missing evidence, not a clear result.
-        return (f"The investigation queue is unavailable for {period}: "
-                "no assurance module could be checked."), None, None, None
+        return "no assurance module could be checked.", None, None, None
     return None, queue, statuses, unchecked
 
 

@@ -200,8 +200,17 @@ def test_unknown_month_answer_is_unavailable():
     req = request()
     req["periods"] = ["209901"]
     text = render_measure_response(req, execute_measure_request(req))
-    assert text.startswith("Investigation queue unavailable for 209901:")
+    assert text.startswith("Investigation queue unavailable for 209901: no data is recorded for this month")
+    assert text.lower().count("unavailable") == 1
     assert "Missing evidence is not an empty queue." in text
+
+
+def test_unknown_month_priority_answer_states_unavailable_once():
+    req = {"measures": ["investigation_priority"], "periods": ["209901"], "dealer_id": "296065",
+           "operation": "total"}
+    text = render_measure_response(req, execute_measure_request(req))
+    assert text.startswith("Investigation priority unavailable for 209901: no data is recorded for this month")
+    assert text.lower().count("unavailable") == 1
 
 
 # ── Renderer with fakes ─────────────────────────────────────────────────────

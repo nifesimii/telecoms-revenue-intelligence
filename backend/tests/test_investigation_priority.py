@@ -92,7 +92,7 @@ def test_unknown_period_is_unavailable_not_low():
     assert evidence["status"] == "unavailable"
     assert evidence["priority"] is None
     assert evidence["rows"] == []
-    assert "investigation queue is unavailable" in evidence["note"].lower()
+    assert evidence["note"] == "no data is recorded for this month."
     assert "low" not in evidence["note"].lower()
 
 
@@ -111,7 +111,7 @@ def test_overview_failure_is_unavailable(monkeypatch):
     evidence = investigation_priority_evidence("202606", "296065")
     assert evidence["status"] == "unavailable"
     assert evidence["priority"] is None
-    assert "investigation queue is unavailable" in evidence["note"].lower()
+    assert evidence["note"] == "the overview could not be computed."
 
 
 def test_no_checked_module_is_unavailable_not_outside_queue(monkeypatch):
@@ -122,7 +122,7 @@ def test_no_checked_module_is_unavailable_not_outside_queue(monkeypatch):
     evidence = investigation_priority_evidence("202606", "296065")
     assert evidence["status"] == "unavailable"
     assert evidence["priority"] is None
-    assert "investigation queue is unavailable" in evidence["note"].lower()
+    assert evidence["note"] == "no assurance module could be checked."
 
 
 def test_payment_outage_reports_unchecked_module(monkeypatch):
