@@ -6,8 +6,10 @@ from html import escape
 import re
 
 from backend.assurance.overview import SEVERITY_ORDER, UNCHECKED_STATUSES as _UNCHECKED_STATUSES
+from backend.audit.trail import CONCLUSIONS, CONFIDENCES
 
 _MAX_RENDERED_ROWS = 100
+_MAX_AUDIT_CAVEATS = 3
 _PRIORITY_SEVERITIES = set(SEVERITY_ORDER)
 _FINDING_FIELDS = ("severity", "type", "description")
 
@@ -440,9 +442,147 @@ def render_dealer_codes(evidence: dict) -> str:
     return '\n\n'.join(parts)
 
 
+_VERIFIED_STATUSES = ("verified", "no_subject", "unavailable")
+_VERIFICATION_BASES = {"saved", "on_request"}
+_INSUFFICIENT = "INSUFFICIENT_DATA"
+_LIMITED_TRAIL = ("This product's comparison evidence is not authentic invoice or stock data; "
+                  "no purchase, carryover or alias conclusion is established.")
+
+
+def _validate_verification(period: dict) -> None:
+    """Audit-trail evidence is copied from the audit modules; reject malformed shapes."""
+    try:
+        _check_verification(period)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("Incomplete verification evidence") from exc
+
+
+def _texts(values: object) -> bool:
+    return isinstance(values, list) and all(isinstance(value, str) for value in values)
+
+
+def _check_verification(period: dict) -> None:
+    verification = period.get("verification")
+    if period["status"] == "unavailable":
+        if verification is not None:
+            raise ValueError("Unavailable verification evidence cannot carry verdicts")
+        return
+    modules = verification["modules"] if isinstance(verification, dict) else None
+    if not isinstance(modules, list) or not modules:
+        raise ValueError("Available verification evidence requires audit modules")
+    rows = period["rows"]
+    if len(rows) != len(modules) or len({row["dealer_id"] for row in rows}) != 1:
+        raise ValueError("Verification rows must be one per module for one dealer")
+    dealer = rows[0]["dealer_id"]
+    for module in modules:
+        if any(not isinstance(module[key], str) for key in ("module", "label", "subjects")):
+            raise ValueError("Audit modules require text names")
+        status, basis, trails = module["status"], module["basis"], module["trails"]
+        if status not in _VERIFIED_STATUSES or not _texts(module["caveats"]) or not isinstance(trails, list):
+            raise ValueError("Unsupported audit module status")
+        if status == "unavailable":
+            if basis is not None or trails or module["subject_count"] != 0 or not isinstance(module["note"], str):
+                raise ValueError("An unavailable audit module needs a reason and no verdicts")
+            continue
+        if basis not in _VERIFICATION_BASES:
+            raise ValueError("Audit verdicts must come from a saved run or an on-request check")
+        run_at = module["run_at"]
+        if (basis == "saved") != isinstance(run_at, str) or (basis != "saved" and run_at is not None) or (
+                basis == "saved" and not re.fullmatch(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC", run_at)):
+            raise ValueError("A saved verdict must state its UTC run time")
+        count, conclusions = module["subject_count"], module["conclusions"]
+        if (not _is_count(count) or (status == "verified") != (count > 0) or len(trails) > count
+                or (status == "verified") != bool(trails) or not isinstance(conclusions, list)):
+            raise ValueError("Audit subject counts are inconsistent")
+        if any(c["conclusion"] not in CONCLUSIONS or not _is_count(c["count"]) or not c["count"]
+               for c in conclusions) or sum(c["count"] for c in conclusions) != count:
+            raise ValueError("Audit conclusion counts are inconsistent")
+        for trail in trails:
+            if trail["conclusion"] not in CONCLUSIONS or trail["confidence"] not in CONFIDENCES:
+                raise ValueError("Unsupported audit conclusion")
+            if not isinstance(trail["subject"], str) or trail["subject"].split(":")[0] != dealer:
+                raise ValueError("Audit trail belongs to a different dealer")
+            if trail["product_code"] is not None and not isinstance(trail["product_code"], str):
+                raise ValueError("Product code must be text")
+            if not _texts(trail["caveats"]) or not isinstance(trail["limited"], bool):
+                raise ValueError("Audit trail caveats must be text")
+            for line in trail["evidence"]:
+                if not _is_count(line["step"]) or any(not isinstance(line[k], str) for k in ("name", "result")):
+                    raise ValueError("Audit step evidence must be text")
+
+
+def _render_audit_module(module: dict, dealer: str) -> str:
+    label, status = f"**{_text(module['label'])}**", module["status"]
+    if status == "unavailable":
+        return f"{label}: unavailable: " + _text(
+            f"{module['note']} Not verified; missing evidence is not a pass.")
+    saved = module["basis"] == "saved"
+    basis = (f"From the saved audit run of {module['run_at']}." if saved
+             else "Checked on request with the current audit code; nothing was saved.")
+    if status == "no_subject":
+        where = f" in the saved audit run of {module['run_at']}" if saved else ""
+        whom = "" if saved else f", and dealer {dealer} is not one"
+        return f"{label}: " + _text(f"no audit subject{where}. This audit covers only {module['subjects']}"
+                                    f"{whom}; nothing to verify (not a pass or a failure).")
+    trails, count = module["trails"], module["subject_count"]
+    bullets = []
+    if count == 1:
+        trail = trails[0]
+        verdict = (f"{trail['conclusion']} (confidence {trail['confidence']})"
+                   + (": unverified, not a pass." if trail["conclusion"] == _INSUFFICIENT else "."))
+        header = f"{verdict} {basis}"
+        bullets.extend(f"Step {e['step']}, {e['name']}: {e['result']}" for e in trail["evidence"])
+        if trail["limited"]:
+            bullets.append(_LIMITED_TRAIL)
+    else:
+        counts = ", ".join(f"{c['conclusion']} {c['count']:,}" for c in module["conclusions"])
+        header = f"{count:,} subjects — {counts}. {basis}"
+        for trail in trails:
+            subject = (f"Product {trail['product_code']}" if trail["product_code"] is not None
+                       else f"Subject {trail['subject']}")
+            words = [f"{subject}: {trail['conclusion']} (confidence {trail['confidence']})"
+                     + (", unverified." if trail["conclusion"] == _INSUFFICIENT else "."),
+                     *(e["result"] for e in trail["evidence"])]
+            if trail["limited"]:
+                words.append(_LIMITED_TRAIL)
+            bullets.append(" ".join(words))
+        if count > len(trails):
+            bullets.append(f"Showing {len(trails)} of {count:,} subjects.")
+    caveats = [*module["caveats"], *(c for trail in trails for c in trail["caveats"])]
+    bullets.extend(f"Caveat: {c}" for c in list(dict.fromkeys(caveats))[:_MAX_AUDIT_CAVEATS])
+    if count > 1 and any(c["conclusion"] == _INSUFFICIENT for c in module["conclusions"]):
+        bullets.append("INSUFFICIENT_DATA means the audit could not verify the claim; it is not a pass.")
+    return "\n".join([f"{label}: {_text(header)}", *(f"- {_text(bullet)}" for bullet in bullets)])
+
+
+def _render_verification(measure: dict, dealer_id: str | None) -> list[str]:
+    """Each audit module's verdict; unavailable and no-subject are never a pass."""
+    parts, dealer = [], dealer_id or "—"
+    for period in measure["periods"]:
+        month = _text(period["period"])
+        if period["status"] == "unavailable":
+            note = _text(period.get("note") or "the audit trails could not be read.")
+            parts.append(f"Verification outcome unavailable for {month}: {note}")
+            parts.append("Missing evidence is not a pass.")
+            continue
+        modules = period["verification"]["modules"]
+        tally = {status: sum(m["status"] == status for m in modules) for status in _VERIFIED_STATUSES}
+        noun = "module" if len(modules) == 1 else "modules"
+        parts.append(f"Verification outcome for dealer {_text(dealer)}, {month}: " + _text(
+            f"{len(modules)} audit {noun} — {tally['verified']} with a verdict, "
+            f"{tally['no_subject']} with no subject, {tally['unavailable']} unavailable."))
+        parts.extend(_render_audit_module(module, dealer) for module in modules)
+        if period.get("note"):
+            parts.append(_text(period["note"]))
+    sources = dict.fromkeys(_text(period["source"]) for period in measure["periods"])
+    parts.append(f"Source: {', '.join(sources)}.")
+    return parts
+
+
 # Dealer-month measures: each period carries one payload key that only its
 # measure may use. measure -> (payload key, validate(period), render(measure, dealer_id)).
 _DEALER_MONTH = {
     "investigation_priority": ("priority", _validate_priority, _render_priority),
     "dealer_statement": ("statement", _validate_statement, _render_statement),
+    "verification_outcome": ("verification", _validate_verification, _render_verification),
 }

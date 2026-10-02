@@ -239,6 +239,22 @@ def test_chat_stream_statement_question_streams_owed_paid_outstanding(monkeypatc
     assert events[-1]['tools_called'] == ['dealer_statement']
 
 
+def test_chat_stream_verification_question_streams_audit_verdicts(monkeypatch):
+    from backend.tests.test_verification_outcome import install_verification
+    calls = install_verification(monkeypatch)
+    provider(monkeypatch, Stream('Draft: the dealer was paid correctly.', stop='tool_use', tool=scope_tool(
+        measures=['verification_outcome'], periods=['202606'], dealer_id='296065')))
+    events = collect()
+    phases = [e for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
+    assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
+    assert all(e['tool'] == 'measure_evidence' for e in phases)
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert 'Verification outcome for dealer 296065, 202606' in text and 'Draft' not in text
+    assert 'UNDERPAID' in text
+    assert calls == [('202606', '296065')]
+    assert events[-1]['type'] == 'complete'
+
+
 def test_chat_stream_sales_clarification_is_deterministic_and_has_no_evidence(monkeypatch):
     tool = ToolUseBlock(type='tool_use', id='scope_1', name='resolve_measure_request',
         input={'kind': 'clarification', 'clarification': 'sales_meaning'})

@@ -52,6 +52,8 @@ _DEALER_MONTH_EVIDENCE = {
                                "investigation_priority_evidence"),
     "dealer_statement": ("Dealer statement", "backend.db.dealer_statement_evidence",
                          "dealer_statement_evidence"),
+    "verification_outcome": ("Verification outcome", "backend.audit.verification_outcome",
+                             "verification_outcome_evidence"),
 }
 
 

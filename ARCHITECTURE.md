@@ -230,10 +230,13 @@ backend/
 │                            Broader net than zero_commission — every partner with
 │                            activation activity. PAID_IN_FULL / DISPUTED_ROUNDING /
 │                            UNDERPAID / OVERPAID / INSUFFICIENT_DATA.
-│   └── eligibility_window_audit.py  "Are zero-comm records genuinely outside the
+│   ├── eligibility_window_audit.py  "Are zero-comm records genuinely outside the
 │                            6-month invoice→activation window?" Per-partner
 │                            rollup, per-IMEI evidence in step details.
 │                            POLICY_MET / POLICY_VIOLATED / MIXED_ATTRIBUTION.
+│   └── verification_outcome.py  Atlas read-only dealer-month verdicts: latest saved
+│                            trail per module, else that module's own single-dealer
+│                            check in memory ("checked on request"); never persists.
 │
 ├── agent/                 ── AGENT LAYER (Claude chat) ──
 │   ├── agent.py            Shared buffered/streamed turn: resolves a structured
@@ -250,6 +253,7 @@ backend/
 │   │                        The investigation_priority measure reads the Overview
 │   │                        queue via assurance/overview (one dealer, one month);
 │   │                        dealer_statement reads db/dealer_statement_evidence.
+│   │                        verification_outcome reads audit/verification_outcome.
 │   ├── prompts.py          Builds the system prompt. Injects the tiered KB (see §5).
 │   └── dispute_responder.py  Pure-Python (no LLM) generator for a finance-ready
 │                            dispute-response letter.
