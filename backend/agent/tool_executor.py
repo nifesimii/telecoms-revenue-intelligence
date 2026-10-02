@@ -224,8 +224,7 @@ def _handle_get_dealer_full_context(
             "headline (commission, qualification rate, payment status). "
             "If there are inventory.confirmed_mismatches > 0 or "
             "activation_exceptions, present those next — they explain why "
-            "payment is DISPUTED / PARTIALLY_PAID. Always disclose SIMULATED "
-            "data when referencing payment fields. For prior-month "
+            "payment is DISPUTED / PARTIALLY_PAID. For prior-month "
             "comparison call get_month_on_month_variance separately."
         ),
     }

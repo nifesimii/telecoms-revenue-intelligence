@@ -3,7 +3,7 @@ import csv
 import pytest
 
 from backend import config
-from backend.db.measure_evidence import collect_measure_evidence, collect_dealer_codes
+from backend.db.measure_evidence import _MEASURES, collect_measure_evidence, collect_dealer_codes
 from backend.db import queries, financial_health
 
 
@@ -24,7 +24,7 @@ def test_subscription_statement_projects_only_requested_recorded_amount():
     period, = measure['periods']
     assert period['total'] == 3050.0
     assert period['status'] == 'available'
-    assert 'synthetic' in period['source'].lower()
+    assert period['source'] == 'Subscription records · subscription statements'
     assert set(period['rows'][0]) == {'dealer_id', 'dealer_name', 'dimension', 'value'}
     assert period['rows'][0]['value'] == 3050.0
 
@@ -57,7 +57,7 @@ def test_projection_retains_coverage_and_complete_total_beyond_bounded_rows():
     assert available['truncated'] is True
     assert len(available['rows']) == 100
     assert available['total'] > sum(r['value'] for r in available['rows'])
-    assert 'synthetic' in available['source'].lower()
+    assert available['source'] == 'Activation records'
     assert missing['total'] is None
 
 
@@ -102,10 +102,38 @@ def test_coverage_checks_requested_source_file_even_when_query_cache_is_warm(mon
     assert period['status'] == 'unavailable'
 
 
-def test_orsc_synthetic_provenance_differs_from_activation_for_march():
+def test_orsc_source_name_differs_from_activation_for_march():
     measures = request(['activation_count', 'subscription_revenue'], ['202603'])['measures']
-    assert 'synthetic' not in measures[0]['periods'][0]['source'].lower()
-    assert 'synthetic' in measures[1]['periods'][0]['source'].lower()
+    assert measures[0]['periods'][0]['source'] == 'Activation records'
+    assert measures[1]['periods'][0]['source'] == 'Subscription records'
+
+
+_DEMO_WORDS = ('synthetic', 'simulated', 'sample', 'demo', 'fictional')
+
+
+@pytest.mark.parametrize('measure', list(_MEASURES))
+def test_atlas_evidence_names_sources_without_demo_labels(measure):
+    dealer = '74050' if measure.startswith('financial_') else '296065'
+    result = request([measure], ['202603', '202606'], dealer_id=dealer)
+    text = repr(result).lower()
+    assert not [word for word in _DEMO_WORDS if word in text]
+    assert all(period['source'] for period in result['measures'][0]['periods'])
+
+
+def test_dealer_without_financial_statement_is_named_and_offers_alternatives():
+    period = request(['financial_statements'], dealer_id='296065',
+                     line_ids=['sales_revenue'])['measures'][0]['periods'][0]
+    assert period['status'] == 'unavailable'
+    assert period['rows'] == [] and period['total'] is None
+    assert 'No financial statement on record for account 296065.' in period['note']
+    assert 'activations or commission' in period['note']
+
+
+def test_sales_revenue_selects_only_the_income_statement_line():
+    period = request(['financial_statements'], dealer_id='74050',
+                     line_ids=['sales_revenue'])['measures'][0]['periods'][0]
+    assert period['status'] == 'available'
+    assert [row['dimension'] for row in period['rows']] == ['Income statement: Sales revenue']
 
 
 def test_commission_product_breakdown_is_recorded_denomination_evidence():
@@ -120,7 +148,7 @@ def test_financial_statements_keep_line_items_without_nonsense_grand_total():
     assert period['status'] == 'available'
     assert period['total'] is None
     assert all(row['dimension'] for row in period['rows'])
-    assert 'synthetic' in period['source'].lower()
+    assert period['source'] == 'Whole-business financial statements · includes non-MTN activity'
 
 
 @pytest.mark.parametrize(('measure', 'aggregation'), [
@@ -158,7 +186,7 @@ def test_unavailable_measure_does_not_require_fabricated_period():
         collect_measure_evidence({'measures': ['activation_count'], 'periods': []})
 
 
-def test_inventory_synthetic_rows_are_labelled_and_notes_are_bounded(tmp_path, monkeypatch):
+def test_inventory_scenario_rows_carry_no_demo_label_and_notes_are_bounded(tmp_path, monkeypatch):
     with config.SAMPLE_DATA_PATHS['fbb_comm_dev_act']['202606'].open(newline='') as handle:
         reader = csv.DictReader(handle)
         columns = reader.fieldnames
@@ -173,8 +201,8 @@ def test_inventory_synthetic_rows_are_labelled_and_notes_are_bounded(tmp_path, m
     try:
         period = request(['inventory_gap'], dealer_id='74050')['measures'][0]['periods'][0]
         assert period['status'] == 'available'
-        assert 'includes synthetic purchase scenario evidence' in period['source']
-        assert 'synthetic purchase scenario' in period['rows'][0]['dimension']
+        assert period['source'] == 'Inventory comparison records · purchase scenarios'
+        assert 'synthetic' not in period['rows'][0]['dimension'].lower()
         assert len(period['note']) < 500
         assert 'do not sum across months' in period['note']
     finally:

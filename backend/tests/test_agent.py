@@ -146,7 +146,7 @@ def test_financial_statements_render_source_lines_without_summing_them(monkeypat
     sales = next(row for row in period["rows"] if row["dimension"].endswith(": Sales revenue"))
     assert sales["value"] == 12600000
     assert "NGN 12,600,000.00" in result["response"]
-    assert "Synthetic" in result["response"] and "Sales revenue" in result["response"]
+    assert "synthetic" not in result["response"].lower() and "Sales revenue" in result["response"]
     assert "get_financial_health_report" in result["tools_called"]
 
 

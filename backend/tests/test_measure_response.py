@@ -291,7 +291,8 @@ def test_dealer_code_lookup_renders_bounded_identity_and_source_coverage_only():
     answer = render_dealer_codes(evidence)
     assert '| 0012 | Acme \\| &lt;Dealer&gt; | 202601 | 202603 |' in answer
     assert 'partial' in answer.lower() and '2' in answer
-    assert 'SAMPLE' in answer and 'coverage is limited' in answer.lower()
+    assert 'Source: Recorded dealer records.' in answer and 'coverage is limited' in answer.lower()
+    assert 'sample' not in answer.lower()
     assert 'Activation records: 202601, 202603' in answer
     assert 'Subscription records: no covered months' in answer
     assert 'not verified branches or legal entities' in answer

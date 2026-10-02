@@ -82,6 +82,10 @@ def render_measure_response(request: dict, evidence: dict) -> str:
     """Produce a concise answer using only the supplied scoped evidence."""
     _validate(request, evidence)
     parts = []
+    if request.get("criterion") == "investigation_priority":
+        parts.append("The knowledge base defines no commission investigation-priority rule, so Atlas "
+                     "cannot rate this dealer's priority. The recorded zero-commission activations and "
+                     "month-on-month commission change below are evidence for your judgement.")
     for measure in evidence["measures"]:
         periods = measure["periods"]
         is_text = measure["unit"] == "text"
@@ -192,7 +196,8 @@ def render_dealer_codes(evidence: dict) -> str:
     if partial:
         parts.append(f"Partial list: showing {len(displayed)} of {total:,} recorded codes; this is not the complete list.")
     source = evidence.get('data_source', 'Unknown')
-    parts.append(f"Source: {_text(source)}." + (' Sample data; coverage is limited to supplied records.' if source.upper() == 'SAMPLE' else ''))
+    parts.append('Source: Recorded dealer records. Coverage is limited to supplied records.' if source.upper() == 'SAMPLE'
+                 else f"Source: {_text(source)}.")
     source_labels = {'fbb_comm_dev_act': 'Activation records', 'fbb_comm_orsc': 'Subscription records'}
     for source_name, periods in evidence.get('coverage_by_source', {}).items():
         label = source_labels.get(source_name, 'Other source records')

@@ -194,6 +194,17 @@ def test_chat_stream_rejects_unscoped_model_figures_without_exposing_draft(monke
     assert len(fake.calls) == 1
 
 
+def test_chat_stream_measure_status_events_satisfy_browser_contract(monkeypatch):
+    # Mirrors frontend/src/api/explanationStream.js: tool phases must name a tool.
+    provider(monkeypatch, Stream('Draft', tool=scope_tool(), stop='tool_use'))
+    events = collect()
+    phases = [e for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
+    assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
+    assert all(isinstance(e['tool'], str) and e['tool'] for e in phases)
+    assert all(isinstance(e['reset'], bool) for e in phases)
+    assert events[-1]['type'] == 'complete'
+
+
 def test_chat_stream_sales_clarification_is_deterministic_and_has_no_evidence(monkeypatch):
     tool = ToolUseBlock(type='tool_use', id='scope_1', name='resolve_measure_request',
         input={'kind': 'clarification', 'clarification': 'sales_meaning'})

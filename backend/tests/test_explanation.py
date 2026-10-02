@@ -109,8 +109,10 @@ def test_activation_provenance_reaches_explanation_prompt(module, period, synthe
         assert evidence['raw_data'][key]['provenance']['generated_at']
     prompt = build_finding_explanation(evidence)
     assert expected_source in prompt
-    qualification = 'Synthetic activation figures are fictional demo records, not evidence of actual partner entitlement or amounts owed.'
-    assert (qualification in prompt) is synthetic
+    # The workspace header marks demo data; caveats must not repeat it per answer.
+    assert 'fictional demo records' not in prompt
+    assert 'Payment figures are SIMULATED' not in prompt
+    assert 'synthetic-data' not in prompt
 
 
 def test_streams_one_generation_with_exact_scope_whole_kb_and_completion_metadata(monkeypatch):

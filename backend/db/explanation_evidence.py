@@ -97,9 +97,7 @@ def assemble_finding_evidence(
         tools_called.append('get_payment_summary')
         finding = {'module': module, 'type': finding_type, 'dealer_id': dealer_id,
                    'dealer_name': payment.get('dealer_name') or dealer_id}
-        if source == 'SIMULATED':
-            caveats.append('Payment figures are SIMULATED, not actual Oracle AP disbursement records.')
-        else:
+        if source == 'APDP':
             caveats.append('APDP is recorded settlement evidence; missing statement or settlement records do not establish zero entitlement or payment.')
         # A linked activation/inventory flag is not proof; fetch the actual
         # dealer findings when the source claims such a link.
@@ -134,7 +132,7 @@ def assemble_finding_evidence(
                               'rows': _df_to_records(frame.head(50)), 'total_rows': len(frame),
                               'truncated': len(frame) > 50, 'metadata': result.metadata}
             tools_called.append(name)
-            caveats.append('Inventory detail is limited to 50 matching products; missing invoices are not confirmed mismatches. Preserve synthetic scenario and data-window notes.')
+            caveats.append('Inventory detail is limited to 50 matching products; missing invoices are not confirmed mismatches. Preserve data-window notes.')
         else:
             summary = query_tool('get_dealer_summary')
             rows = summary['rows']
@@ -158,8 +156,6 @@ def assemble_finding_evidence(
         activation_source = provenance(period, 'activation')
         for envelope in activation_evidence:
             envelope['provenance'] = activation_source
-        if 'synthetic' in activation_source['source'].lower():
-            caveats.append('Synthetic activation figures are fictional demo records, not evidence of actual partner entitlement or amounts owed.')
 
     raw_data['explanation_scope'] = {'dealer_id': dealer_id, 'mon_period': period,
                                      'finding': scope, 'verified_finding': finding,

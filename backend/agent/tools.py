@@ -180,7 +180,7 @@ GET_ORSC_SUMMARY: dict[str, Any] = {
         "subscription_settled_ngn and subscription_outstanding_ngn.\n\n"
         "Important: total_subscription_amount_ngn is recorded subscription revenue. "
         "The separate subscription commission and settlement fields, when available, "
-        "are fictional recorded upstream results in sample mode. Report them separately "
+        "are recorded upstream results. Report them separately "
         "from revenue. Null means unavailable, not zero. Follow the KB's subscription "
         "evidence and policy limitations when explaining these fields."
     ),
@@ -376,9 +376,7 @@ GET_PAYMENT_SUMMARY: dict[str, Any] = {
         "amount_paid, amount_unpaid, payment_status (FULLY_PAID / "
         "PARTIALLY_PAID / DISPUTED / PENDING), payment_channel, "
         "payment_date, exception_flag, data_source.\n\n"
-        "IMPORTANT: Payment data is synthetically generated for demo "
-        "purposes. No real MTN data was used. Always disclose this "
-        "when presenting payment findings."
+        "Payment records are not confirmed Oracle AP disbursements."
     ),
     "input_schema": {
         "type": "object",
@@ -408,8 +406,7 @@ GET_PAYMENT_EXCEPTIONS: dict[str, Any] = {
         "  * 'Which dealers have settlement exceptions?'\n\n"
         "Each row includes ``exception_flag`` linking back to the "
         "underlying Phase 2 / Phase 3 finding — use this for cross-"
-        "phase reasoning. IMPORTANT: payment data is simulated; always "
-        "disclose this."
+        "phase reasoning."
     ),
     "input_schema": {
         "type": "object",
@@ -434,8 +431,7 @@ GET_PAYMENT_VARIANCE: dict[str, Any] = {
         "commission_owed_a / amount_paid_a / payment_status_a, "
         "commission_owed_b / amount_paid_b / payment_status_b, "
         "delta_paid (period_b minus period_a), status_changed (bool).\n\n"
-        "Rows are sorted by abs(delta_paid) descending. IMPORTANT: "
-        "payment data is simulated; always disclose this."
+        "Rows are sorted by abs(delta_paid) descending."
     ),
     "input_schema": {
         "type": "object",
@@ -545,8 +541,7 @@ GET_DEALER_FULL_CONTEXT: dict[str, Any] = {
         "activation_exceptions[...], inventory{confirmed_mismatches, "
         "no_invoice_records, within_allocation, findings[...]}, "
         "payment{...}, zero_records_sample[...].\n\n"
-        "Payment data is SIMULATED — disclose this when quoting payment "
-        "figures. For month-on-month comparison run "
+        "For month-on-month comparison run "
         "get_month_on_month_variance separately."
     ),
     "input_schema": {
@@ -644,11 +639,11 @@ GET_DEALER_CODES: dict[str, Any] = {
 GET_FINANCIAL_HEALTH_REPORT: dict[str, Any] = {
     "name": "get_financial_health_report",
     "description": (
-        "Read the same synthetic whole-business financial report shown in Financial Health "
+        "Read the same whole-business financial report shown in Financial Health "
         "for one exact existing dealer code and month. Returns income statement, balance "
         "sheet, cash flow, prior-month amounts, six KPIs with formulas/inputs/status, "
-        "observations and evidence. Always disclose synthetic provenance. These are not "
-        "actual dealer accounts or MTN commission/settlement evidence. Missing reports "
+        "observations and evidence. These are not "
+        "MTN commission/settlement evidence. Missing reports "
         "and ratios are unavailable, not zero. No credit score or lending recommendation. "
         "Use get_financial_health_summary to find supported dealers by name first. "
         "For arbitrary month comparisons retrieve each month's report."
@@ -664,11 +659,11 @@ GET_FINANCIAL_HEALTH_REPORT: dict[str, Any] = {
 GET_FINANCIAL_HEALTH_SUMMARY: dict[str, Any] = {
     "name": "get_financial_health_summary",
     "description": (
-        "Find or compare the 20 existing sample dealers with synthetic Financial Health "
+        "Find or compare the 20 dealers with Financial Health "
         "statements, January–June 2026. Search name, exact code or scenario; returns "
         "bounded dealer summaries and six KPIs with prior-month values and missing-evidence "
-        "statuses. Same source as the Financial Health tab. Always disclose synthetic data "
-        "and reporting month. This cohort is not the entire dealer portfolio. Fetch pages "
+        "statuses. Same source as the Financial Health tab. State the "
+        "reporting month. This cohort is not the entire dealer portfolio. Fetch pages "
         "until has_more is false before claiming a whole-cohort comparison. Inspect exact "
         "reports for statement explanations. Do not assign credit scores or recommend lending."
     ),

@@ -66,6 +66,11 @@ async def run_agent(user_message: str, conversation_history: list | None = None,
                 run.log("inference_close_failure", error_type=type(exc).__name__)
 
 
+# The browser contract requires a tool name on tool phases; the concrete
+# evidence tools are only known after the bounded measure request runs.
+MEASURE_STATUS_TOOL = 'measure_evidence'
+
+
 async def run_agent_stream(user_message: str, conversation_history: list | None = None, *,
                            reporting_period: str | None = None,
                            investigation_context: str | None = None):
@@ -160,7 +165,8 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
     else:
         request = scope.model_dump()
         if emit is not None:
-            await emit({'type': 'status', 'phase': 'tool_start', 'reset': True})
+            await emit({'type': 'status', 'phase': 'tool_start', 'reset': True,
+                        'tool': MEASURE_STATUS_TOOL})
         evidence = await asyncio.to_thread(tool_executor.execute_measure_request, request)
         run.remaining()
         answer = render_measure_response(request, evidence)
@@ -175,7 +181,7 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
         raw_data = {'measure_evidence': evidence}
         if emit is not None:
             await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
-                        'tools_called': tools_called, 'raw_data': raw_data})
+                        'tool': MEASURE_STATUS_TOOL, 'tools_called': tools_called, 'raw_data': raw_data})
     if emit is not None:
         await emit({'type': 'text', 'text': answer})
     return {'response': answer, 'tools_called': tools_called, 'raw_data': raw_data}

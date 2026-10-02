@@ -5,7 +5,6 @@ from math import isfinite
 
 import pandas as pd
 from backend.db.connection import execute_query
-from backend.db.commission_workspace import provenance
 from backend.db import subscription_evidence, financial_health, queries
 
 # IDs are application vocabulary; columns retain the existing query contract.
@@ -15,10 +14,10 @@ _MEASURES = {
     'activation_qualified_count': ('Qualified activations', 'count', 'fbb_comm_dev_act', 'get_activation_summary', 'qualified_activation_count'),
     'activation_unqualified_count': ('Unqualified activations', 'count', 'fbb_comm_dev_act', 'get_activation_summary', 'non_qualified_activation_count'),
     'payment_status': ('Activation payment status', 'text', 'payment_simulation', 'get_payment_summary', 'payment_status'),
-    'financial_revenue': ('Synthetic whole-business revenue', 'ngn', 'financial_health', 'get_financial_health_summary', 'revenue'),
-    'financial_net_profit': ('Synthetic whole-business net profit', 'ngn', 'financial_health', 'get_financial_health_summary', 'net_profit'),
-    'financial_statements': ('Synthetic whole-business financial statements', 'ngn', 'financial_health', 'get_financial_health_report', 'statements'),
-    'financial_kpis': ('Synthetic whole-business financial ratios and cash flow', 'text', 'financial_health', 'get_financial_health_report', 'kpis'),
+    'financial_revenue': ('Whole-business revenue', 'ngn', 'financial_health', 'get_financial_health_summary', 'revenue'),
+    'financial_net_profit': ('Whole-business net profit', 'ngn', 'financial_health', 'get_financial_health_summary', 'net_profit'),
+    'financial_statements': ('Whole-business financial statements', 'ngn', 'financial_health', 'get_financial_health_report', 'statements'),
+    'financial_kpis': ('Whole-business financial ratios and cash flow', 'text', 'financial_health', 'get_financial_health_report', 'kpis'),
     'activation_count': ('Activations', 'count', 'fbb_comm_dev_act', 'get_dealer_summary', 'total_activations'),
     'activation_commission': ('Activation commission', 'ngn', 'fbb_comm_dev_act', 'get_dealer_summary', 'total_commission_ngn'),
     'zero_commission_count': ('Zero-commission activations', 'count', 'fbb_comm_dev_act', 'get_dealer_summary', 'zero_commission_count'),
@@ -29,6 +28,13 @@ _MEASURES = {
     'payment_paid': ('Activation payments paid', 'ngn', 'payment_simulation', 'get_payment_summary', 'amount_paid'),
     'payment_owed': ('Activation commission owed', 'ngn', 'payment_simulation', 'get_payment_summary', 'commission_owed'),
     'payment_outstanding': ('Activation payments outstanding', 'ngn', 'payment_simulation', 'get_payment_summary', 'amount_unpaid'),
+}
+# Neutral source names: the workspace header, not each answer, marks demo data.
+_SOURCE_NAMES = {
+    'fbb_comm_dev_act': 'Activation records',
+    'fbb_comm_orsc': 'Subscription records',
+    'payment_simulation': 'Payment records',
+    'financial_health': 'Whole-business financial statements · includes non-MTN activity',
 }
 _UNAVAILABLE = {
     'retail_sales_units': ('Retail sales units', 'count', 'Retail sales are unavailable through Atlas. Dated customer sales transactions with products, quantities and returns are missing.'),
@@ -47,15 +53,10 @@ def _period_evidence(measure: str, period: str, dealer_id: str | None,
     if measure in _UNAVAILABLE:
         return _empty(period, 'No supported evidence', _UNAVAILABLE[measure][2])
     _, unit, source, tool, field = _MEASURES[measure]
-    label = provenance(period, 'orsc' if source == 'fbb_comm_orsc' else 'activation')['source']
     statements = measure in {'subscription_commission', 'subscription_settled', 'subscription_outstanding'}
-    if source == 'payment_simulation':
-        label = 'SIMULATED payment records · not confirmed disbursements'
-    if statements:
-        label += ' · synthetic subscription statements'
-    if source == 'financial_health':
-        label = 'Synthetic whole-business financial statements · includes non-MTN activity'
     inventory = tool == 'get_inventory_comparison'
+    label = ('Inventory comparison records' if inventory
+             else _SOURCE_NAMES[source] + (' · subscription statements' if statements else ''))
     supported_filters = {'all'}
     if tool == 'get_payment_summary':
         supported_filters.update({'disputed', 'unpaid'})
@@ -97,6 +98,9 @@ def _period_evidence(measure: str, period: str, dealer_id: str | None,
             records = [r for r in records if r.get('zero_commission_count', r.get('non_qualified_activation_count', 0)) > 0]
         elif requested_filter == 'low_qualification':
             records = [r for r in records if r.get('qualification_rate_pct', 100) < 50]
+        if not records and source == 'financial_health' and dealer_id is not None:
+            return _empty(period, label, f'No financial statement on record for account {dealer_id}. '
+                          'Recorded activations or commission for this account are available on request.', tool)
         if not records:
             return _empty(period, label, 'No matching dealer records in this month; absence is not a verified zero.', tool)
         evidence_key = ('subscription_statements', period)
@@ -148,14 +152,13 @@ def _period_evidence(measure: str, period: str, dealer_id: str | None,
             if value is None or (unit != 'text' and not isfinite(float(value))):
                 return _empty(period, label, 'Requested amount lacks complete recorded evidence for the selected accounts.', tool)
             rows.append(dict(dealer_id=identity, dealer_name=str(record['dealer_name']),
-                             dimension=(f"{record['product_name']} ({record['product_code']})"
-                                        + (' · synthetic purchase scenario' if record.get('scenario_id') else '') if inventory else None),
+                             dimension=(f"{record['product_name']} ({record['product_code']})" if inventory else None),
                              value=(str(value) if unit == 'text' else int(value) if unit == 'count' else float(value))))
         if not rows:
             return _empty(period, label, 'No recorded rows match the requested selectors.', tool)
         if inventory:
-            label += (' · includes synthetic purchase scenario evidence' if any(r.get('scenario_id') for r in records)
-                      else ' · IFS comparison evidence')
+            # Name which purchase dataset the comparison used, without demo wording.
+            label += (' · purchase scenarios' if any(r.get('scenario_id') for r in records) else ' · IFS invoices')
         if measure != 'financial_statements':
             rows.sort(key=lambda row: (row['value'] if unit == 'text' else -row['value'], row['dealer_id'], row['dimension'] or ''))
         total = None if unit == 'text' or measure == 'financial_statements' else sum((Decimal(str(row['value'])) for row in rows), Decimal(0))
@@ -166,7 +169,7 @@ def _period_evidence(measure: str, period: str, dealer_id: str | None,
                     total_rows=len(rows), truncated=len(rows) > 100,
                     note='Source records cover this month; no completeness claim beyond the supplied dataset.'
                          + (' Purchases are cumulative shared snapshots, not monthly purchases; do not sum across months. '
-                            'Only products with activations are compared. Synthetic purchase scenarios are fictional quantities, not source invoices or verified stock carryover.' if inventory else '')
+                            'Only products with activations are compared.' if inventory else '')
                          + (' Showing the first 100 evidence rows; any total includes all matching records.' if len(rows) > 100 else ''))
     except (ValueError, KeyError, OSError, NotImplementedError):
         return _empty(period, label, 'The requested evidence could not be read or validated.', tool)
@@ -224,7 +227,7 @@ def collect_measure_evidence(request: dict) -> dict:
 
 def _zero_record_observation(period: str, dealer_id: str) -> dict:
     observation = dict(period=period, dealer_id=dealer_id, records_checked=0, records_with_dates=0,
-                       total_records=0, bounded=False, source=provenance(period, 'activation')['source'],
+                       total_records=0, bounded=False, source='Zero-commission activation records',
                        tool='get_zero_commission_records', status='unavailable', note='')
     try:
         frame = execute_query('get_zero_commission_records', {'mon_period': period, 'distributor_code': dealer_id})

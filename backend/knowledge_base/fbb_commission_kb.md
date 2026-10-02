@@ -46,19 +46,25 @@ not zero.
   evidence for the requested measure. A brief offer of an alternative is allowed,
   but withhold its figures until the user accepts. An assistant's offer alone is
   not acceptance. Do not substitute purchases, activations, commission or
-  synthetic financial revenue for customer sales.
+  Financial Health revenue for customer sales.
+- **"Sales revenue" is a dealer income-statement line.** It is the Sales revenue
+  line of the dealer's Financial Health income statement: whole-business revenue,
+  including non-MTN activity, excluding commission income. It is not retail
+  sales of MTN products. Dealers without a statement have no recorded sales
+  revenue; say so rather than substituting another measure.
 - **Respect the evidence's direction and meaning.** IFS inventory quantities
   describe purchases by the dealer, not onward sales to customers. USP reference
   prices and commission amounts do not establish actual retail selling prices
   or sales revenue. Retail sales require dealer sales transactions with dates,
   products, quantities and actual amounts, including returns where relevant.
-  Synthetic Financial Health revenue is not a substitute for actual sales.
+  Financial Health total revenue is not a substitute for retail sales.
 - **State the time range and coverage.** Do not silently equate "this year"
   with January through the selected reporting month. Clarify whether the user
   wants the selected reporting year's activity through that month or another
   range when ambiguous. Label partial results with the months actually checked;
   never present January–June as a complete calendar-year total. Missing months
-  are unavailable, not zero. State sample or synthetic provenance when supplied.
+  are unavailable, not zero. Name the source records; the workspace header, not
+  each answer, identifies demo data.
 - **Recorded commission is not verified eligibility.** A positive commission
   rate supports a recorded commission-bearing activation; a 100% qualification
   rate does not prove there were no USP, eligibility or classification errors.
@@ -329,7 +335,7 @@ Phase 4 of the platform. Answers: **were dealer commissions paid, and if not, wh
 
 ### Important data note
 
-Payment data in Phase 4 is **SIMULATED**. It is synthetically generated from real commission amounts and exception flags identified in Phases 2 and 3. Payment rates, dates, and statuses are derived from actual dealer performance patterns but do not reflect live Oracle AP disbursement records. The agent must **always disclose this** when presenting payment findings.
+Payment data in Phase 4 is **SIMULATED**. It is synthetically generated from real commission amounts and exception flags identified in Phases 2 and 3. Payment rates, dates, and statuses are derived from actual dealer performance patterns but do not reflect live Oracle AP disbursement records. The workspace header identifies this demo data; answers do not repeat a simulated-data label.
 
 ### Payment concepts
 
@@ -362,7 +368,7 @@ Payment data in Phase 4 is **SIMULATED**. It is synthetically generated from rea
 - Coverage between **60-85%** warrants review of outstanding amounts and linked evidence; it does not establish an active dispute or qualification issue.
 - Coverage below **60%** is the model's low-coverage band and warrants investigation. It does not establish systemic activation-quality problems.
 
-**Rule 4 — Data source transparency.** The agent must always state that payment data is simulated when presenting Phase 4 findings. Suggested language: *"Based on simulated payment data derived from real commission and exception records — live Oracle AP integration will replace this in production."*
+**Rule 4 — Data source transparency.** Name the payment records as the source when presenting Phase 4 findings. The workspace header, not each answer, identifies simulated demo data.
 
 **Rule 5 — Cross-phase reasoning.** These checks locate supporting evidence; a payment status alone does not establish a root cause:
 - `DISPUTED` → check Phase 2 activation exceptions or Phase 3 inventory mismatches for that dealer.
@@ -371,7 +377,6 @@ Payment data in Phase 4 is **SIMULATED**. It is synthetically generated from rea
 
 ### Agent behaviour for payment questions
 
-- Always disclose simulated data status upfront.
 - Lead with total coverage percentage and total amount outstanding.
 - Present DISPUTED cases first — highest priority.
 - For each DISPUTED case, name the linked exception from Phase 2 or Phase 3.
@@ -387,7 +392,8 @@ for a fixed cohort of 20 existing sample dealer identities, January–June 2026.
 Use `get_financial_health_summary` for discovery and bounded comparisons and
 `get_financial_health_report` for an exact dealer code and reporting month.
 These tools read the same records as the Financial Health tab. State the period
-and synthetic provenance in every financial-health answer. A modeled scenario
+in every financial-health answer; the Financial Health tab banner, not each
+answer, identifies the demonstration data. A modeled scenario
 is not a claim about the actual dealer's financial condition. Shared dealer IDs
 do not turn these statements into live financial evidence. Names can cover
 multiple account codes: retain the exact selected code; never merge by name.

@@ -35,6 +35,8 @@ class MeasureScope(BaseModel):
     operation: Literal['total', 'breakdown', 'compare', 'explain'] = 'total'
     breakdown: Literal['dealer', 'product', 'month'] = 'dealer'
     filter: Literal['all', 'zero_commission', 'disputed', 'unpaid', 'low_qualification'] = 'all'
+    # A question about an undocumented judgement; the renderer states the gap.
+    criterion: Literal['investigation_priority'] | None = None
     kpi_ids: list[Literal['gross_margin', 'net_margin', 'operating_cash_flow', 'current_ratio', 'debt_to_equity', 'dscr']] = Field(default_factory=list, max_length=6)
     statement_ids: list[Literal['income', 'balance', 'cashflow']] = Field(default_factory=list, max_length=3)
     line_ids: list[Literal[
@@ -71,6 +73,8 @@ class MeasureScope(BaseModel):
                 raise ValueError('A measure request requires measures and periods only')
             if self.operation in {'compare', 'explain'} and len(self.periods) > 2:
                 raise ValueError('Comparisons support at most two explicit months')
+        elif self.criterion:
+            raise ValueError('A criterion annotates a measure request only')
         elif self.kind == 'clarification':
             if not self.clarification or self.measures or self.knowledge_quote:
                 raise ValueError('A clarification cannot authorize evidence or quote policy')
@@ -90,8 +94,10 @@ SCOPE_TOOL = {
         'This is an interpretation contract, not a query: do not supply numbers, answers, or tool names. '
         'Use clarification for unresolved meanings, time ranges, dealers, or unsupported operations. '
         'Sales has no global default meaning: reuse only a meaning explicitly established by the user '
-        'in this conversation; otherwise clarify sales_meaning. Explicit customer sales are '
-        'retail_sales_units/value and may be unavailable. Dealer purchases are not activations. '
+        'in this conversation; otherwise clarify sales_meaning. "Sales revenue" is the dealer income '
+        'statement line: select financial_statements with line_ids [\'sales_revenue\']. Explicit '
+        'customer sales or sales value are retail_sales_units/value and may be unavailable. '
+        'Dealer purchases are not activations. '
         'For explicit retail sales or complete dealer purchases, a missing period does not '
         'need clarification: periods may be empty because evidence is unavailable regardless. '
         'An offered alternative is authorized only after user acceptance. '
@@ -104,8 +110,11 @@ SCOPE_TOOL = {
         'explain for why, compare for two-month comparisons. Only select filters explicitly asked for. '
         'Qualification counts describe recorded commission-bearing records, not verified eligibility. '
         'Inventory comparison can request inventory_gap and inventory_recorded_purchases; '
-        'these are not total dealer purchases. financial_* metrics are explicitly synthetic '
-        'Financial Health scenarios, never customer sales. '
+        'these are not total dealer purchases. financial_* metrics are whole-business Financial '
+        'Health statements, including non-MTN activity; use them only for statement terms. '
+        'Whether a dealer is a commission investigation priority has no documented rule: request '
+        'zero_commission_count and activation_commission comparing the reporting month with the '
+        'prior month, operation compare, with criterion investigation_priority. '
         'For a particular ratio, select financial_kpis and its exact kpi_ids. '
         'For a particular statement or line, select financial_statements and exact statement_ids '
         'and/or line_ids. Empty financial selectors mean ALL KPIs or statements, and are '

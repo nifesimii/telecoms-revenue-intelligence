@@ -31,7 +31,8 @@ def test_activation_answer_comes_from_evidence_not_model_prose(monkeypatch):
     assert '806' in result['response']
     assert '74050' in result['response']
     assert '202603' in result['response']
-    assert 'sample' in result['response'].lower()
+    assert 'Source: Activation records' in result['response']
+    assert 'sample' not in result['response'].lower()
     assert '999,999,999' not in result['response']
     assert 'commission' not in result['response'].lower()
     assert 'dispute' not in result['response'].lower()
@@ -104,7 +105,7 @@ def test_full_year_keeps_missing_months_distinct_from_zero(monkeypatch):
     assert 'Partial total' in result['response']
     assert '| 202612 | Unavailable |' in result['response']
     assert '| 202612 | 0 |' not in result['response']
-    assert 'synthetic' in result['response'].lower()
+    assert 'synthetic' not in result['response'].lower()
     assert result['raw_data']['measure_evidence']['requested_periods'] == periods
 
 
@@ -132,7 +133,7 @@ def test_name_code_lookup_remains_available_without_unrelated_figures(monkeypatc
     install_plan(monkeypatch, {'kind': 'identity', 'dealer_name': 'Stone Light Networks'})
     result = asyncio.run(agent.run_agent('List dealer codes recorded for Stone Light Networks.'))
     assert '74050' in result['response']
-    assert 'sample' in result['response'].lower()
+    assert 'Source: Recorded dealer records.' in result['response']
     assert 'NGN' not in result['response']
     assert '806' not in result['response']
     assert result['tools_called'] == ['get_dealer_codes']
@@ -143,9 +144,51 @@ def test_individual_financial_ratio_does_not_expand_into_full_report(monkeypatch
         'kind': 'measure', 'measures': ['financial_kpis'], 'kpi_ids': ['current_ratio'],
         'dealer_id': '74050', 'periods': ['202603'],
     })
-    result = asyncio.run(agent.run_agent('Show only the synthetic current ratio for dealer 74050 in March.'))
+    result = asyncio.run(agent.run_agent('Show only the current ratio for dealer 74050 in March.'))
     rows = result['raw_data']['measure_evidence']['measures'][0]['periods'][0]['rows']
     assert [row['dimension'] for row in rows] == ['Current ratio']
-    assert 'Synthetic' in result['response']
+    assert 'synthetic' not in result['response'].lower()
     assert 'profit margin' not in result['response'].lower()
     assert 'NGN' not in result['response']
+
+
+def test_sales_revenue_reads_income_statement_line_and_names_missing_statement(monkeypatch):
+    install_plan(monkeypatch, {
+        'kind': 'measure', 'measures': ['financial_statements'], 'line_ids': ['sales_revenue'],
+        'dealer_id': '296065', 'periods': ['202606'],
+    })
+    result = asyncio.run(agent.run_agent('I mean the sales revenue for June 2026'))
+    assert 'No financial statement on record for account 296065' in result['response']
+    assert 'activations or commission' in result['response']
+    assert 'NGN' not in result['response']
+
+
+def test_scope_contract_maps_sales_revenue_to_the_statement_line():
+    description = agent.SCOPE_TOOL['description']
+    assert '"Sales revenue"' in description
+    assert "line_ids ['sales_revenue']" in description
+    assert 'never customer sales' not in description
+
+
+def test_investigation_priority_states_missing_rule_and_shows_requested_evidence(monkeypatch):
+    install_plan(monkeypatch, {
+        'kind': 'measure', 'measures': ['zero_commission_count', 'activation_commission'],
+        'periods': ['202605', '202606'], 'dealer_id': '296065', 'operation': 'compare',
+        'criterion': 'investigation_priority',
+    })
+    result = asyncio.run(agent.run_agent('is this dealer a priority for investigation on commission'))
+    response = result['response']
+    assert response.startswith('The knowledge base defines no commission investigation-priority rule')
+    assert 'Zero\\-commission activations:' in response
+    assert 'Change (202606 − 202605)' in response
+    assert '999,999,999' not in response
+
+
+@pytest.mark.parametrize('plan', [
+    {'kind': 'clarification', 'clarification': 'request', 'criterion': 'investigation_priority'},
+    {'kind': 'measure', 'measures': ['activation_count'], 'periods': ['202606'], 'criterion': 'credit_score'},
+])
+def test_priority_criterion_is_closed_and_measure_only(monkeypatch, plan):
+    install_plan(monkeypatch, plan)
+    result = asyncio.run(agent.run_agent('Is this dealer a priority?'))
+    assert result['response'] == agent.FALLBACK_RESPONSE

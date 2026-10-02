@@ -29,7 +29,7 @@ try {
     assert.equal(requests.length, count + 1);
   };
   await ask('Compare operating cash flow across the cohort.');
-  assert.match(requests.at(-1).investigation_context, /20-dealer.*synthetic/s);
+  assert.match(requests.at(-1).investigation_context, /20-dealer.*whole-business statements/s);
   assert.equal(requests.at(-1).message, 'Compare operating cash flow across the cohort.');
   await main.getByRole('searchbox', { name: 'Find a dealer' }).fill('74050');
   await main.getByText('1 matching businesses', { exact: false }).waitFor();
