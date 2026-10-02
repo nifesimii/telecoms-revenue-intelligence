@@ -19,6 +19,7 @@ from backend.agent.measure_scope import (
     MeasureScope, SCOPE_TOOL, clarification_response, knowledge_response,
 )
 from backend.agent.measure_response import render_measure_response, render_dealer_codes
+from backend.agent.dealer_resolution import resolve_dealer_name
 from backend.agent.inference import InferenceRun, cached_system, new_client
 
 # --- Model config ---
@@ -167,6 +168,20 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
         if emit is not None:
             await emit({'type': 'status', 'phase': 'tool_start', 'reset': True,
                         'tool': MEASURE_STATUS_TOOL})
+        resolution = None
+        if request.get('dealer_name'):
+            # A named dealer becomes one recorded code before any evidence read.
+            resolution = await asyncio.to_thread(resolve_dealer_name, request)
+            run.remaining()
+            if resolution.status != 'matched':
+                tools_called = ['get_dealer_codes'] if resolution.lookup else []
+                raw_data = {'get_dealer_codes': resolution.lookup} if resolution.lookup else {}
+                if emit is not None:
+                    await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
+                                'tool': MEASURE_STATUS_TOOL, 'tools_called': tools_called, 'raw_data': raw_data})
+                    await emit({'type': 'text', 'text': resolution.text})
+                return {'response': resolution.text, 'tools_called': tools_called, 'raw_data': raw_data}
+            request.update(dealer_id=resolution.dealer_id, dealer_name=None)
         evidence = await asyncio.to_thread(tool_executor.execute_measure_request, request)
         run.remaining()
         answer = render_measure_response(request, evidence)
@@ -179,6 +194,10 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
         evidence_tools.extend(item['tool'] for item in evidence.get('explanations', []) if item.get('tool'))
         tools_called = list(dict.fromkeys(evidence_tools))
         raw_data = {'measure_evidence': evidence}
+        if resolution is not None:
+            answer = resolution.text + '\n\n' + answer
+            tools_called = ['get_dealer_codes', *tools_called]
+            raw_data = {'get_dealer_codes': resolution.lookup, **raw_data}
         if emit is not None:
             await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
                         'tool': MEASURE_STATUS_TOOL, 'tools_called': tools_called, 'raw_data': raw_data})

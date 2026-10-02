@@ -212,6 +212,7 @@ def test_scope_is_one_month_alone_with_an_optional_dealer(measure):
     base = {"kind": "measure", "measures": [measure], "periods": ["202606"], "operation": "total"}
     assert MeasureScope.model_validate(base).dealer_id is None
     assert MeasureScope.model_validate({**base, "dealer_id": "296065"}).dealer_id == "296065"
+    assert MeasureScope.model_validate({**base, "dealer_name": "River Isle Ventures"}).dealer_name == "River Isle Ventures"
     for change in ({"periods": ["202605", "202606"]}, {"operation": "breakdown"},
                    {"filter": "unpaid"}, {"measures": [measure, "payment_outstanding"]}):
         with pytest.raises(ValidationError):
