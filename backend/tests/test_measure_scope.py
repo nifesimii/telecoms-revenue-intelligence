@@ -170,25 +170,110 @@ def test_scope_contract_maps_sales_revenue_to_the_statement_line():
     assert 'never customer sales' not in description
 
 
-def test_investigation_priority_states_missing_rule_and_shows_requested_evidence(monkeypatch):
-    install_plan(monkeypatch, {
-        'kind': 'measure', 'measures': ['zero_commission_count', 'activation_commission'],
-        'periods': ['202605', '202606'], 'dealer_id': '296065', 'operation': 'compare',
-        'criterion': 'investigation_priority',
-    })
-    result = asyncio.run(agent.run_agent('is this dealer a priority for investigation on commission'))
+PRIORITY_FINDINGS = [
+    {'module': 'payment', 'severity': 'HIGH', 'type': 'COMMISSION_DISPUTE',
+     'description': 'NGN 594,652.08 outstanding · disputed'},
+    {'module': 'inventory', 'severity': 'MEDIUM', 'type': 'INVENTORY_MISMATCH',
+     'description': 'product 1299801: 42 activations vs 20 purchased, 110.0% excess'},
+    {'module': 'commission', 'severity': 'MEDIUM', 'type': 'ZERO_COMMISSION_ACTIVATION',
+     'description': '50 of 495 activations recorded zero commission'},
+    {'module': 'activation', 'severity': 'LOW', 'type': 'UNUSUAL_VOLUME',
+     'description': '495 activations, 89.90% qualified'},
+]
+
+
+def fake_priority_evidence(period, dealer_id):
+    """CONTRACT-shaped stand-in for backend.assurance.overview.investigation_priority_evidence."""
+    base = {'period': period, 'source': 'Investigation queue', 'tool': 'investigation_queue',
+            'total': None, 'truncated': False}
+    if dealer_id is None or period != '202606':
+        return {**base, 'status': 'unavailable', 'total_rows': 0, 'rows': [], 'priority': None,
+                'note': 'The investigation queue is unavailable for this month.'}
+    if dealer_id != '296065':
+        return {**base, 'status': 'available', 'total_rows': 0, 'rows': [], 'note': '', 'priority': {
+            'in_queue': False, 'severity': None, 'rank': None, 'queue_size': 922,
+            'lead_module': None, 'lead_type': None, 'findings': [], 'finding_count': 0,
+            'commission': None, 'commission_module_status': 'FLAG', 'unchecked_modules': [],
+            'payment_status': None, 'amount_outstanding': None}}
+    rows = [{'dealer_id': '296065', 'dealer_name': 'River Isle Ventures',
+             'dimension': f"{f['module'].capitalize()} · {f['type']}",
+             'value': f"{f['severity']}: {f['description']}"} for f in PRIORITY_FINDINGS]
+    return {**base, 'status': 'available', 'total_rows': len(rows), 'rows': rows, 'note': '', 'priority': {
+        'in_queue': True, 'severity': 'HIGH', 'rank': 1, 'queue_size': 922,
+        'lead_module': 'payment', 'lead_type': 'COMMISSION_DISPUTE',
+        'findings': [dict(f) for f in PRIORITY_FINDINGS], 'finding_count': 4,
+        'commission': {k: PRIORITY_FINDINGS[2][k] for k in ('severity', 'type', 'description')},
+        'commission_module_status': 'FLAG', 'unchecked_modules': [],
+        'payment_status': 'DISPUTED', 'amount_outstanding': 594652.08}}
+
+
+def install_priority(monkeypatch):
+    import backend.assurance.overview as overview
+    calls = []
+    def fake(period, dealer_id):
+        calls.append((period, dealer_id))
+        return fake_priority_evidence(period, dealer_id)
+    monkeypatch.setattr(overview, 'investigation_priority_evidence', fake, raising=False)
+    return calls
+
+
+def test_priority_question_answers_from_the_investigation_queue(monkeypatch):
+    calls = install_priority(monkeypatch)
+    install_plan(monkeypatch, {'kind': 'measure', 'measures': ['investigation_priority'],
+                               'periods': ['202606'], 'dealer_id': '296065'})
+    result = asyncio.run(agent.run_agent('is this dealer a high priority for investigation on commission'))
     response = result['response']
-    assert response.startswith('The knowledge base defines no commission investigation-priority rule')
-    assert 'Zero\\-commission activations:' in response
-    assert 'Change (202606 − 202605)' in response
+    assert calls == [('202606', '296065')]
+    assert response.startswith('Investigation priority for dealer 296065, 202606: HIGH — rank 1 of 922')
+    assert 'Commission-module priority: MEDIUM' in response
+    assert 'knowledge base defines no' not in response
     assert '999,999,999' not in response
+    assert result['tools_called'] == ['investigation_queue']
+
+
+def test_executor_skips_measure_collection_for_priority_only(monkeypatch):
+    from backend.agent import tool_executor
+    from backend.db import measure_evidence
+    install_priority(monkeypatch)
+    monkeypatch.setattr(measure_evidence, 'collect_measure_evidence',
+                        lambda request: pytest.fail('no other measures were requested'))
+    evidence = tool_executor.execute_measure_request({
+        'measures': ['investigation_priority'], 'periods': ['202606'], 'dealer_id': '777'})
+    assert evidence['measures'][0]['periods'][0]['priority']['in_queue'] is False
+
+
+def test_scope_contract_routes_priority_questions_to_the_queue_measure():
+    description = agent.SCOPE_TOOL['description']
+    assert "['investigation_priority']" in description
+    assert 'criterion' not in description
+    assert 'no documented rule' not in description
+    assert 'investigation_priority' in json.dumps(agent.SCOPE_TOOL['input_schema'])
 
 
 @pytest.mark.parametrize('plan', [
+    {'kind': 'measure', 'measures': ['activation_count'], 'periods': ['202606'],
+     'criterion': 'investigation_priority'},
     {'kind': 'clarification', 'clarification': 'request', 'criterion': 'investigation_priority'},
-    {'kind': 'measure', 'measures': ['activation_count'], 'periods': ['202606'], 'criterion': 'credit_score'},
+    {'kind': 'measure', 'measures': ['investigation_priority'], 'periods': ['202606']},
+    {'kind': 'measure', 'measures': ['investigation_priority'], 'periods': ['202606'],
+     'dealer_id': '296065', 'operation': 'compare'},
+    # One Overview run per answer: the queue measure stands alone for one month.
+    {'kind': 'measure', 'measures': ['activation_count', 'investigation_priority'],
+     'periods': ['202606'], 'dealer_id': '296065'},
+    {'kind': 'measure', 'measures': ['investigation_priority'], 'periods': ['202605', '202606'],
+     'dealer_id': '296065'},
 ])
-def test_priority_criterion_is_closed_and_measure_only(monkeypatch, plan):
+def test_priority_scope_rejects_removed_criterion_and_unscoped_requests(monkeypatch, plan):
+    install_priority(monkeypatch)
     install_plan(monkeypatch, plan)
     result = asyncio.run(agent.run_agent('Is this dealer a priority?'))
     assert result['response'] == agent.FALLBACK_RESPONSE
+
+
+def test_priority_scope_validates_alone_and_leaves_other_combos_intact():
+    alone = agent.MeasureScope.model_validate({'kind': 'measure', 'measures': ['investigation_priority'],
+                                               'periods': ['202606'], 'dealer_id': '296065'})
+    assert alone.measures == ['investigation_priority'] and alone.operation == 'total'
+    other = agent.MeasureScope.model_validate({'kind': 'measure', 'periods': ['202605', '202606'],
+        'measures': ['zero_commission_count', 'activation_commission'], 'operation': 'compare'})
+    assert other.dealer_id is None

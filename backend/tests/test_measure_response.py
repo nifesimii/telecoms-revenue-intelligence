@@ -348,3 +348,112 @@ def test_breakdown_distinguishes_codes_with_the_same_recorded_name():
     period['rows'].append({'dealer_id': 'D2', 'dealer_name': 'First Dealer', 'value': 0})
     answer = render_measure_response(request, evidence)
     assert 'First Dealer (D1)' in answer and 'First Dealer (D2)' in answer
+
+
+def priority_fixture(period_evidence):
+    request = {"measures": ["investigation_priority"], "periods": ["202606"], "dealer_id": "296065",
+               "operation": "total"}
+    evidence = {"requested_periods": ["202606"], "dealer_id": "296065", "explanations": [], "measures": [{
+        "measure": "investigation_priority", "label": "Investigation priority", "unit": "text",
+        "aggregation": "none", "note": "", "periods": [period_evidence]}]}
+    return request, evidence
+
+
+def queue_period(**priority):
+    from backend.tests.test_measure_scope import fake_priority_evidence
+    period = fake_priority_evidence("202606", "296065")
+    period["priority"].update(priority)
+    return period
+
+
+def test_priority_states_overall_and_commission_priority_with_every_finding():
+    answer = render_measure_response(*priority_fixture(queue_period()))
+    lines = answer.split("\n\n")
+    assert lines[0] == ("Investigation priority for dealer 296065, 202606: HIGH — rank 1 of 922 "
+                        "in the investigation queue.")
+    assert "Overall priority is set by the payment finding (COMMISSION\\_DISPUTE)." in answer
+    assert "Commission-module priority: MEDIUM (ZERO\\_COMMISSION\\_ACTIVATION)." in answer
+    table = next(part for part in lines if part.startswith("| Module | Severity | Finding | Detail |"))
+    rows = table.splitlines()[2:]
+    assert [row.split(" | ")[0] for row in rows] == ["| Payment", "| Inventory", "| Commission", "| Activation"]
+    assert "| Payment | HIGH | COMMISSION\\_DISPUTE | NGN 594,652\\.08 outstanding · disputed |" in table
+    assert "110\\.0% excess" in table
+    assert "Queue order: severity, then amount outstanding (largest first)." in answer
+    assert lines[-1] == "Source: Investigation queue."
+    assert "Not checked" not in answer
+    assert "knowledge base defines no" not in answer
+
+
+def test_priority_without_commission_finding_or_unchecked_commission_module():
+    no_finding = render_measure_response(*priority_fixture(queue_period(commission=None)))
+    assert "Commission-module priority: no commission finding this month." in no_finding
+    unchecked = render_measure_response(*priority_fixture(queue_period(
+        commission=None, commission_module_status="UNAVAILABLE", unchecked_modules=["commission", "inventory"])))
+    assert "Commission-module priority: commission module could not be checked." in unchecked
+    assert "Not checked: commission, inventory; the queue may be incomplete." in unchecked
+
+
+def test_priority_reports_dealer_outside_the_queue_with_queue_size():
+    from backend.tests.test_measure_scope import fake_priority_evidence
+    period = fake_priority_evidence("202606", "777")
+    request, evidence = priority_fixture(period)
+    request["dealer_id"] = evidence["dealer_id"] = "777"
+    answer = render_measure_response(request, evidence)
+    assert answer.startswith("Dealer 777 is not in the investigation queue for 202606 (queue of 922 dealers).")
+    assert "| Module |" not in answer
+    assert answer.endswith("Source: Investigation queue.")
+
+
+def test_unavailable_priority_is_never_low():
+    from backend.tests.test_measure_scope import fake_priority_evidence
+    request, evidence = priority_fixture(fake_priority_evidence("202606", None))
+    answer = render_measure_response(request, evidence)
+    assert answer.startswith("Investigation priority unavailable for 202606: The investigation queue is unavailable")
+    assert "Missing evidence is not a low priority." in answer
+    assert "LOW" not in answer and "rank" not in answer
+    assert "not in the investigation queue" not in answer
+
+
+def test_priority_answers_carry_no_demo_wording():
+    from backend.tests.test_measure_scope import fake_priority_evidence
+    unavailable = fake_priority_evidence("202606", None)
+    outside = fake_priority_evidence("202606", "296065")
+    outside["priority"].update(in_queue=False, severity=None, rank=None, findings=[], finding_count=0,
+                               lead_module=None, lead_type=None, commission=None)
+    outside["rows"] = []
+    for case in (queue_period(), queue_period(commission=None, unchecked_modules=["payment"]), unavailable, outside):
+        answer = render_measure_response(*priority_fixture(case)).lower()
+        assert not any(word in answer for word in ("synthetic", "simulated", "sample", "demo"))
+
+
+@pytest.mark.parametrize("change", [
+    {"rank": 923}, {"rank": 0}, {"in_queue": "yes"}, {"severity": "CRITICAL"},
+    {"findings": [{"module": "payment", "severity": "HIGH", "type": 1, "description": "x"}]},
+    {"finding_count": 1}, {"unchecked_modules": "commission"}, {"queue_size": -1},
+    {"findings": None}, {"rank": "1"},
+])
+def test_priority_evidence_is_validated(change):
+    with pytest.raises(ValueError):
+        render_measure_response(*priority_fixture(queue_period(**change)))
+
+
+@pytest.mark.parametrize("missing", ["findings", "finding_count", "queue_size", "rank", "severity"])
+def test_incomplete_priority_evidence_is_rejected_not_crashed(missing):
+    request, evidence = priority_fixture(queue_period())
+    del evidence["measures"][0]["periods"][0]["priority"][missing]
+    with pytest.raises(ValueError):
+        render_measure_response(request, evidence)
+
+
+def test_priority_payload_is_rejected_on_other_measures():
+    request, evidence = activation_fixture()
+    evidence["measures"][0]["periods"][0]["priority"] = queue_period()["priority"]
+    with pytest.raises(ValueError):
+        render_measure_response(request, evidence)
+
+
+def test_markdown_in_priority_values_is_escaped():
+    period = queue_period(findings=[{"module": "payment", "severity": "HIGH", "type": "X",
+                                     "description": "| [link](http://x) `code`"}], finding_count=1)
+    answer = render_measure_response(*priority_fixture(period))
+    assert "\\| \\[link\\]\\(http://x\\) \\`code\\`" in answer

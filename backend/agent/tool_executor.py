@@ -49,7 +49,18 @@ def execute_measure_request(request: dict[str, Any]) -> dict[str, Any]:
     """Route a validated measure request without exposing unrelated query fields."""
     from backend.db.measure_evidence import collect_measure_evidence
 
-    return collect_measure_evidence(request)
+    if request.get("measures") != ["investigation_priority"]:
+        return collect_measure_evidence(request)
+    # The Overview investigation queue is assurance-layer evidence; reuse its
+    # computation unchanged rather than re-deriving priority here.
+    from backend.assurance import overview
+
+    periods, dealer_id = list(request["periods"]), request.get("dealer_id")
+    return {"requested_periods": periods, "dealer_id": dealer_id, "explanations": [], "measures": [{
+        "measure": "investigation_priority", "label": "Investigation priority",
+        "unit": "text", "aggregation": "none", "note": "",
+        "periods": [overview.investigation_priority_evidence(period, dealer_id) for period in periods],
+    }]}
 
 
 def execute_dealer_lookup(request: dict[str, Any]) -> dict[str, Any]:

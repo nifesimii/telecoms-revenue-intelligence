@@ -191,6 +191,10 @@ backend/
 │   ├── triage.py            TRIAGE_HANDLERS: shape/trim query results for the agent.
 │   ├── data_coverage.py     Compiles the IFS/USP data-gap ServiceNow ticket.
 │   ├── apdp.py              Reads APDP's partner_settlements view (PAYMENT_SOURCE=apdp).
+│   ├── payment_snapshot.py  load_payment_snapshot(period): source-aware settlement
+│   │                        snapshot + PaymentSummaryRecord/PaymentCoverageResponse
+│   │                        (re-exported by api/schemas). Shared by Payments,
+│   │                        Overview and Atlas; APDP outage → PaymentSourceUnavailable.
 │   └── audit_store.py       Persists + queries verification trails in the FBB audit DB.
 │
 ├── assurance/              ── INTELLIGENCE: the "flaggers" ──
@@ -200,7 +204,11 @@ backend/
 │   ├── commission_assurance.py    Flags dealers with zero-commission activations.
 │   ├── activation_assurance.py    Flags activation-volume/qualification anomalies.
 │   ├── inventory_assurance.py     Flags purchase-vs-activation mismatches.
-│   └── payment_assurance.py       Flags payment-coverage exceptions.
+│   ├── payment_assurance.py       Flags payment-coverage exceptions.
+│   └── overview.py                overview_snapshot(): the one Overview computation
+│                                  (findings + ranked investigation queue) used by
+│                                  GET /assurance/overview and Atlas via
+│                                  investigation_priority_evidence().
 │
 ├── audit/                 ── INTELLIGENCE: the "prover" (audit trails) ──
 │   ├── trail.py            TrailStep + VerificationTrail dataclasses + JSON sanitiser.
@@ -237,6 +245,8 @@ backend/
 │   ├── tool_executor.py    Routes a Claude tool call → the right db/ function.
 │   │                        QUERY tools go through execute_query; DIRECT tools
 │   │                        (get_kb_section, dossier) call handlers directly.
+│   │                        The investigation_priority measure reads the Overview
+│   │                        queue via assurance/overview (one dealer, one month).
 │   ├── prompts.py          Builds the system prompt. Injects the tiered KB (see §5).
 │   └── dispute_responder.py  Pure-Python (no LLM) generator for a finance-ready
 │                            dispute-response letter.

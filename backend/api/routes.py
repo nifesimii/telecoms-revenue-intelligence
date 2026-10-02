@@ -57,6 +57,12 @@ from backend.api.schemas import (
 )
 from backend import config
 from backend.audit.payment_data import RECON_TO_STATUS as _RECON_TO_STATUS
+from backend.db.payment_snapshot import (
+    PaymentSourceUnavailable,
+    apdp_payment_snapshot,
+    load_payment_snapshot,
+    row_to_payment_record,
+)
 from backend.assurance.registry import ASSURANCE_REGISTRY, is_implemented
 from backend.db import queries
 from backend.db.connection import execute_query
@@ -427,16 +433,12 @@ async def get_assurance_status(
 
 
 async def _overview_snapshot(period: str, module=None, severity=None):
-    from backend.assurance.overview import collect_overview
+    from backend.assurance.overview import UnknownOverviewPeriod, overview_snapshot
 
-    if period not in queries.get_available_periods():
-        raise HTTPException(status_code=404, detail="No data for this reporting period")
     try:
-        payment = get_payment_summary(period)
-    except Exception:
-        logger.exception("Overview payment source unavailable")
-        payment = None
-    return await collect_overview(period, payment, module, severity)
+        return await overview_snapshot(period, module, severity)
+    except UnknownOverviewPeriod:
+        raise HTTPException(status_code=404, detail="No data for this reporting period") from None
 
 
 @router.get("/assurance/overview", response_model=OverviewResponse)
@@ -640,56 +642,10 @@ def get_data_coverage_issues(
 # ---------------------------------------------------------------------------
 
 
-def _row_to_payment_record(row: dict[str, Any]) -> PaymentSummaryRecord:
-    """Normalise NaN → None for the nullable string columns before pydantic."""
-    cleaned = {}
-    for k, v in row.items():
-        if isinstance(v, float) and pd.isna(v):
-            cleaned[k] = None
-        else:
-            cleaned[k] = v
-    return PaymentSummaryRecord(**cleaned)
-
-
-# ---------------------------------------------------------------------------
-# APDP Postgres → PaymentSummaryRecord adapter
-# ---------------------------------------------------------------------------
-# When PAYMENT_SOURCE=apdp the /payments/* endpoints read from APDP's
-# normalized.partner_settlements view instead of the simulated CSV. The
-# view's reconciliation_status drives payment_status mapping; the rest of
-# the record carries the v1.3.0 enrichment fields so the UI can show
-# sales-vs-statement-vs-settlement context.
-
-
-def _apdp_row_to_payment_record(row: dict[str, Any]) -> PaymentSummaryRecord:
-    owed   = float(row.get("expected_commission_ngn") or 0)
-    paid   = float(row.get("total_settled_ngn") or 0)
-    unpaid = max(0.0, round(owed - paid, 2))
-    recon  = row.get("reconciliation_status") or "RECONCILED"
-    dealer = row.get("dealer_id") or ""
-    return PaymentSummaryRecord(
-        dealer_id             = dealer,
-        dealer_name           = dealer,  # APDP view doesn't carry the name
-        account_profile_class = "",
-        report_month          = row.get("settlement_period") or "",
-        commission_owed       = round(owed, 2),
-        amount_paid           = round(paid, 2),
-        amount_unpaid         = unpaid,
-        payment_status        = _RECON_TO_STATUS.get(recon, "PENDING"),
-        payment_channel       = "",
-        payment_date          = None,
-        exception_flag        = recon if recon != "RECONCILED" else None,
-        data_source           = "APDP",
-        reconciliation_status = recon,
-        sale_count            = int(row.get("sale_count") or 0),
-        total_sales_ngn       = float(row.get("total_sales_ngn") or 0),
-        statement_gross_revenue_ngn = float(row.get("statement_gross_revenue_ngn") or 0),
-        payment_variance_ngn  = float(row.get("payment_variance_ngn") or 0),
-        paid_count            = int(row.get("paid_count") or 0),
-        partial_count         = int(row.get("partial_count") or 0),
-        disputed_count        = int(row.get("disputed_count") or 0),
-    )
-
+# The source-aware snapshot (simulated CSV or APDP partner_settlements) lives
+# in backend/db/payment_snapshot.py so Overview and Atlas share it. These
+# routes only translate its domain error into HTTP.
+_row_to_payment_record = row_to_payment_record
 
 # Status sort ranking used by the APDP exceptions endpoint and as a tie-breaker
 # elsewhere — matches the simulated path's DISPUTED → PARTIAL → PENDING order.
@@ -698,37 +654,10 @@ _STATUS_RANK = {"DISPUTED": 0, "PARTIALLY_PAID": 1, "PENDING": 2, "FULLY_PAID": 
 
 def _apdp_summary_response(period: str) -> PaymentCoverageResponse:
     """Build /payments/summary from APDP partner_settlements rows."""
-    from backend.db import apdp as apdp_db  # imported lazily to avoid psycopg2 cost in sample mode
     try:
-        raw_rows = apdp_db.get_partner_settlements(period)
-    except Exception as e:
-        logger.exception("APDP partner_settlements read failed")
-        raise HTTPException(status_code=503, detail=f"APDP unreachable: {e}")
-
-    records = [_apdp_row_to_payment_record(r) for r in raw_rows]
-
-    total_owed   = round(sum(r.commission_owed for r in records), 2)
-    total_paid   = round(sum(r.amount_paid     for r in records), 2)
-    total_unpaid = round(sum(r.amount_unpaid   for r in records), 2)
-    coverage_pct = round(total_paid / total_owed * 100.0, 1) if total_owed > 0 else 0.0
-
-    status_counts: dict[str, int] = {}
-    for r in records:
-        status_counts[r.payment_status] = status_counts.get(r.payment_status, 0) + 1
-
-    return PaymentCoverageResponse(
-        period                 = period,
-        total_commission_owed  = total_owed,
-        total_amount_paid      = total_paid,
-        total_amount_unpaid    = total_unpaid,
-        payment_coverage_pct   = coverage_pct,
-        disputed_count         = status_counts.get("DISPUTED", 0),
-        partially_paid_count   = status_counts.get("PARTIALLY_PAID", 0),
-        pending_count          = status_counts.get("PENDING", 0),
-        fully_paid_count       = status_counts.get("FULLY_PAID", 0),
-        data_source            = "APDP",
-        records                = records,
-    )
+        return apdp_payment_snapshot(period)
+    except PaymentSourceUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
 
 
 @router.get(
@@ -752,42 +681,10 @@ def get_payment_summary(
       * ``apdp``     → reads from APDP ``normalized.partner_settlements`` view
     """
     period = mon_period or _most_recent_period() or ""
-
-    if config.PAYMENT_SOURCE == "apdp":
-        return _apdp_summary_response(period)
-
-    df = execute_query("get_payment_summary", {"mon_period": period})
-
-    records = [
-        _row_to_payment_record(row) for row in df.to_dict(orient="records")
-    ]
-
-    total_owed = float(df["commission_owed"].astype(float).sum()) if not df.empty else 0.0
-    total_paid = float(df["amount_paid"].astype(float).sum()) if not df.empty else 0.0
-    total_unpaid = (
-        float(df["amount_unpaid"].astype(float).sum()) if not df.empty else 0.0
-    )
-    coverage_pct = (
-        round(total_paid / total_owed * 100.0, 1) if total_owed > 0 else 0.0
-    )
-
-    status_counts = (
-        df["payment_status"].value_counts().to_dict() if not df.empty else {}
-    )
-
-    return PaymentCoverageResponse(
-        period=period,
-        total_commission_owed=round(total_owed, 2),
-        total_amount_paid=round(total_paid, 2),
-        total_amount_unpaid=round(total_unpaid, 2),
-        payment_coverage_pct=coverage_pct,
-        disputed_count=int(status_counts.get("DISPUTED", 0)),
-        partially_paid_count=int(status_counts.get("PARTIALLY_PAID", 0)),
-        pending_count=int(status_counts.get("PENDING", 0)),
-        fully_paid_count=int(status_counts.get("FULLY_PAID", 0)),
-        data_source="SIMULATED",
-        records=records,
-    )
+    try:
+        return load_payment_snapshot(period)
+    except PaymentSourceUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
 
 
 @router.get("/payments/position", response_model=OverviewPayment)

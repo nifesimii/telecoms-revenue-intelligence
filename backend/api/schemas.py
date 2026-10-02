@@ -10,6 +10,11 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
+from backend.db.payment_snapshot import (  # noqa: F401  (re-exported API models)
+    PaymentCoverageResponse,
+    PaymentSummaryRecord,
+)
+
 
 # ---------------------------------------------------------------------------
 # /chat
@@ -321,53 +326,9 @@ class InventoryComparisonPage(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class PaymentSummaryRecord(BaseModel):
-    """One row of the payment dataset for a dealer-month.
-
-    The base fields are populated by every source. The reconciliation fields
-    are only populated when ``data_source == "APDP"`` — they're derived from
-    ``normalized.partner_settlements`` and let the UI show the richer
-    reconciliation state (sales captured vs commissions earned vs paid).
-    """
-
-    dealer_id: str
-    dealer_name: str
-    account_profile_class: str = ""
-    report_month: str
-    commission_owed: float
-    amount_paid: float
-    amount_unpaid: float
-    payment_status: str
-    payment_channel: str
-    payment_date: str | None = None
-    exception_flag: str | None = None
-    data_source: str = "SIMULATED"
-
-    # --- v1.3.0 APDP reconciliation enrichment (None when SIMULATED) ---
-    reconciliation_status: str | None = None       # 6-state canonical
-    sale_count: int | None = None                   # consumer sales captured
-    total_sales_ngn: float | None = None
-    statement_gross_revenue_ngn: float | None = None
-    payment_variance_ngn: float | None = None       # signed: paid − owed
-    paid_count: int | None = None
-    partial_count: int | None = None
-    disputed_count: int | None = None
-
-
-class PaymentCoverageResponse(BaseModel):
-    """Aggregated coverage payload for ``GET /payments/summary``."""
-
-    period: str
-    total_commission_owed: float
-    total_amount_paid: float
-    total_amount_unpaid: float
-    payment_coverage_pct: float
-    disputed_count: int
-    partially_paid_count: int
-    pending_count: int
-    fully_paid_count: int
-    data_source: str = "SIMULATED"
-    records: list[PaymentSummaryRecord]
+# PaymentSummaryRecord and PaymentCoverageResponse live with the data-layer
+# snapshot (backend/db/payment_snapshot.py) so assurance and Atlas can build
+# it without importing the API. Re-exported here; the wire contract is unchanged.
 
 
 class PaymentCollectionPage(BaseModel):

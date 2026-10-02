@@ -2,9 +2,12 @@
 
 No SQL or new business rules: findings come from the registered services;
 payment findings use the same source-aware settlement snapshot as Payments.
+``overview_snapshot`` is the one entry point shared by ``GET /assurance/overview``
+and Atlas (``investigation_priority_evidence``), so both see the same queue.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 
@@ -13,6 +16,33 @@ from backend.assurance.payment_assurance import classify_payment_status
 
 logger = logging.getLogger(__name__)
 SEVERITY_ORDER = {"HIGH": 0, "MEDIUM": 1, "LOW": 2}
+UNCHECKED_STATUSES = {"UNAVAILABLE", "NOT_IMPLEMENTED", "NO_DATA"}
+INVESTIGATION_QUEUE_SOURCE = "Investigation queue"
+INVESTIGATION_QUEUE_TOOL = "investigation_queue"
+
+
+class UnknownOverviewPeriod(LookupError):
+    """The reporting month has no data, so no assessment can be made."""
+
+
+async def overview_snapshot(period, module=None, severity=None):
+    """Return ``collect_overview`` for ``period`` using the shared payment snapshot.
+
+    An unknown period raises :class:`UnknownOverviewPeriod` (never an all-clear).
+    A payment-source failure leaves ``payment=None`` so the module reports
+    UNAVAILABLE while the other checks still run.
+    """
+    from backend.db import queries
+    from backend.db.payment_snapshot import load_payment_snapshot
+
+    if period not in queries.get_available_periods():
+        raise UnknownOverviewPeriod(period)
+    try:
+        payment = load_payment_snapshot(period)
+    except Exception:
+        logger.exception("Overview payment source unavailable")
+        payment = None
+    return await collect_overview(period, payment, module, severity)
 
 
 async def collect_overview(period, payment, selected_module=None, selected_severity=None):
@@ -65,7 +95,7 @@ async def collect_overview(period, payment, selected_module=None, selected_sever
     return {
         "period": period,
         "checked_at": datetime.now(timezone.utc).isoformat(),
-        "complete": all(m["status"] not in {"UNAVAILABLE", "NOT_IMPLEMENTED", "NO_DATA"} for m in modules),
+        "complete": all(m["status"] not in UNCHECKED_STATUSES for m in modules),
         "modules": modules, "finding_count": len(findings),
         "affected_dealers": len(full_queue),
         "cross_module_dealers": sum(len(r["modules"]) > 1 for r in full_queue),
@@ -104,3 +134,78 @@ def rank_dealers(findings, payment):
     return sorted(dealers.values(), key=lambda r: (
         SEVERITY_ORDER.get(r["severity"], 3),
         -(r["amount_outstanding"] or 0), r["dealer_id"]))
+
+
+def _unavailable(period, note):
+    return {"period": period, "status": "unavailable",
+            "source": INVESTIGATION_QUEUE_SOURCE, "tool": INVESTIGATION_QUEUE_TOOL,
+            "total": None, "truncated": False, "total_rows": 0, "note": note,
+            "rows": [], "priority": None}
+
+
+def _finding_summary(finding):
+    return {"module": finding["module"], "severity": finding["severity"],
+            "type": finding["type"], "description": finding["description"]}
+
+
+def investigation_priority_evidence(period: str, dealer_id: str | None) -> dict:
+    """One dealer's place in the Overview investigation queue for ``period``.
+
+    Synchronous; safe to call from a worker thread (uses ``asyncio.run``).
+    Values are read unchanged from ``collect_overview``/``rank_dealers``:
+    no thresholds or judgement are added here. Missing data is reported as
+    unavailable, never as "not in queue" or a low priority.
+    """
+    if dealer_id is None:
+        return _unavailable(period, "Investigation priority needs a dealer account; select or name one.")
+    try:
+        summary, queue, _ = asyncio.run(overview_snapshot(period))
+    except UnknownOverviewPeriod:
+        return _unavailable(period, f"The investigation queue is unavailable for {period}: "
+                                    "no data is recorded for this month.")
+    except Exception:
+        logger.exception("Investigation queue unavailable: %s", period)
+        return _unavailable(period, f"The investigation queue is unavailable for {period}: "
+                                    "the overview could not be computed.")
+
+    statuses = {m["module"]: m["status"] for m in summary["modules"]}
+    unchecked = [name for name, status in statuses.items() if status in UNCHECKED_STATUSES]
+    if len(unchecked) == len(statuses):
+        # No module ran, so an empty queue is missing evidence, not a clear result.
+        return _unavailable(period, f"The investigation queue is unavailable for {period}: "
+                                    "no assurance module could be checked.")
+    code = str(dealer_id)
+    rank, entry = next(((i, r) for i, r in enumerate(queue, 1) if r["dealer_id"] == code),
+                       (None, None))
+    findings, rows = [], []
+    if entry:
+        lead = entry["lead_finding"]
+        ordered = [lead["module"]] + [m for m in entry["modules"] if m != lead["module"]]
+        for module in ordered:
+            finding = _finding_summary(entry["module_findings"][module])
+            findings.append(finding)
+            rows.append({"dealer_id": code, "dealer_name": entry["dealer_name"],
+                         "dimension": f"{module.capitalize()} · {finding['type']}",
+                         "value": f"{finding['severity']}: {finding['description']}"})
+    commission = entry["module_findings"].get("commission") if entry else None
+    return {
+        "period": period, "status": "available",
+        "source": INVESTIGATION_QUEUE_SOURCE, "tool": INVESTIGATION_QUEUE_TOOL,
+        "total": None, "truncated": False, "total_rows": len(rows), "note": "",
+        "rows": rows,
+        "priority": {
+            "in_queue": entry is not None,
+            "severity": entry["severity"] if entry else None,
+            "rank": rank,
+            "queue_size": len(queue),
+            "lead_module": entry["lead_finding"]["module"] if entry else None,
+            "lead_type": entry["lead_finding"]["type"] if entry else None,
+            "findings": findings,
+            "finding_count": entry["finding_count"] if entry else 0,
+            "commission": _finding_summary(commission) if commission else None,
+            "commission_module_status": statuses.get("commission", "UNAVAILABLE"),
+            "unchecked_modules": unchecked,
+            "payment_status": entry["payment_status"] if entry else None,
+            "amount_outstanding": entry["amount_outstanding"] if entry else None,
+        },
+    }

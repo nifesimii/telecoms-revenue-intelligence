@@ -5,7 +5,11 @@ from decimal import Decimal
 from html import escape
 import re
 
+from backend.assurance.overview import SEVERITY_ORDER, UNCHECKED_STATUSES as _UNCHECKED_STATUSES
+
 _MAX_RENDERED_ROWS = 100
+_PRIORITY_SEVERITIES = set(SEVERITY_ORDER)
+_FINDING_FIELDS = ("severity", "type", "description")
 
 
 def _text(value: object) -> str:
@@ -18,6 +22,54 @@ def _number(value: object, unit: str) -> str:
     if unit == "ngn":
         return f"NGN {amount:,.2f}"
     return f"{amount:,f}".rstrip("0").rstrip(".") if amount % 1 else f"{amount:,.0f}"
+
+
+def _is_count(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+
+def _validate_finding(finding: object, fields: tuple[str, ...]) -> None:
+    if not isinstance(finding, dict) or any(not isinstance(finding.get(key), str) for key in fields):
+        raise ValueError("Priority findings require text fields")
+    if finding["severity"] not in _PRIORITY_SEVERITIES:
+        raise ValueError("Unsupported finding severity")
+
+
+def _validate_priority(period: dict) -> None:
+    """Queue evidence is copied from the Overview computation; reject malformed shapes."""
+    try:
+        _check_priority(period)
+    except (KeyError, TypeError) as exc:
+        raise ValueError("Incomplete investigation priority evidence") from exc
+
+
+def _check_priority(period: dict) -> None:
+    priority = period.get("priority")
+    if period["status"] == "unavailable":
+        if priority is not None:
+            raise ValueError("Unavailable priority evidence cannot carry a priority")
+        return
+    if not isinstance(priority, dict) or not isinstance(priority.get("in_queue"), bool):
+        raise ValueError("Available priority evidence requires a priority")
+    findings, count, size = priority["findings"], priority["finding_count"], priority["queue_size"]
+    if not isinstance(findings, list) or not _is_count(count) or not _is_count(size) or count < len(findings):
+        raise ValueError("Priority counts are inconsistent")
+    for finding in findings:
+        _validate_finding(finding, ("module", *_FINDING_FIELDS))
+    if priority.get("commission") is not None:
+        _validate_finding(priority["commission"], _FINDING_FIELDS)
+    unchecked = priority.get("unchecked_modules", [])
+    if not isinstance(unchecked, list) or any(not isinstance(module, str) for module in unchecked):
+        raise ValueError("Unchecked modules must be a list of names")
+    if not isinstance(priority.get("commission_module_status", ""), str):
+        raise ValueError("Commission module status must be text")
+    rank = priority["rank"]
+    if priority["in_queue"]:
+        if (priority["severity"] not in _PRIORITY_SEVERITIES or not _is_count(rank) or not 1 <= rank <= size
+                or not findings or any(not isinstance(priority.get(key), str) for key in ("lead_module", "lead_type"))):
+            raise ValueError("Queued priority requires severity, rank and findings")
+    elif priority["severity"] is not None or rank is not None or findings:
+        raise ValueError("A dealer outside the queue has no priority")
 
 
 def _validate(request: dict, evidence: dict) -> None:
@@ -44,6 +96,10 @@ def _validate(request: dict, evidence: dict) -> None:
             seen.add(key)
             if period["status"] not in {"available", "unavailable"}:
                 raise ValueError("Unsupported evidence status")
+            if measure["measure"] == "investigation_priority":
+                _validate_priority(period)
+            elif "priority" in period:
+                raise ValueError("Priority evidence belongs to the investigation priority measure")
             for row in period["rows"]:
                 if dealer is not None and row.get("dealer_id") != dealer:
                     raise ValueError("Evidence row belongs to a different dealer")
@@ -82,11 +138,10 @@ def render_measure_response(request: dict, evidence: dict) -> str:
     """Produce a concise answer using only the supplied scoped evidence."""
     _validate(request, evidence)
     parts = []
-    if request.get("criterion") == "investigation_priority":
-        parts.append("The knowledge base defines no commission investigation-priority rule, so Atlas "
-                     "cannot rate this dealer's priority. The recorded zero-commission activations and "
-                     "month-on-month commission change below are evidence for your judgement.")
     for measure in evidence["measures"]:
+        if measure["measure"] == "investigation_priority":
+            parts.extend(_render_priority(measure, evidence.get("dealer_id")))
+            continue
         periods = measure["periods"]
         is_text = measure["unit"] == "text"
         aggregation = measure.get("aggregation", "sum")
@@ -177,6 +232,52 @@ def render_measure_response(request: dict, evidence: dict) -> str:
                          "for the requested measure and periods, including eligibility evidence where applicable. "
                          "Recorded amounts and changes alone do not establish a cause.")
     return "\n\n".join(parts)
+
+
+def _render_priority(measure: dict, dealer_id: str | None) -> list[str]:
+    """State the Overview queue position; missing evidence is never a low priority."""
+    parts = []
+    for period in measure["periods"]:
+        month, priority = _text(period["period"]), period.get("priority")
+        if period["status"] == "unavailable":
+            note = _text(period.get("note") or "the investigation queue could not be read.")
+            parts.append(f"Investigation priority unavailable for {month}: {note}")
+            parts.append("Missing evidence is not a low priority.")
+            continue
+        dealer = _text(dealer_id or "—")
+        if not priority["in_queue"]:
+            parts.append(f"Dealer {dealer} is not in the investigation queue for {month} "
+                         f"(queue of {priority['queue_size']:,} dealers).")
+        else:
+            parts.append(f"Investigation priority for dealer {dealer}, {month}: {_text(priority['severity'])} — "
+                         f"rank {priority['rank']:,} of {priority['queue_size']:,} in the investigation queue.")
+            parts.append(f"Overall priority is set by the {_text(priority['lead_module'])} finding "
+                         f"({_text(priority['lead_type'])}).")
+            commission = priority.get("commission")
+            if commission:
+                commission_line = f"{_text(commission['severity'])} ({_text(commission['type'])})."
+            elif priority.get("commission_module_status") in _UNCHECKED_STATUSES:
+                commission_line = "commission module could not be checked."
+            else:
+                commission_line = "no commission finding this month."
+            parts.append(f"Commission-module priority: {commission_line}")
+            lines = ["| Module | Severity | Finding | Detail |", "| --- | --- | --- | --- |"]
+            for finding in priority["findings"]:
+                lines.append(f"| {_text(finding['module'].capitalize())} | {_text(finding['severity'])} | "
+                             f"{_text(finding['type'])} | {_text(finding['description'])} |")
+            parts.append("\n".join(lines))
+            if priority["finding_count"] > len(priority["findings"]):
+                parts.append(f"Each module's most severe finding is shown; the dealer has "
+                             f"{priority['finding_count']:,} findings in total.")
+            parts.append("Queue order: severity, then amount outstanding (largest first).")
+        if priority.get("unchecked_modules"):
+            parts.append(f"Not checked: {', '.join(map(_text, priority['unchecked_modules']))}; "
+                         "the queue may be incomplete.")
+        if period.get("note"):
+            parts.append(_text(period["note"]))
+    sources = dict.fromkeys(_text(period["source"]) for period in measure["periods"])
+    parts.append(f"Source: {', '.join(sources)}.")
+    return parts
 
 
 def render_dealer_codes(evidence: dict) -> str:

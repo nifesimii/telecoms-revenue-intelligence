@@ -205,6 +205,21 @@ def test_chat_stream_measure_status_events_satisfy_browser_contract(monkeypatch)
     assert events[-1]['type'] == 'complete'
 
 
+def test_chat_stream_priority_question_streams_queue_rank(monkeypatch):
+    from backend.tests.test_measure_scope import install_priority
+    calls = install_priority(monkeypatch)
+    provider(monkeypatch, Stream('Draft: LOW priority.', stop='tool_use', tool=scope_tool(
+        measures=['investigation_priority'], periods=['202606'], dealer_id='296065')))
+    events = collect()
+    phases = [e for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
+    assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
+    assert all(e['tool'] == 'measure_evidence' for e in phases)
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert 'rank 1 of 922' in text and 'Draft' not in text
+    assert calls == [('202606', '296065')]
+    assert events[-1]['type'] == 'complete'
+
+
 def test_chat_stream_sales_clarification_is_deterministic_and_has_no_evidence(monkeypatch):
     tool = ToolUseBlock(type='tool_use', id='scope_1', name='resolve_measure_request',
         input={'kind': 'clarification', 'clarification': 'sales_meaning'})
