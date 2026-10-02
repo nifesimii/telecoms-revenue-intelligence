@@ -77,7 +77,9 @@ def extract_payment(
     """
     if payment_df is None or payment_df.empty:
         return 0.0, False, None
-    code_col = "dealer_id" if source == "apdp" else "distributor_code"
+    # The query layer returns ``dealer_id`` for both sources; ``distributor_code``
+    # remains for callers passing raw simulated frames.
+    code_col = "dealer_id" if "dealer_id" in payment_df.columns else "distributor_code"
     paid_col = "total_settled_ngn" if source == "apdp" else "amount_paid"
     status_col = "reconciliation_status" if source == "apdp" else "payment_status"
     if code_col not in payment_df.columns:

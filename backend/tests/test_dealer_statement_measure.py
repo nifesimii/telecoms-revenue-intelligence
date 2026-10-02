@@ -26,10 +26,9 @@ from backend.db.dealer_statement_evidence import (
 ORACLE_ANSWER = "\n\n".join([
     "Dealer statement for River Isle Ventures (296065), 202606.",
     "Amount owed: NGN 991,086.80 (activation commission).",
-    "Amount paid: unavailable — no payment record was found in Payment records for this "
-    "dealer-month. Missing is not zero.",
-    "Amount outstanding: unavailable without a payment record.",
-    "Payment status: no payment record.",
+    "Amount paid: NGN 396,434.72.",
+    "Amount outstanding: NGN 594,652.08 (60% of amount owed).",
+    "Payment status: DISPUTED; statement position: underpaid.",
     "\n".join([
         "| Component | Amount |",
         "| --- | --- |",
@@ -83,15 +82,12 @@ def test_statement_evidence_matches_the_composer_for_a_real_dealer_month():
             "5G ROUTER": 492948.6, "HYNETFLEX": 58604.7, "MIFI": 136883.29, "MIFI_1": 302650.21}}
     assert statement["orsc"] == {"device_count": 2, "total_subscription_amount_ngn": 120266.83,
                                  "zero_amount_count": 0}
-    # The composer's simulated-path payment lookup reads ``distributor_code``
-    # while the sample payment frame carries ``dealer_id``, so it finds no
-    # record. Pinned as composed; the renderer must not turn this into zero.
-    assert statement["payment"] == {"source": "Payment records", "payment_found": False,
-                                    "amount_paid_ngn": 0.0, "payment_status": None}
+    assert statement["payment"] == {"source": "Payment records", "payment_found": True,
+                                    "amount_paid_ngn": 396434.72, "payment_status": "DISPUTED"}
     assert statement["position"]["expected_ngn"] == 991086.8
     assert statement["audit"] == {"readable": True, "trails": []}
     assert all(row["dealer_id"] == "296065" for row in evidence["rows"])
-    assert evidence["total_rows"] == len(evidence["rows"]) == 6
+    assert evidence["total_rows"] == len(evidence["rows"]) == 8
 
 
 def test_oracle_answer_is_rendered_from_the_statement():

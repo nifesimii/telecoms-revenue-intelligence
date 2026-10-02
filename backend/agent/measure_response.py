@@ -543,7 +543,9 @@ def _delta_words(text: str) -> str:
         if float(amount.replace(",", "")) == 0:
             lead, share = f"Paid as expected (difference NGN {amount})", "of expected"
         elif sign == "-":
-            lead, share = f"Paid NGN {amount} less than expected", "of expected"
+            lead = f"Paid NGN {amount} less than expected"
+            if pct is not None:
+                return f"{lead} (short by {pct}% of expected)."
         else:
             lead, share = f"Overpaid by NGN {amount}", "of expected"
             if pct is not None:

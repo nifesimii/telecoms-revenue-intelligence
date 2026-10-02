@@ -63,17 +63,21 @@ def modules_by_name(evidence):
 ORACLE_ANSWER = (
     'Verification outcome for dealer 296065, 202606: 4 audit modules — 4 with a verdict, 0 with no subject, 0 unavailable.\n'
     '\n'
-    '**Payment Reconciliation**: UNDERPAID (confidence HIGH). Checked on request with the current audit code; nothing was saved.\n'
+    '**Payment Reconciliation**: UNDERPAID (confidence MEDIUM). Checked on request with the current audit code; nothing was saved.\n'
     '- Step 2, expected commission: Expected commission NGN 991,086.80.\n'
-    '- Step 3, payment record search: No payment record found for this partner/period.\n'
-    '- Step 4, amount comparison: Paid NGN 991,086.80 less than expected (100.00% of expected).\n'
+    '- Step 3, payment record search: Payment record found: NGN 396,434.72 (DISPUTED).\n'
+    '- Step 4, amount comparison: Paid NGN 594,652.08 less than expected (short by 60.00% of expected).\n'
+    '- Step 5, near match: 1 payment(s) to this partner in adjacent periods.\n'
     '- Caveat: Amount classified as UNDERPAID — see step-4 detail.\n'
+    '- Caveat: Possible payment posted under an adjacent period reference; reconcile before finalising the amount bucket.\n'
     '\n'
-    '**Zero-Commission**: NOT_PAID (confidence MEDIUM). Checked on request with the current audit code; nothing was saved.\n'
+    '**Zero-Commission**: NOT_PAID (confidence LOW). Checked on request with the current audit code; nothing was saved.\n'
     "- Step 2, applicable rate: Profile class 'ENTERPRISE BUSINESS'; 445 of 495 activations carry a non-zero rate; 3 zero-comm product(s) missing from USP.\n"
     '- Step 3, expected commission: Expected commission NGN 991,086.80 from 445 qualified activations.\n'
-    '- Step 4, payment record search: No payment record found for this partner/period.\n'
+    '- Step 4, payment record search: Payment record found: NGN 396,434.72 (DISPUTED).\n'
+    '- Step 5, near match: 1 payment(s) to this partner in adjacent periods. Partial payment detected (paid &lt; expected).\n'
     "- Caveat: 3 zero-commission product(s) absent from the USP rate card — 'USP snapshot miss' root cause.\n"
+    "- Caveat: Possible payment under a different period/reference, or a partial settlement. Manual review before finalising 'not paid'.\n"
     '\n'
     '**Eligibility Window**: MIXED_ATTRIBUTION (confidence HIGH). Checked on request with the current audit code; nothing was saved.\n'
     '- Step 1, zero commission records present: 50 zero-commission record(s) found.\n'
@@ -108,16 +112,19 @@ def test_oracle_dealer_month_runs_every_audit_on_request(no_store):
     by = modules_by_name(evidence)
 
     pay = by["payment_reconciliation"]["trails"][0]
-    assert (pay["conclusion"], pay["confidence"]) == ("UNDERPAID", "HIGH")
+    assert (pay["conclusion"], pay["confidence"]) == ("UNDERPAID", "MEDIUM")
     assert [e["result"] for e in pay["evidence"]] == [
         "Expected commission NGN 991,086.80.",
-        "No payment record found for this partner/period.",
-        "Delta = NGN -991,086.80 (-100.00% of expected)."]
+        "Payment record found: NGN 396,434.72 (DISPUTED).",
+        "Delta = NGN -594,652.08 (-60.00% of expected).",
+        "1 payment(s) to this partner in adjacent periods."]
 
     zero = by["zero_commission"]["trails"][0]
-    assert (zero["conclusion"], zero["confidence"]) == ("NOT_PAID", "MEDIUM")
-    assert zero["caveats"] == ["3 zero-commission product(s) absent from the USP rate card — "
-                               "'USP snapshot miss' root cause."]
+    assert (zero["conclusion"], zero["confidence"]) == ("NOT_PAID", "LOW")
+    assert zero["caveats"] == [
+        "3 zero-commission product(s) absent from the USP rate card — 'USP snapshot miss' root cause.",
+        "Possible payment under a different period/reference, or a partial settlement. "
+        "Manual review before finalising 'not paid'."]
 
     window = by["eligibility_window"]["trails"][0]
     assert (window["conclusion"], window["confidence"]) == ("MIXED_ATTRIBUTION", "HIGH")
@@ -160,7 +167,7 @@ def test_oracle_rendered_answer(no_store):
     # Bullets stay real markdown list items; only their content is escaped.
     assert "\n- Step 2, expected commission: Expected commission NGN 991,086\\.80\\.\n" in raw
     assert answer.startswith("Verification outcome for dealer 296065, 202606: 4 audit modules")
-    assert "**Payment Reconciliation**: UNDERPAID (confidence HIGH)." in answer
+    assert "**Payment Reconciliation**: UNDERPAID (confidence MEDIUM)." in answer
     assert "Checked on request with the current audit code; nothing was saved." in answer
     assert not DEMO_WORDING.search(answer)
     assert answer.endswith("Source: Audit trails.")
@@ -397,7 +404,7 @@ def test_render_underpaid_delta_states_shortfall_in_words():
     trail = fake_trail(evidence=[
         {"step": 4, "name": "amount comparison", "result": "Delta = NGN -991,086.80 (-100.00% of expected)."}])
     answer = render(fake_module(trails=[trail]))
-    assert "Paid NGN 991,086.80 less than expected (100.00% of expected)." in answer
+    assert "Paid NGN 991,086.80 less than expected (short by 100.00% of expected)." in answer
     assert "NGN -" not in answer and "(-" not in answer
 
 
