@@ -10,6 +10,10 @@ the available reporting months, independent of the currently selected month.
   and `end_period` (YYYYMM). Omitted bounds use available source coverage.
 - Match the complete name, ignoring letter case and surrounding whitespace.
   Do not merge punctuation, spelling variations, or partial names.
+- Optional `match='contains'` instead returns codes whose recorded name contains
+  the given name (same normalisation). Only Atlas's measure-question dealer
+  resolution (`backend/agent/dealer_resolution.py`) uses it, after an exact
+  lookup found nothing; it never picks among several matches.
 - Return one row per distinct code, all recorded name variants, first and last
   observed months within the search, and the contributing sources.
 - Report months searched per source, including for no-match results. A missing

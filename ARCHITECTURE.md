@@ -250,6 +250,9 @@ backend/
 │   ├── agent.py            Shared buffered/streamed turn: resolves a structured
 │   │                        request, retrieves scoped evidence and renders it.
 │   ├── measure_scope.py    Validated interpretation contract and focused questions.
+│   ├── dealer_resolution.py A measure's dealer_name → one recorded code (exact name,
+│   │                        else unique partial name) before any evidence read;
+│   │                        none/several/unreadable answer without evidence.
 │   ├── measure_response.py Application-owned values, labels, coverage and tables.
 │   ├── tools.py            Tool definitions in Anthropic format. ~13 tools: the 4
 │   │                        core (dealer summary, zero-commission records, MoM
@@ -421,6 +424,8 @@ Browser (CommissionAssistant) → api/client.js POST /chat/stream
   → explanation_routes.py → agent.run_agent_stream()
     → Claude returns one resolve_measure_request contract (full core KB retained)
       → measure_scope validates measures, dealer, periods and requested operation
+      → dealer_resolution turns a named dealer into one recorded code, or answers
+        (no match / several matches / lookup unreadable) without reading evidence
       → tool_executor → db/measure_evidence → named existing queries/services
         → queries.py owns CSV coverage and query reads
       ← bounded projections with complete aggregates and source-specific coverage
@@ -440,7 +445,9 @@ invent answer values, relabel activations as sales, or append draft commentary.
 The latest question, reporting month and workspace context are distinct inputs;
 existing scoped conversation history supplies user-agreed definitions and accepted
 alternatives. Unknown requests clarify. General policy answers must be exact core
-KB excerpts; dealer name/code lookups remain bounded and non-financial.
+KB excerpts; dealer name/code lookups remain bounded and non-financial. A measure
+may name its dealer instead of giving a code; the model copies the name and the
+application resolves it via `get_dealer_codes` (the answer opens with the match line).
 
 `raw_data.measure_evidence` preserves each requested measure and month rather than
 overwriting repeated tool calls. Source gaps remain unavailable, not zero. Figures

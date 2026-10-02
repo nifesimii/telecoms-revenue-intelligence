@@ -246,7 +246,7 @@ def _zero_record_observation(period: str, dealer_id: str) -> dict:
 
 
 def collect_dealer_codes(request: dict) -> dict:
-    """Bounded exact-name associations, retaining the query's coverage metadata."""
+    """Bounded name associations (exact unless match='contains'), retaining coverage metadata."""
     periods = request.get('periods', [])
     if (not isinstance(periods, list) or len(periods) > 24
             or any(not isinstance(p, str) or not re.fullmatch(r'[0-9]{4}(0[1-9]|1[0-2])', p) for p in periods)
@@ -255,7 +255,10 @@ def collect_dealer_codes(request: dict) -> dict:
     indices = sorted(int(period[:4]) * 12 + int(period[4:]) for period in periods)
     if indices and indices[-1] - indices[0] + 1 != len(indices):
         raise ValueError('Dealer lookup periods must be contiguous; gapped periods cannot be broadened')
-    params = {'dealer_name': request.get('dealer_name'), 'page_size': 100, 'page': 1}
+    match = request.get('match', 'exact')
+    if match not in ('exact', 'contains'):
+        raise ValueError("match must be 'exact' or 'contains'")
+    params = {'dealer_name': request.get('dealer_name'), 'match': match, 'page_size': 100, 'page': 1}
     if periods:
         params.update(start_period=min(periods), end_period=max(periods))
     frame = execute_query('get_dealer_codes', params)

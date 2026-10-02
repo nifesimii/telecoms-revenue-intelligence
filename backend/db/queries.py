@@ -540,13 +540,17 @@ WITH observations AS (
            'fbb_comm_dev_act' AS source
     FROM hive5.development.fbb_comm_dev_act
     WHERE mon_period BETWEEN %(start_period)s AND %(end_period)s
-      AND LOWER(TRIM(distributor_name)) = LOWER(TRIM(%(dealer_name)s))
+      AND CASE WHEN %(match)s = 'contains'
+               THEN STRPOS(LOWER(TRIM(distributor_name)), LOWER(TRIM(%(dealer_name)s))) > 0
+               ELSE LOWER(TRIM(distributor_name)) = LOWER(TRIM(%(dealer_name)s)) END
     UNION ALL
     SELECT distributor_code, distributor_name, mon_period,
            'fbb_comm_orsc' AS source
     FROM hive5.development.fbb_comm_orsc
     WHERE mon_period BETWEEN %(start_period)s AND %(end_period)s
-      AND LOWER(TRIM(distributor_name)) = LOWER(TRIM(%(dealer_name)s))
+      AND CASE WHEN %(match)s = 'contains'
+               THEN STRPOS(LOWER(TRIM(distributor_name)), LOWER(TRIM(%(dealer_name)s))) > 0
+               ELSE LOWER(TRIM(distributor_name)) = LOWER(TRIM(%(dealer_name)s)) END
 )
 SELECT CAST(distributor_code AS VARCHAR) AS dealer_id,
        ARRAY_SORT(ARRAY_AGG(DISTINCT distributor_name)) AS recorded_names,
@@ -1585,7 +1589,7 @@ def _sample_get_subscription_demo_records(params: dict) -> pd.DataFrame:
 
 
 def _sample_get_dealer_codes(params: dict) -> pd.DataFrame:
-    """Exact normalized name associations across bounded reporting months.
+    """Normalized name associations (exact, or containing the name) across bounded months.
 
     Metadata survives empty results via DataFrame.attrs and is included by the
     tool executor. Codes are read as strings to preserve leading zeroes.
@@ -1594,6 +1598,11 @@ def _sample_get_dealer_codes(params: dict) -> pd.DataFrame:
     if not isinstance(name, str) or not name.strip() or len(name) > 300:
         raise ValueError("dealer_name must be a non-empty string of at most 300 characters")
     normalized_name = name.strip().lower()
+    # 'exact' (default) matches the complete name; 'contains' matches any
+    # recorded name containing it, for resolving a partially written name.
+    match = params.get("match", "exact")
+    if match not in ("exact", "contains"):
+        raise ValueError("match must be 'exact' or 'contains'")
     bounds: dict[str, str | None] = {}
     for key in ("start_period", "end_period"):
         value = params.get(key)
@@ -1633,7 +1642,10 @@ def _sample_get_dealer_codes(params: dict) -> pd.DataFrame:
                     searched.add(period)
                     recorded_name = row["distributor_name"]
                     code = row["distributor_code"]
-                    if recorded_name.strip().lower() != normalized_name or not code.strip():
+                    recorded = recorded_name.strip().lower()
+                    matched = (normalized_name in recorded if match == "contains"
+                               else recorded == normalized_name)
+                    if not matched or not code.strip():
                         continue
                     item = associations.setdefault(code, {
                         "names": set(), "periods": set(), "sources": set(),

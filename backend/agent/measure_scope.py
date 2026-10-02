@@ -67,8 +67,13 @@ class MeasureScope(BaseModel):
             raise ValueError('Periods must be valid YYYYMM months')
         if len(set(self.periods)) != len(self.periods) or len(set(self.measures)) != len(self.measures):
             raise ValueError('Duplicate periods or measures')
-        if self.kind != 'identity' and self.dealer_name:
+        if self.kind not in {'identity', 'measure'} and self.dealer_name:
             raise ValueError('Name association lookups require the identity contract')
+        # A measure names its dealer by code or by name (resolved by the application), never both.
+        if self.kind == 'measure' and self.dealer_name is not None and (
+                self.dealer_id is not None or not self.dealer_name.strip()):
+            raise ValueError('A measure dealer is a code or a recorded name, not both')
+        dealer = self.dealer_id or self.dealer_name
         if self.kpi_ids and 'financial_kpis' not in self.measures:
             raise ValueError('KPI selectors require a financial KPI request')
         if (self.statement_ids or self.line_ids) and 'financial_statements' not in self.measures:
@@ -82,10 +87,10 @@ class MeasureScope(BaseModel):
                 raise ValueError('Comparisons support at most two explicit months')
             if DEALER_MONTH_MEASURES.intersection(self.measures) and (
                     len(self.measures) != 1 or len(self.periods) != 1
-                    or not self.dealer_id or self.operation != 'total' or self.filter != 'all'):
+                    or not dealer or self.operation != 'total' or self.filter != 'all'):
                 raise ValueError('Dealer-month measures stand alone for one dealer and one month')
             if DEALER_COMPARISON_MEASURES.intersection(self.measures) and (
-                    len(self.measures) != 1 or len(self.periods) != 2 or not self.dealer_id
+                    len(self.measures) != 1 or len(self.periods) != 2 or not dealer
                     or self.operation not in {'compare', 'explain'} or self.filter != 'all'):
                 raise ValueError('Dealer comparison measures stand alone for one dealer and two months')
             if MONTH_MEASURES.intersection(self.measures) and (
@@ -158,7 +163,10 @@ SCOPE_TOOL = {
         'the user explicitly requests a date range; workspace month must not narrow this lookup. '
         'For a general policy question, use knowledge with an exact, relevant contiguous quote '
         'from the core KB. Do not use knowledge to answer a request for dealer figures. '
-        'Unknown intents must clarify request, not guess an available measure.'
+        'Unknown intents must clarify request, not guess an available measure. '
+        'When a measure question names a dealer instead of giving its code, set dealer_name '
+        'to the name exactly as the user wrote it and omit dealer_id; never guess a code, and '
+        'never send both. A named dealer counts as named wherever a dealer is required.'
     ),
     'input_schema': MeasureScope.model_json_schema(),
 }

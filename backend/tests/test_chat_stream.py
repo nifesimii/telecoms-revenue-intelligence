@@ -393,3 +393,38 @@ def test_chat_stream_evidence_failure_withholds_provider_figures(monkeypatch):
     events = collect()
     assert events[-1]['type'] == 'error'
     assert not any(event['type'] in ('text', 'complete') for event in events)
+
+
+def test_chat_stream_named_dealer_resolves_before_evidence(monkeypatch):
+    from backend import config
+    from backend.db import audit_store
+    monkeypatch.setattr(config, 'PAYMENT_SOURCE', 'simulated')
+    monkeypatch.setattr(audit_store, 'healthcheck', lambda: True)
+    monkeypatch.setattr(audit_store, 'get_partner_trail', lambda *args: None)
+    provider(monkeypatch, Stream('Draft: NGN 0.00 owed.', stop='tool_use', tool=scope_tool(
+        measures=['dealer_statement'], periods=['202606'], dealer_id=None, dealer_name='Amber Arc')))
+    events = collect()
+    phases = [e for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
+    assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
+    assert all(e['tool'] == 'measure_evidence' for e in phases)
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert text.startswith('Matched “Amber Arc” to Amber Arc Communications \\(130062\\).\n\n'
+                           'Dealer statement for Amber Arc Communications (130062), 202606.')
+    assert 'Draft' not in text
+    assert events[-1]['type'] == 'complete'
+    assert events[-1]['tools_called'] == ['get_dealer_codes', 'dealer_statement']
+
+
+def test_chat_stream_ambiguous_dealer_name_asks_and_reads_no_evidence(monkeypatch):
+    provider(monkeypatch, Stream('Draft', stop='tool_use', tool=scope_tool(
+        measures=['dealer_statement'], periods=['202606'], dealer_id=None, dealer_name='River Isle')))
+    monkeypatch.setattr(agent.tool_executor, 'execute_measure_request',
+                        lambda request: pytest.fail('evidence read for an ambiguous name'))
+    events = collect()
+    assert events[-1]['type'] == 'complete'
+    phases = [e['phase'] for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
+    assert phases == ['tool_start', 'tool_complete']
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert text.startswith('Several recorded dealers match “River Isle” for 202606')
+    assert text.endswith('Which dealer do you mean? Give the dealer code.')
+    assert events[-1]['tools_called'] == ['get_dealer_codes']
