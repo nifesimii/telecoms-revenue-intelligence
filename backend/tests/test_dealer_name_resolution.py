@@ -96,7 +96,8 @@ def test_one_match_proceeds_with_its_code_and_a_match_line():
     result = resolve_dealer_name(statement(dealer_name="  river   isle "), fake_lookup(
         contains=[("River Isle Ventures", "296065")], calls=calls))
     assert result.status == "matched" and result.dealer_id == "296065"
-    assert result.text == "Matched “river isle” to River Isle Ventures \\(296065\\)."
+    # The match line quotes the name as the user wrote it; the lookup gets it normalised.
+    assert result.text == "Matched “river   isle” to River Isle Ventures \\(296065\\)."
     assert [call["match"] for call in calls] == ["exact", "contains"]
     assert calls[0]["dealer_name"] == "river isle" and calls[0]["periods"] == ["202606"]
 
@@ -217,3 +218,23 @@ def test_unreadable_dealer_records_do_not_become_not_found(monkeypatch):
     assert "could not be resolved" in result["response"]
     assert "No dealer named" not in result["response"]
     assert result["tools_called"] == []
+
+
+def test_months_without_any_dealer_records_are_unresolved_not_not_found():
+    def uncovered(request):
+        return {"tool": "get_dealer_codes", "total_codes": 0, "rows": [],
+                "coverage_by_source": {"fbb_comm_dev_act": [], "fbb_comm_orsc": []}}
+    result = resolve_dealer_name(statement(dealer_name="Amber Arc", periods=["209901"]), uncovered)
+    assert result.status == "unavailable" and result.dealer_id is None
+    assert result.text == ("The dealer name “Amber Arc” could not be resolved because no dealer records "
+                           "are available for 209901; give the dealer code to continue.")
+
+
+def test_months_too_far_apart_ask_for_the_code_without_a_lookup():
+    calls = []
+    result = resolve_dealer_name(statement(dealer_name="Amber Arc", periods=["202001", "202606"],
+                                           measures=["commission_variance"], operation="compare"),
+                                 fake_lookup(calls=calls))
+    assert result.status == "invalid" and calls == []
+    assert result.text == ("Dealer names can be searched across at most 24 months; 202001 and 202606 "
+                           "are further apart. Give the dealer code to continue.")
