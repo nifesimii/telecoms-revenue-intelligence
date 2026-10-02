@@ -1,217 +1,33 @@
-"""Phase 2 — agent-level tests for Activation Intelligence tools.
-
-Two mocked tests (8 & 9) confirm Claude routes the right new tool. Test 10
-is a live API call that verifies the Phase 2 KB section (Rule 4 + 6-month
-eligibility window) actually reaches the model.
-
-Mock infrastructure mirrors test_agent.py exactly — duck-typed content
-blocks, a flexible AsyncAnthropic stub, and tool_executor monkeypatching.
-"""
-from __future__ import annotations
-
+"""Requested measures exercised through real sample evidence and the public agent."""
 import os
+import pytest
 
 os.environ["USE_SAMPLE_DATA"] = "true"
 
-import asyncio  # noqa: E402
-import json  # noqa: E402
-from unittest.mock import MagicMock  # noqa: E402
-
-import pytest  # noqa: E402
-
-from backend.agent import agent as agent_module  # noqa: E402
-from backend.agent.agent import run_agent  # noqa: E402
+from backend.agent.agent import run_agent
+from backend.tests.test_agent import _run, measure_scope, install_scope_provider, evidence_period
 
 
-# ---------------------------------------------------------------------------
-# Fake content blocks (same shape as test_agent.py helpers)
-# ---------------------------------------------------------------------------
+def test_agent_activation_summary_question(monkeypatch):
+    install_scope_provider(monkeypatch, measure_scope("activation_count", "activation_qualified_count", "activation_unqualified_count"))
+    result = _run(run_agent("Show 74050 March 2026 activations and qualified/unqualified counts"))
+    assert [evidence_period(result, i)["total"] for i in range(3)] == [806, 713, 93]
+    assert "806" in result["response"] and "713" in result["response"]
+    assert "NGN" not in result["response"]
+    assert set(result["tools_called"]) == {"get_dealer_summary", "get_activation_summary"}
 
 
-class _FakeTextBlock:
-    type = "text"
-
-    def __init__(self, text: str) -> None:
-        self.text = text
-
-    def model_dump(self) -> dict:
-        return {"type": "text", "text": self.text}
-
-
-class _FakeToolUseBlock:
-    type = "tool_use"
-
-    def __init__(self, id: str, name: str, input: dict) -> None:
-        self.id = id
-        self.name = name
-        self.input = input
-
-    def model_dump(self) -> dict:
-        return {
-            "type": "tool_use",
-            "id": self.id,
-            "name": self.name,
-            "input": self.input,
-        }
-
-
-class _FakeResponse:
-    def __init__(self, content: list, stop_reason: str = "end_turn") -> None:
-        self.content = content
-        self.stop_reason = stop_reason
-
-
-def _install_anthropic_mock(monkeypatch, *, responses: list) -> list[dict]:
-    captured: list[dict] = []
-    seq_iter = iter(responses)
-    last = responses[-1] if responses else None
-
-    async def fake_create(**kwargs):
-        captured.append(kwargs)
-        try:
-            return next(seq_iter)
-        except StopIteration:
-            return last
-
-    messages_attr = MagicMock()
-    messages_attr.create = fake_create
-    fake_client = MagicMock()
-    fake_client.messages = messages_attr
-    fake_class = MagicMock(return_value=fake_client)
-    monkeypatch.setattr(agent_module.anthropic, "AsyncAnthropic", fake_class)
-    return captured
-
-
-def _install_tool_executor_mock(monkeypatch, envelope_by_name: dict[str, dict]):
-    def fake_execute(tool_use: dict) -> dict:
-        name = tool_use.get("name", "")
-        envelope = envelope_by_name.get(name) or {
-            "tool": name,
-            "parameters": tool_use.get("input"),
-            "row_count": 0,
-            "rows": [],
-        }
-        return {
-            "type": "tool_result",
-            "tool_use_id": tool_use.get("id", ""),
-            "content": json.dumps(envelope),
-        }
-
-    monkeypatch.setattr(agent_module.tool_executor, "execute_tool", fake_execute)
-
-
-def _run(coro):
-    return asyncio.run(coro)
-
-
-# ---------------------------------------------------------------------------
-# Test 8 — agent routes "Show activation summary for 202603" to the new tool
-# ---------------------------------------------------------------------------
-
-
-def test_agent_activation_summary_question(monkeypatch: pytest.MonkeyPatch) -> None:
-    responses = [
-        _FakeResponse(
-            content=[
-                _FakeToolUseBlock(
-                    id="t_act_1",
-                    name="get_activation_summary",
-                    input={"mon_period": "202603"},
-                )
-            ],
-            stop_reason="tool_use",
-        ),
-        _FakeResponse(
-            content=[
-                _FakeTextBlock(
-                    "Total activations in 202603: 30,892 across 922 dealers. "
-                    "Top dealer is Stone Light Networks at 806 activations."
-                )
-            ],
-            stop_reason="end_turn",
-        ),
-    ]
-    _install_anthropic_mock(monkeypatch, responses=responses)
-    _install_tool_executor_mock(
-        monkeypatch,
-        {
-            "get_activation_summary": {
-                "tool": "get_activation_summary",
-                "parameters": {"mon_period": "202603"},
-                "row_count": 1,
-                "rows": [
-                    {
-                        "dealer_id": "74050",
-                        "dealer_name": "Stone Light Networks",
-                        "activation_count": 806,
-                        "qualified_activation_count": 713,
-                        "qualification_rate_pct": 88.46,
-                    }
-                ],
-            }
-        },
-    )
-
-    result = _run(run_agent("Show activation summary for 202603"))
-
-    assert "get_activation_summary" in result["tools_called"]
-    assert result["response"]
-    assert "get_activation_summary" in result["raw_data"]
-
-
-# ---------------------------------------------------------------------------
-# Test 9 — agent routes "unusual activation behaviour" to exceptions tool
-# ---------------------------------------------------------------------------
-
-
-def test_agent_activation_exceptions_question(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    responses = [
-        _FakeResponse(
-            content=[
-                _FakeToolUseBlock(
-                    id="t_exc_1",
-                    name="get_activation_exceptions",
-                    input={"mon_period": "202603"},
-                )
-            ],
-            stop_reason="tool_use",
-        ),
-        _FakeResponse(
-            content=[
-                _FakeTextBlock(
-                    "Flagged 190 records across three exception types. "
-                    "ALL_UNQUALIFIED accounts for 35 dealers."
-                )
-            ],
-            stop_reason="end_turn",
-        ),
-    ]
-    _install_anthropic_mock(monkeypatch, responses=responses)
-    _install_tool_executor_mock(
-        monkeypatch,
-        {
-            "get_activation_exceptions": {
-                "tool": "get_activation_exceptions",
-                "parameters": {"mon_period": "202603"},
-                "row_count": 0,
-                "rows": [],
-            }
-        },
-    )
-
-    result = _run(
-        run_agent("Which dealers have unusual activation behaviour in 202603?")
-    )
-
-    assert "get_activation_exceptions" in result["tools_called"]
-    assert result["response"]
-
-
-# ---------------------------------------------------------------------------
-# Test 10 — live API; verifies the Phase 2 KB section is reaching the model.
-# ---------------------------------------------------------------------------
+def test_agent_activation_exceptions_question(monkeypatch):
+    install_scope_provider(monkeypatch, measure_scope("activation_qualified_count", "activation_unqualified_count",
+                                                     dealer_id=None, operation="breakdown", filter="low_qualification"))
+    result = _run(run_agent("List low-qualification dealers and qualified/unqualified counts in March 2026"))
+    qualified = evidence_period(result, 0)
+    unqualified = evidence_period(result, 1)
+    assert next(row for row in qualified["rows"] if row["dealer_id"] == "19335")["value"] == 55
+    assert next(row for row in unqualified["rows"] if row["dealer_id"] == "19335")["value"] == 82
+    assert all(row["dealer_id"] != "74050" for row in qualified["rows"])
+    assert "Raven View Networks" in result["response"]
+    assert "fraud" not in result["response"].lower() and "NGN" not in result["response"]
 
 
 @pytest.mark.live_agent

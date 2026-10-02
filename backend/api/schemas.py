@@ -36,9 +36,8 @@ class ChatRequest(BaseModel):
         default=None,
         pattern=r"^\d{6}$",
         description=(
-            "Optional reporting month (YYYYMM). When provided, the route "
-            "layer prepends it to the question as explicit context for the "
-            "agent."
+            "Optional reporting month (YYYYMM), passed separately from the "
+            "latest question to the agent's scope resolver."
         ),
     )
     investigation_context: str | None = Field(
@@ -46,27 +45,12 @@ class ChatRequest(BaseModel):
         description="Active workspace scope, supplied on every turn independently of chat history.",
     )
 
-    def contextual_message(self) -> str:
-        """Attach workspace context for inference without changing displayed chat text."""
-        message = (f"Context: reporting period is {self.mon_period}. Question: {self.message}"
-                   if self.mon_period else self.message)
-        if self.investigation_context:
-            message = (
-                f"Active investigation context: {self.investigation_context}\n"
-                'Resolve references such as "this dealer", "this account" and "this month" '
-                'using this active selection unless the user explicitly names a different scope. '
-                'Do not ask the user to repeat a dealer code already supplied here.\n\n'
-                f"{message}"
-            )
-        return message
-
-
 class ChatResponse(BaseModel):
     """Outbound payload for ``POST /chat``."""
 
     response: str = Field(
         ...,
-        description="Claude's final text response, ready to render in the UI.",
+        description="Validated evidence-bound answer, ready to render in the UI.",
     )
     tools_called: list[str] = Field(
         default_factory=list,
@@ -75,9 +59,8 @@ class ChatResponse(BaseModel):
     raw_data: dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Parsed envelope returned by each tool, keyed by tool name. "
-            "The frontend uses these to render tables / variance cards "
-            "without re-parsing the assistant text."
+            "Scoped evidence under measure_evidence, or bounded dealer lookup "
+            "data under get_dealer_codes. No unrelated measures are exposed."
         ),
     )
     error: str | None = Field(

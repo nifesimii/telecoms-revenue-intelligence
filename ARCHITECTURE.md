@@ -226,9 +226,10 @@ backend/
 │                            POLICY_MET / POLICY_VIOLATED / MIXED_ATTRIBUTION.
 │
 ├── agent/                 ── AGENT LAYER (Claude chat) ──
-│   ├── agent.py            The conversation loop. run_agent(): sends messages to
-│   │                        Claude, executes tool-use turns (max 5 iterations),
-│   │                        retries on rate limits, returns the answer + tool trace.
+│   ├── agent.py            Shared buffered/streamed turn: resolves a structured
+│   │                        request, retrieves scoped evidence and renders it.
+│   ├── measure_scope.py    Validated interpretation contract and focused questions.
+│   ├── measure_response.py Application-owned values, labels, coverage and tables.
 │   ├── tools.py            Tool definitions in Anthropic format. ~13 tools: the 4
 │   │                        core (dealer summary, zero-commission records, MoM
 │   │                        variance, ORSC) + activation/inventory/payment queries +
@@ -387,29 +388,43 @@ Like existing collection adapters, sample processing still assembles a period
 in pandas before paging; native engine paging awaits measured production plans.
 See `docs/ACTIVATION_WORKSPACE.md` for the acceptance and verification record.
 
-### Flow A — a chat question ("why did dealer 74050 earn zero commission?")
+### Flow A — an ordinary Atlas question
 ```
 Browser (CommissionAssistant) → api/client.js POST /chat/stream
   → explanation_routes.py → agent.run_agent_stream()
-    → Claude decides to call a tool (e.g. get_zero_commission_records)
-      → tool_executor routes it → db/connection.execute_query()
-        → db/queries.py SAMPLE_HANDLERS[name] reads data/samples/*.csv (pandas)
-      ← tool result returned to Claude
-    ← Claude composes the English answer (grounded in the injected KB)
+    → Claude returns one resolve_measure_request contract (full core KB retained)
+      → measure_scope validates measures, dealer, periods and requested operation
+      → tool_executor → db/measure_evidence → named existing queries/services
+        → queries.py owns CSV coverage and query reads
+      ← bounded projections with complete aggregates and source-specific coverage
+    ← measure_response renders application-owned figures and evidence observations
   ← NDJSON status/text events, then {type: complete, response, tools_called, ...}
-← progressive markdown with an explicit incomplete-draft state
+← progress events, then validated markdown and completion
 ```
-The agent may fetch KB addenda mid-answer via `get_kb_section`, and may call
-`get_dealer_full_context` to get commission+activation+inventory+payment in one
-shot instead of four calls.
+The buffered `POST /chat` API shares this path. Provider draft prose is withheld,
+including text emitted before the interpretation tool; only a validated scope
+and evidence result can produce user-visible figures. Cancellation, retry budgets
+and NDJSON status/text/complete/error transport remain intact. Time to first answer
+text now includes scope resolution and evidence retrieval.
 
-The buffered `POST /chat` API remains available for existing callers. Both
-transports share the same conversation/tool loop and full KB. Ordinary Atlas
-requests now stream provisional text and tool progress; selecting a tool clears
-planning prose before presenting the next draft. Only a verified successful
-provider completion can finalize the answer. Truncation, interruption and tool
-iteration exhaustion leave the answer incomplete, with Stop/Retry and scoped
-history handled by the shared conversation store.
+Scope interpretation is still probabilistic. Deterministic enforcement begins at
+the validated interpretation: the model cannot choose arbitrary data tools,
+invent answer values, relabel activations as sales, or append draft commentary.
+The latest question, reporting month and workspace context are distinct inputs;
+existing scoped conversation history supplies user-agreed definitions and accepted
+alternatives. Unknown requests clarify. General policy answers must be exact core
+KB excerpts; dealer name/code lookups remain bounded and non-financial.
+
+`raw_data.measure_evidence` preserves each requested measure and month rather than
+overwriting repeated tool calls. Source gaps remain unavailable, not zero. Figures
+are projected before triage; capped breakdowns never establish complete totals.
+Financial selectors restrict individual KPIs/statements/lines. Inventory snapshots
+and financial statement lines are not added into misleading totals. Requested why
+answers may include bounded zero-record observations; conflicting eligibility
+definitions and missing historical source matches prevent unsupported causal claims.
+Existing standalone tools and scoped finding explanations keep their contracts;
+ordinary chat no longer performs an unrestricted model-selected tool loop.
+See `docs/ATLAS_MEASURE_SCOPE.md` for capabilities and verification limits.
 
 ### Explain Findings — scoped evidence and streamed generation
 
@@ -427,7 +442,7 @@ The response is NDJSON: incremental `text` events followed by one `complete`
 event carrying the existing response/tool/data metadata, or a sanitized `error`
 event. Partial answers remain visibly incomplete. Scoped conversations survive
 workspace navigation, and Stop cancels the active request. Edited questions and
-follow-ups retain the general chat loop. See `docs/INFERENCE_LATENCY.md` for
+follow-ups use the evidence-bound ordinary chat path. See `docs/INFERENCE_LATENCY.md` for
 the wire contract, timing measurements and operational validation limits.
 
 Both paths share `agent/inference.py`: SDK retries are disabled, one application
@@ -610,10 +625,12 @@ needed via the `get_kb_section` tool. *Why:* the full KB in every prompt burned
 too much of the per-minute token budget on cold runs; the split keeps prompts
 small while keeping the detail reachable.
 
-**The agent loop (`agent/agent.py`).** `run_agent()` runs a bounded tool-use
-loop (`MAX_TOOL_ITERATIONS = 5`) with rate-limit retries, and returns both the
-text answer and the list of tools called. *Why the cap:* protects against
-pathological loops and runaway token spend.
+**The ordinary agent turn (`agent/agent.py`).** `run_agent()` makes one structured
+scope-resolution call, then delegates to deterministic evidence projection and
+rendering. The existing request deadline and single provider retry still apply.
+It returns the answer and evidence tool trace. Interpretation errors cannot fall
+back to unvalidated provider prose. Historical multi-iteration latency results
+describe the former protocol, not this path.
 
 **Tool executor's two routing paths (`agent/tool_executor.py`).** QUERY tools go
 through `execute_query`; DIRECT tools (`get_kb_section`, dealer dossier) call a

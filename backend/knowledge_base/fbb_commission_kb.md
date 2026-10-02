@@ -37,6 +37,16 @@ not zero.
   do not establish retail sales. Do not query commission or exceptions merely
   to fill the answer. If the user explicitly asks for activations, answer that
   measure directly without asking them to clarify "sales" again.
+- **Keep the agreed meaning within the conversation.** There is no application-wide
+  default for sales. Reuse a meaning explicitly established by the user in the
+  current conversation, retaining the active dealer and period unless the user
+  changes them. The latest explicitly requested measure overrides earlier topics
+  and the workspace's default subject. Answer multiple measures only when requested.
+- **Unavailable measures must not be replaced silently.** State the missing
+  evidence for the requested measure. A brief offer of an alternative is allowed,
+  but withhold its figures until the user accepts. An assistant's offer alone is
+  not acceptance. Do not substitute purchases, activations, commission or
+  synthetic financial revenue for customer sales.
 - **Respect the evidence's direction and meaning.** IFS inventory quantities
   describe purchases by the dealer, not onward sales to customers. USP reference
   prices and commission amounts do not establish actual retail selling prices

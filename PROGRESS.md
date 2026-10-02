@@ -3,6 +3,37 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-10-02 (Atlas requested-measure enforcement)
+
+- Confirmed conversation-scoped sales definitions and evidence-bound rendering.
+  Ordinary chat resolves a strict request, then projects only requested measures
+  before rendering application-owned figures. Buffered and streamed paths share
+  the policy; unvalidated provider prose is never displayed or used as fallback.
+- Keep the latest question separate from active context and retain scoped history.
+  Unknown meanings clarify; unsupported customer sales/purchase totals identify
+  missing evidence and never return unaccepted proxy figures.
+- Preserve exact dealer/month scope, every requested month, bounded breakdowns,
+  full available aggregates, and source/synthetic caveats. Missing months remain
+  unavailable. Inventory snapshots and statement lines are not misleadingly summed.
+  Financial selectors support individual KPIs/statements/lines; dealer-code lookup
+  remains available without financial figures.
+- Why requests support comparisons and bounded zero-record date observations.
+  Conflicting KB eligibility-window definitions require authoritative clarification
+  before causal attribution; no USP/profile cause is inferred from zero rates.
+- Verification: 500 backend tests passed / 29 skipped; 11 frontend transport tests
+  and production build passed. Focused checks covered buffered/streamed scope,
+  real SDK framing, cancellation, failures, invalid contracts, and sample evidence.
+  An isolated HTTP server with a fake provider returned the activation count and
+  sales clarification while withholding injected prose; it was stopped afterward.
+  Compilation and diff checks passed. No standalone typecheck is configured.
+- Standards and Spec reviews found issues with coverage ownership, individual
+  financial selectors and explanation evidence; fixes passed re-review with no
+  remaining findings. Natural-language interpretation remains probabilistic;
+  offline tests do not establish live model accuracy. No billed calls/deployment.
+- Existing unrelated edits are preserved. Herdr's inherited pane was unavailable;
+  implementation and reviews used native sub-agents. Contract and limitations:
+  `docs/ATLAS_MEASURE_SCOPE.md`.
+
 ## Session — 2026-10-02 (Atlas sales-question grounding)
 
 - Added KB boundaries separating retail sales, dealer purchases, activations,

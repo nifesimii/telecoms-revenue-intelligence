@@ -1,18 +1,8 @@
-"""Claude conversation loop. Handles tool calls. No SQL here.
+"""One scoped Atlas turn, with provider I/O shared by buffered and streamed chat.
 
-The agent owns one job: drive a single turn of conversation with Claude,
-running any tool calls that come back, until Claude returns a final text
-response. It does not know about SQL, Presto, or sample data — those live
-behind :mod:`backend.agent.tool_executor`. It does not author the system
-prompt — that lives in :mod:`backend.agent.prompts`. It does not know the
-tool definitions — those live in :mod:`backend.agent.tools`.
-
-Public surface:
-    * :func:`run_agent` — buffered compatibility entry point.
-    * :func:`run_agent_stream` — progressive delivery over the shared tool loop.
-
-A bottom-of-file ``if __name__ == "__main__":`` smoke test exercises the
-loop end-to-end against the sample CSVs.
+The model resolves intent. The tool layer retrieves bounded, measure-specific
+records; the response layer renders their values. Provider prose never becomes
+financial evidence or provisional user-visible text.
 """
 from __future__ import annotations
 
@@ -23,19 +13,17 @@ import inspect
 import time
 from typing import Any
 
-import anthropic
-
 from backend import config
 from backend.agent import prompts, tool_executor
-from backend.agent.tools import TOOLS
+from backend.agent.measure_scope import (
+    MeasureScope, SCOPE_TOOL, clarification_response, knowledge_response,
+)
+from backend.agent.measure_response import render_measure_response, render_dealer_codes
 from backend.agent.inference import InferenceRun, cached_system, new_client
-
-logger = logging.getLogger(__name__)
 
 # --- Model config ---
 MODEL_NAME = "claude-sonnet-4-5"
 MAX_TOKENS = 2048
-MAX_TOOL_ITERATIONS = 5  # safety cap — protects against pathological loops
 
 # --- User-facing fallback ---
 FALLBACK_RESPONSE = (
@@ -43,7 +31,9 @@ FALLBACK_RESPONSE = (
 )
 
 
-async def run_agent(user_message: str, conversation_history: list | None = None) -> dict:
+async def run_agent(user_message: str, conversation_history: list | None = None, *,
+                    reporting_period: str | None = None,
+                    investigation_context: str | None = None) -> dict:
     """Run a complete conversation turn within a single 90-second budget."""
     run = InferenceRun("chat")
     client = None
@@ -51,7 +41,9 @@ async def run_agent(user_message: str, conversation_history: list | None = None)
     try:
         async with asyncio.timeout(run.remaining()):
             client = new_client(config.ANTHROPIC_API_KEY)
-            result = await _run_loop(client, run, user_message, conversation_history or [])
+            result = await _run_turn(client, run, user_message, conversation_history or [],
+                                     reporting_period=reporting_period,
+                                     investigation_context=investigation_context)
             status = "complete" if result["response"].strip() and result["response"] != FALLBACK_RESPONSE else "failed"
             if status == "complete":
                 run.log("inference_answer_ready", duration_seconds=round(time.monotonic() - run.started, 4))
@@ -74,8 +66,10 @@ async def run_agent(user_message: str, conversation_history: list | None = None)
                 run.log("inference_close_failure", error_type=type(exc).__name__)
 
 
-async def run_agent_stream(user_message: str, conversation_history: list | None = None):
-    """Progressive delivery over the same tool loop; cancellation owns provider I/O."""
+async def run_agent_stream(user_message: str, conversation_history: list | None = None, *,
+                           reporting_period: str | None = None,
+                           investigation_context: str | None = None):
+    """Progress and validated text from the shared turn; cancellation owns I/O."""
     run = InferenceRun("chat_stream")
     events = asyncio.Queue(maxsize=1)
 
@@ -85,7 +79,10 @@ async def run_agent_stream(user_message: str, conversation_history: list | None 
         try:
             async with asyncio.timeout(run.remaining()):
                 client = new_client(config.ANTHROPIC_API_KEY)
-                result = await _run_loop(client, run, user_message, conversation_history or [], emit=events.put)
+                result = await _run_turn(client, run, user_message, conversation_history or [],
+                                         reporting_period=reporting_period,
+                                         investigation_context=investigation_context,
+                                         emit=events.put)
                 if not result["response"].strip():
                     raise RuntimeError("Empty answer")
                 status = "complete"
@@ -122,174 +119,66 @@ async def run_agent_stream(user_message: str, conversation_history: list | None 
         await asyncio.gather(task, return_exceptions=True)
 
 
-async def _run_loop(
-    client: Any,
-    run: InferenceRun,
-    user_message: str,
-    conversation_history: list | None = None,
-    *, emit=None,
-) -> dict:
-    """Drive one user turn through Claude with a tool-use loop.
+async def _run_turn(client: Any, run: InferenceRun, user_message: str,
+                    conversation_history: list, *, reporting_period=None,
+                    investigation_context=None, emit=None) -> dict:
+    # Keep the latest question distinct from contextual workspace terminology.
+    messages = list(conversation_history)
+    messages.append({'role': 'user', 'content': json.dumps({
+        'question': user_message, 'reporting_period': reporting_period,
+        'investigation_context': investigation_context,
+    }, ensure_ascii=False)})
 
-    Args:
-        user_message: The latest user message text.
-        conversation_history: Prior turns, each a ``{"role": ..., "content":
-            ...}`` dict in the format Anthropic's Messages API expects. The
-            caller's list is never mutated — it's copied on entry.
+    async def discard_draft(event):
+        # The provider can emit text before the scope tool. None of it is safe
+        # to publish, even as provisional text that would later be cleared.
+        run.remaining()
 
-    Returns:
-        A dict with three keys:
-            * ``response`` — the final assistant text Claude produced
-            * ``tools_called`` — ordered list of tool names invoked this turn
-              (duplicates preserved)
-            * ``raw_data`` — ``{tool_name: parsed_result_envelope}``. If the
-              same tool is called more than once in one turn, the latest
-              call wins.
-
-        On any API failure with no prior text accumulated, returns
-        :data:`FALLBACK_RESPONSE` with empty ``tools_called`` and
-        ``raw_data``.
-    """
-    # Defensive copy — never mutate the caller's history list, and avoid the
-    # mutable-default trap on conversation_history=[].
-    messages: list[dict[str, Any]] = list(conversation_history or [])
-    messages.append({"role": "user", "content": user_message})
-
-    tools_called: list[str] = []
-    raw_data: dict[str, Any] = {}
-    last_text: str = ""
-
-    system_prompt = prompts.get_system_prompt()
-
-    for iteration in range(MAX_TOOL_ITERATIONS):
-        run.log("inference_iteration", iteration=iteration + 1)
-        try:
-            generate = run.create if emit is None else run.create_streamed
-            response = await generate(
-                client,
-                **({"emit": emit} if emit is not None else {}),
-                model=MODEL_NAME,
-                max_tokens=MAX_TOKENS,
-                system=cached_system(system_prompt),
-                tools=TOOLS,
-                messages=messages,
-            )
-        except Exception as exc:
-            run.log("inference_failure", iteration=iteration + 1, error_type=type(exc).__name__)
-            if emit is not None:
-                raise
-            # If we already produced some text in an earlier iteration, return
-            # it rather than the generic fallback.
-            if last_text:
-                return {
-                    "response": last_text,
-                    "tools_called": tools_called,
-                    "raw_data": raw_data,
-                }
-            return _error_response()
-
-        # Capture any text Claude produced in this round, so we have something
-        # to return even if we later hit the iteration cap or an error.
-        text_pieces = [
-            block.text for block in response.content if block.type == "text"
-        ]
-        if text_pieces:
-            last_text = "\n".join(text_pieces).strip()
-
-        # Pull out tool_use blocks. If none, Claude is done.
-        tool_use_blocks = [
-            block for block in response.content if block.type == "tool_use"
-        ]
-        if emit is not None and ((response.stop_reason == "tool_use") != bool(tool_use_blocks)):
-            raise RuntimeError("Inconsistent tool completion")
-        if not tool_use_blocks:
-            if emit is not None and not text_pieces:
-                raise RuntimeError("Empty final answer")
-            return {
-                "response": last_text,
-                "tools_called": tools_called,
-                "raw_data": raw_data,
-            }
-
-        # Append assistant turn (text + tool_use blocks) to the message list.
-        messages.append(
-            {
-                "role": "assistant",
-                "content": [_block_to_dict(b) for b in response.content],
-            }
-        )
-
-        # Run each tool and collect tool_result blocks for the next user turn.
-        tool_result_blocks: list[dict[str, Any]] = []
-        for block in tool_use_blocks:
-            tool_input = dict(block.input or {})
-            if emit is not None:
-                run.remaining()
-                await emit({"type": "status", "phase": "tool_start", "tool": block.name, "reset": True})
-            tool_started = time.monotonic()
-            result_block = await asyncio.to_thread(
-                tool_executor.execute_tool,
-                {"id": block.id, "name": block.name, "input": tool_input},
-            )
-            run.log("inference_tool", iteration=iteration + 1, tool=block.name,
-                    duration_seconds=round(time.monotonic() - tool_started, 4),
-                    is_error=bool(result_block.get("is_error")))
-            tool_result_blocks.append(result_block)
-            tools_called.append(block.name)
-
-            # Populate raw_data with the parsed envelope. tool_executor
-            # always returns ``content`` as a JSON string on success; on
-            # error it's a human-readable string — fall back gracefully.
-            content = result_block.get("content", "")
-            try:
-                raw_data[block.name] = json.loads(content)
-            except (json.JSONDecodeError, TypeError):
-                raw_data[block.name] = {
-                    "raw": content,
-                    "is_error": bool(result_block.get("is_error")),
-                }
-
-            if emit is not None:
-                await emit({"type": "status", "phase": "tool_complete", "tool": block.name,
-                            "reset": True, "tools_called": list(tools_called), "raw_data": dict(raw_data)})
-
-        if emit is not None:
-            await emit({"type": "status", "phase": "thinking", "reset": True})
-        # Feed tool results back as a user turn — required by the API.
-        messages.append({"role": "user", "content": tool_result_blocks})
-
-    if emit is not None:
-        raise RuntimeError("Tool iteration limit reached without a final answer")
-    # Hit the iteration cap without Claude returning a clean final response.
-    logger.warning(
-        "Hit MAX_TOOL_ITERATIONS=%d without end_turn — returning last text",
-        MAX_TOOL_ITERATIONS,
+    generate = run.create if emit is None else run.create_streamed
+    response = await generate(
+        client, **({'emit': discard_draft} if emit is not None else {}),
+        model=MODEL_NAME, max_tokens=MAX_TOKENS,
+        system=cached_system(prompts.get_measure_system_prompt()),
+        tools=[SCOPE_TOOL], tool_choice={'type': 'tool', 'name': SCOPE_TOOL['name']},
+        messages=messages,
     )
-    return {
-        "response": last_text
-        or "I was unable to complete the analysis within the allotted tool iterations.",
-        "tools_called": tools_called,
-        "raw_data": raw_data,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-
-def _block_to_dict(block: Any) -> dict[str, Any]:
-    """Serialise an Anthropic ContentBlock pydantic model to plain dict."""
-    if hasattr(block, "model_dump"):
-        data = block.model_dump()
-    elif hasattr(block, "dict"):
-        data = block.dict()
+    blocks = [block for block in response.content if block.type == 'tool_use']
+    if response.stop_reason != 'tool_use' or len(blocks) != 1 or blocks[0].name != SCOPE_TOOL['name']:
+        raise ValueError('Provider did not return one complete scope contract')
+    scope = MeasureScope.model_validate(blocks[0].input)
+    tools_called, raw_data = [], {}
+    if scope.kind == 'clarification':
+        answer = clarification_response(scope)
+    elif scope.kind == 'knowledge':
+        answer = knowledge_response(scope, prompts.KB_CONTENT)
+    elif scope.kind == 'identity':
+        evidence = await asyncio.to_thread(tool_executor.execute_dealer_lookup, scope.model_dump())
+        run.remaining()
+        answer = render_dealer_codes(evidence)
+        tools_called = ['get_dealer_codes']
+        raw_data = {'get_dealer_codes': evidence}
     else:
-        data = dict(block)
-    # Streaming returns ParsedTextBlock, whose parsed_output is SDK-only
-    # metadata. Sending it back in conversation history causes HTTP 400.
-    data.pop("parsed_output", None)
-    return data
+        request = scope.model_dump()
+        if emit is not None:
+            await emit({'type': 'status', 'phase': 'tool_start', 'reset': True})
+        evidence = await asyncio.to_thread(tool_executor.execute_measure_request, request)
+        run.remaining()
+        answer = render_measure_response(request, evidence)
+        # Preserve every requested month in a single bounded evidence envelope.
+        # Only projected fields cross the public response boundary.
+        evidence_tools = [
+            item['tool'] for measure in evidence['measures'] for item in measure['periods']
+            if item.get('tool')
+        ]
+        evidence_tools.extend(item['tool'] for item in evidence.get('explanations', []) if item.get('tool'))
+        tools_called = list(dict.fromkeys(evidence_tools))
+        raw_data = {'measure_evidence': evidence}
+        if emit is not None:
+            await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
+                        'tools_called': tools_called, 'raw_data': raw_data})
+    if emit is not None:
+        await emit({'type': 'text', 'text': answer})
+    return {'response': answer, 'tools_called': tools_called, 'raw_data': raw_data}
 
 
 def _error_response() -> dict[str, Any]:

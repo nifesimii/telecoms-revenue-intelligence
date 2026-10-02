@@ -106,18 +106,20 @@ def _bounded_page(df: pd.DataFrame, limit: int, offset: int) -> pd.DataFrame:
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
-    """Drive a single agent turn and return Claude's answer + raw tool data.
+    """Drive a single scoped turn and return its validated answer and evidence.
 
-    Attach the reporting period and active investigation context to the
-    model's current question. Forward ``conversation_history`` untouched.
+    Pass the question, reporting month and active scope separately.
+    Forward ``conversation_history`` untouched.
 
     Any internal exception is swallowed into the response envelope — this
     endpoint must never 500 on a well-formed request.
     """
-    message = request.contextual_message()
-
     try:
-        result = await run_agent(message, list(request.conversation_history))
+        result = await run_agent(
+            request.message, list(request.conversation_history),
+            reporting_period=request.mon_period,
+            investigation_context=request.investigation_context,
+        )
     except Exception as exc:  # noqa: BLE001 — never 500 on /chat
         logger.exception("POST /chat: run_agent raised")
         return ChatResponse(

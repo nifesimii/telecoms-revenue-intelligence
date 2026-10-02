@@ -45,6 +45,20 @@ _TOOL_ROW_CAP = 500
 _INTERNAL_QUERY_NAMES = {"get_subscription_demo_records"}
 
 
+def execute_measure_request(request: dict[str, Any]) -> dict[str, Any]:
+    """Route a validated measure request without exposing unrelated query fields."""
+    from backend.db.measure_evidence import collect_measure_evidence
+
+    return collect_measure_evidence(request)
+
+
+def execute_dealer_lookup(request: dict[str, Any]) -> dict[str, Any]:
+    """Retain bounded name/code association lookup for non-financial questions."""
+    from backend.db.measure_evidence import collect_dealer_codes
+
+    return collect_dealer_codes(request)
+
+
 def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:
     """Execute one ``tool_use`` block and return a ``tool_result`` block.
 

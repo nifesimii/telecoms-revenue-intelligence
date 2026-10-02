@@ -20,8 +20,11 @@ async def explain(payload: ExplainFindingRequest, request: Request):
 
 @router.post('/chat/stream')
 async def chat_stream(payload: ChatRequest, request: Request):
-    message = payload.contextual_message()
-    return streaming_response(run_agent_stream(message, list(payload.conversation_history)), request)
+    return streaming_response(run_agent_stream(
+        payload.message, list(payload.conversation_history),
+        reporting_period=payload.mon_period,
+        investigation_context=payload.investigation_context,
+    ), request)
 
 
 def streaming_response(source, request: Request):

@@ -1,454 +1,153 @@
-"""Tests for backend.agent.agent.run_agent.
+"""Public Atlas scope boundary: mock intent provider, retain real sample evidence.
 
-Five mocked tests exercising the conversation loop in isolation, plus one
-live Anthropic call (Test 6) that verifies the knowledge base is actually
-reaching Claude in the system prompt.
-
-Mocking strategy:
-    * Fake content blocks duck-type the Anthropic SDK objects the agent
-      consumes: ``block.type``, ``block.text`` / ``block.id`` /
-      ``block.name`` / ``block.input``, plus ``block.model_dump()`` for
-      the assistant-turn serialisation in :func:`agent._block_to_dict`.
-    * :func:`_install_anthropic_mock` replaces
-      ``backend.agent.agent.anthropic.AsyncAnthropic`` with a stub whose
-      ``messages.create`` returns queued responses (or raises).
-    * :func:`_install_tool_executor_mock` replaces
-      ``backend.agent.agent.tool_executor.execute_tool`` so no real DB
-      access happens during the mocked tests.
-
-Async is handled with plain :func:`asyncio.run` inside sync test functions,
-so no pytest-asyncio dependency is required.
-
-Run from the project root:
-
-    python -m pytest backend/tests/test_agent.py -v
+These checks prove enforcement after scope resolution, not model intent accuracy.
+The opt-in provider regression separately checks natural-language grounding.
 """
-from __future__ import annotations
-
+import asyncio
+from copy import deepcopy
+import json
 import os
+from types import SimpleNamespace
 
-# Force sample-data mode before any backend imports.
 os.environ["USE_SAMPLE_DATA"] = "true"
 
-import asyncio  # noqa: E402
-import json  # noqa: E402
-from unittest.mock import MagicMock  # noqa: E402
-
-import pytest  # noqa: E402
-
-from backend.agent import agent as agent_module  # noqa: E402
-from backend.agent.agent import (  # noqa: E402
-    FALLBACK_RESPONSE,
-    MAX_TOOL_ITERATIONS,
-    run_agent,
-)
-
-
-# ---------------------------------------------------------------------------
-# Fake Anthropic content blocks and response
-# ---------------------------------------------------------------------------
-
-
-class _FakeTextBlock:
-    type = "text"
-
-    def __init__(self, text: str) -> None:
-        self.text = text
-
-    def model_dump(self) -> dict:
-        return {"type": "text", "text": self.text}
-
-
-class _FakeToolUseBlock:
-    type = "tool_use"
-
-    def __init__(self, id: str, name: str, input: dict) -> None:
-        self.id = id
-        self.name = name
-        self.input = input
-
-    def model_dump(self) -> dict:
-        return {
-            "type": "tool_use",
-            "id": self.id,
-            "name": self.name,
-            "input": self.input,
-        }
-
-
-class _FakeResponse:
-    def __init__(self, content: list, stop_reason: str = "end_turn") -> None:
-        self.content = content
-        self.stop_reason = stop_reason
-
-
-# ---------------------------------------------------------------------------
-# Mock installers
-# ---------------------------------------------------------------------------
-
-
-def _install_anthropic_mock(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    responses: list | None = None,
-    on_create=None,
-    raise_exc: BaseException | None = None,
-) -> list[dict]:
-    """Install a fake AsyncAnthropic into the agent module.
-
-    Exactly one of ``responses``, ``on_create``, or ``raise_exc`` must be
-    supplied. Returns a list that gets appended to with each call's kwargs
-    so the test can inspect what was sent.
-    """
-    if sum(arg is not None for arg in (responses, on_create, raise_exc)) != 1:
-        raise ValueError(
-            "Supply exactly one of responses=, on_create=, or raise_exc=."
-        )
-
-    captured: list[dict] = []
-
-    if responses is not None:
-        seq_iter = iter(responses)
-        last = responses[-1] if responses else None
-
-        async def fake_create(**kwargs):
-            captured.append(kwargs)
-            try:
-                return next(seq_iter)
-            except StopIteration:
-                return last
-
-    elif on_create is not None:
-
-        async def fake_create(**kwargs):
-            captured.append(kwargs)
-            return on_create(kwargs)
-
-    else:  # raise_exc is not None
-
-        async def fake_create(**kwargs):
-            captured.append(kwargs)
-            raise raise_exc  # type: ignore[misc]
-
-    messages_attr = MagicMock()
-    messages_attr.create = fake_create
-
-    fake_client = MagicMock()
-    fake_client.messages = messages_attr
-
-    fake_class = MagicMock(return_value=fake_client)
-    monkeypatch.setattr(agent_module.anthropic, "AsyncAnthropic", fake_class)
-
-    return captured
-
-
-def _install_tool_executor_mock(
-    monkeypatch: pytest.MonkeyPatch,
-    envelope_by_name: dict[str, dict],
-) -> list[dict]:
-    """Replace tool_executor.execute_tool with a canned-envelope stub.
-
-    Returns a list of the tool_use blocks the executor was called with — so
-    tests can confirm the agent dispatched the right tools with the right
-    inputs.
-    """
-    received: list[dict] = []
-
-    def fake_execute(tool_use: dict) -> dict:
-        received.append(tool_use)
-        name = tool_use.get("name", "")
-        envelope = envelope_by_name.get(name) or {
-            "tool": name,
-            "parameters": tool_use.get("input"),
-            "row_count": 0,
-            "rows": [],
-        }
-        return {
-            "type": "tool_result",
-            "tool_use_id": tool_use.get("id", ""),
-            "content": json.dumps(envelope),
-        }
-
-    monkeypatch.setattr(agent_module.tool_executor, "execute_tool", fake_execute)
-    return received
-
-
-def _run(coro):
-    """Run an async coroutine to completion in a fresh event loop."""
-    return asyncio.run(coro)
-
-
-# ---------------------------------------------------------------------------
-# Test 1 — tool routing
-# ---------------------------------------------------------------------------
-
-
-def test_tool_routing_calls_dealer_summary(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Single tool round-trip: tool_use response → tool result → final text."""
-    responses = [
-        _FakeResponse(
-            content=[
-                _FakeToolUseBlock(
-                    id="tu_1",
-                    name="get_dealer_summary",
-                    input={"mon_period": "202603"},
-                )
-            ],
-            stop_reason="tool_use",
-        ),
-        _FakeResponse(
-            content=[
-                _FakeTextBlock(
-                    "Total commission for 202603 is ₦310,095.87 across 77 dealers."
-                )
-            ],
-            stop_reason="end_turn",
-        ),
-    ]
-    captured = _install_anthropic_mock(monkeypatch, responses=responses)
-    received_tools = _install_tool_executor_mock(
-        monkeypatch,
-        {
-            "get_dealer_summary": {
-                "tool": "get_dealer_summary",
-                "parameters": {"mon_period": "202603"},
-                "row_count": 1,
-                "rows": [
-                    {
-                        "dealer_id": "100",
-                        "dealer_name": "Test Dealer Ltd",
-                        "total_commission_ngn": 12345.67,
-                    }
-                ],
-            }
-        },
-    )
-
-    result = _run(run_agent("Summarise dealer commissions for 202603"))
-
-    assert "get_dealer_summary" in result["tools_called"]
-    assert isinstance(result["response"], str) and result["response"].strip()
-    assert "get_dealer_summary" in result["raw_data"]
-    assert result["raw_data"]["get_dealer_summary"]["row_count"] == 1
-
-    # Two API rounds: one to receive the tool_use, one to receive the final text.
-    assert len(captured) == 2
-    # The tool was dispatched exactly once with the right input.
-    assert len(received_tools) == 1
-    assert received_tools[0]["name"] == "get_dealer_summary"
-    assert received_tools[0]["input"] == {"mon_period": "202603"}
-
-
-# ---------------------------------------------------------------------------
-# Test 2 — multi-tool chain
-# ---------------------------------------------------------------------------
-
-
-def test_multi_tool_chain(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Three rounds: summary → zero-records → final text."""
-    responses = [
-        _FakeResponse(
-            content=[
-                _FakeTextBlock("Let me check the dealer summary first."),
-                _FakeToolUseBlock(
-                    "tu_1", "get_dealer_summary", {"mon_period": "202603"}
-                ),
-            ],
-            stop_reason="tool_use",
-        ),
-        _FakeResponse(
-            content=[
-                _FakeTextBlock("Now pulling the zero-commission detail."),
-                _FakeToolUseBlock(
-                    "tu_2",
-                    "get_zero_commission_records",
-                    {"mon_period": "202603", "distributor_code": "121038"},
-                ),
-            ],
-            stop_reason="tool_use",
-        ),
-        _FakeResponse(
-            content=[
-                _FakeTextBlock(
-                    "River Isle Ventures has 3 zero-commission records, all classified "
-                    "as USP snapshot miss (KB Issue 1)."
-                )
-            ],
-            stop_reason="end_turn",
-        ),
-    ]
-    _install_anthropic_mock(monkeypatch, responses=responses)
-    received = _install_tool_executor_mock(
-        monkeypatch,
-        {
-            "get_dealer_summary": {
-                "tool": "get_dealer_summary",
-                "row_count": 1,
-                "rows": [],
-            },
-            "get_zero_commission_records": {
-                "tool": "get_zero_commission_records",
-                "row_count": 3,
-                "rows": [],
-            },
-        },
-    )
-
-    result = _run(
-        run_agent("Which dealers have zero commission records for 202603 and why?")
-    )
-
-    assert "get_dealer_summary" in result["tools_called"]
-    assert "get_zero_commission_records" in result["tools_called"]
-    # Order is preserved.
-    assert result["tools_called"].index("get_dealer_summary") < result[
-        "tools_called"
-    ].index("get_zero_commission_records")
-    assert result["response"]
-    # Both tools were dispatched exactly once each.
-    names_dispatched = [t["name"] for t in received]
-    assert names_dispatched == [
-        "get_dealer_summary",
-        "get_zero_commission_records",
-    ]
-
-
-# ---------------------------------------------------------------------------
-# Test 3 — max iteration safety
-# ---------------------------------------------------------------------------
-
-
-def test_loop_breaks_at_max_iterations(monkeypatch: pytest.MonkeyPatch) -> None:
-    """When Claude keeps requesting tools, the loop must cap at MAX_TOOL_ITERATIONS."""
-    counter = {"n": 0}
-
-    def relentless_tool_use(_kwargs):
-        counter["n"] += 1
-        return _FakeResponse(
-            content=[
-                _FakeTextBlock(f"Iteration {counter['n']} — still working."),
-                _FakeToolUseBlock(
-                    f"tu_{counter['n']}",
-                    "get_dealer_summary",
-                    {"mon_period": "202603"},
-                ),
-            ],
-            stop_reason="tool_use",
-        )
-
-    captured = _install_anthropic_mock(monkeypatch, on_create=relentless_tool_use)
-    _install_tool_executor_mock(
-        monkeypatch,
-        {
-            "get_dealer_summary": {
-                "tool": "get_dealer_summary",
-                "row_count": 0,
-                "rows": [],
-            }
-        },
-    )
-
-    # Should return normally — never raise, never hang.
-    result = _run(run_agent("Loop forever"))
-
-    # Exactly MAX_TOOL_ITERATIONS API calls, then loop breaks.
-    assert len(captured) == MAX_TOOL_ITERATIONS == 5
-    assert len(result["tools_called"]) == MAX_TOOL_ITERATIONS
-    # All calls were to the same tool.
-    assert set(result["tools_called"]) == {"get_dealer_summary"}
-    assert isinstance(result, dict) and "response" in result
-    assert isinstance(result["response"], str) and result["response"].strip()
-
-
-# ---------------------------------------------------------------------------
-# Test 4 — API failure handling
-# ---------------------------------------------------------------------------
-
-
-def test_api_failure_returns_fallback_dict(monkeypatch: pytest.MonkeyPatch) -> None:
-    """If messages.create raises, run_agent must return the documented fallback."""
-    _install_anthropic_mock(
-        monkeypatch, raise_exc=RuntimeError("simulated api outage")
-    )
-
-    result = _run(run_agent("anything"))
-
-    assert isinstance(result, dict)
+import pytest
+
+from backend.agent import agent as agent_module, prompts
+from backend.agent.agent import FALLBACK_RESPONSE, run_agent
+
+
+def _run(coroutine):
+    return asyncio.run(coroutine)
+
+
+def measure_scope(*measures, **options):
+    return {"kind": "measure", "measures": list(measures), "periods": ["202603"],
+            "dealer_id": "74050", "operation": "total", **options}
+
+
+def install_scope_provider(monkeypatch, scope=None, *, error=None, blocks=None):
+    """Only provider I/O is mocked; query, projection and rendering remain real."""
+    captured = []
+    closed = []
+
+    async def create(**kwargs):
+        captured.append(deepcopy(kwargs))
+        if error:
+            raise error
+        content = blocks if blocks is not None else [SimpleNamespace(
+            type="tool_use", id="scope-1", name="resolve_measure_request", input=scope)]
+        return SimpleNamespace(content=content, stop_reason="tool_use")
+
+    async def close():
+        closed.append(True)
+
+    client = SimpleNamespace(messages=SimpleNamespace(create=create), close=close)
+    monkeypatch.setattr(agent_module, "new_client", lambda key: client)
+    return captured, closed
+
+
+def evidence_period(result, index=0):
+    return result["raw_data"]["measure_evidence"]["measures"][index]["periods"][0]
+
+
+def test_requested_commission_uses_sample_aggregate_not_provider_prose(monkeypatch):
+    scope = measure_scope("activation_commission")
+    calls, closed = install_scope_provider(monkeypatch, blocks=[
+        SimpleNamespace(type="text", text="Sales are NGN 999,999,999.00; disputed."),
+        SimpleNamespace(type="tool_use", id="scope", name="resolve_measure_request", input=scope),
+    ])
+    result = _run(run_agent("What activation commission is recorded for dealer 74050 in 202603?"))
+    assert "NGN 1,140,192.85" in result["response"]
+    assert "999,999,999" not in result["response"] and "disputed" not in result["response"]
+    assert evidence_period(result)["total"] == 1140192.85
+    assert result["tools_called"] == ["get_dealer_summary"]
+    assert len(calls) == 1 and closed == [True]
+    assert [tool["name"] for tool in calls[0]["tools"]] == ["resolve_measure_request"]
+
+
+def test_multiple_measures_and_zero_commission_why_preserve_uncertainty(monkeypatch):
+    install_scope_provider(monkeypatch, measure_scope("activation_commission", "zero_commission_count", operation="explain"))
+    result = _run(run_agent("What commission and zero-commission count does 74050 have in March 2026, and why?"))
+    assert evidence_period(result, 0)["total"] == 1140192.85
+    assert evidence_period(result, 1)["total"] == 93
+    assert "93" in result["response"] and "unverified" in result["response"]
+    assert "checked 93 of 93" in result["response"]
+    assert "Historical USP" in result["response"]
+    assert "USP snapshot miss" not in result["response"]
+    assert result["tools_called"] == ["get_dealer_summary", "get_zero_commission_records"]
+
+
+@pytest.mark.parametrize("scope", [
+    measure_scope("activation_count", invented_answer="NGN 999.00"),
+    measure_scope("imaginary_retail_margin"),
+    measure_scope("activation_count", periods=["202613"]),
+    measure_scope("activation_count", periods=["202603", "202603"]),
+])
+def test_invalid_scope_fails_in_one_provider_call_without_evidence(monkeypatch, scope):
+    calls, closed = install_scope_provider(monkeypatch, scope)
+    result = _run(run_agent("Resolve this requested figure"))
+    assert result == {"response": FALLBACK_RESPONSE, "tools_called": [], "raw_data": {}}
+    assert len(calls) == 1 and closed == [True]
+
+
+def test_direct_query_tool_call_is_rejected_without_executing_it(monkeypatch):
+    calls, _ = install_scope_provider(monkeypatch, blocks=[SimpleNamespace(
+        type="tool_use", id="old-tool", name="get_dealer_summary", input={"mon_period": "202603"})])
+    result = _run(run_agent("Summarise commission"))
     assert result["response"] == FALLBACK_RESPONSE
-    assert result["response"]  # non-empty
-    assert result["tools_called"] == []
-    assert result["raw_data"] == {}
+    assert result["raw_data"] == {} and result["tools_called"] == []
+    assert len(calls) == 1
 
 
-# ---------------------------------------------------------------------------
-# Test 5 — conversation history threading
-# ---------------------------------------------------------------------------
+def test_api_failure_returns_fallback_and_closes_client(monkeypatch):
+    calls, closed = install_scope_provider(monkeypatch, error=RuntimeError("provider unavailable"))
+    result = _run(run_agent("Summarise commissions for March 2026"))
+    assert result == {"response": FALLBACK_RESPONSE, "tools_called": [], "raw_data": {}}
+    assert len(calls) == 1 and closed == [True]
 
 
-def test_conversation_history_is_threaded(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Turn 2 must receive turn 1's user/assistant messages in the API payload."""
-    turn1 = _FakeResponse(
-        content=[
-            _FakeTextBlock(
-                "Kashmir Global earned ₦31,082.75 in 202603 — the top dealer "
-                "that month."
-            )
-        ],
-        stop_reason="end_turn",
-    )
-    turn2 = _FakeResponse(
-        content=[
-            _FakeTextBlock(
-                "Yes — Kashmir Global was the top earner for 202603 as I noted."
-            )
-        ],
-        stop_reason="end_turn",
-    )
-
-    state = {"calls": 0, "last_messages": None}
-
-    def on_create(kwargs):
-        state["calls"] += 1
-        state["last_messages"] = kwargs.get("messages")
-        return turn1 if state["calls"] == 1 else turn2
-
-    _install_anthropic_mock(monkeypatch, on_create=on_create)
-    _install_tool_executor_mock(monkeypatch, {})
-
-    # Turn 1 — no prior history.
-    q1 = "Who is the top dealer in 202603?"
-    r1 = _run(run_agent(q1))
-    assert "Kashmir" in r1["response"]
-
-    # Build the conversation history exactly the way the frontend does in
-    # useChat.js — strings, not block lists.
-    history = [
-        {"role": "user", "content": q1},
-        {"role": "assistant", "content": r1["response"]},
-    ]
-
-    # Turn 2 — second question that depends on the first.
-    q2 = "Was that one Kashmir Global Ltd?"
-    r2 = _run(run_agent(q2, conversation_history=history))
-
-    # Confirm what was sent to the API on turn 2: the two history entries
-    # AND the new user message — in that order.
-    sent = state["last_messages"]
-    assert sent is not None and len(sent) == 3
-    assert sent[0] == {"role": "user", "content": q1}
-    assert sent[1]["role"] == "assistant"
-    assert sent[1]["content"] == r1["response"]
-    assert sent[2] == {"role": "user", "content": q2}
-
-    # And the second response is non-empty and is coherent (mocked to echo
-    # the prior context — verifying the agent surfaced it correctly).
-    assert r2["response"]
-    assert "Kashmir" in r2["response"]
+def test_history_and_current_selection_are_separate_and_never_mutated(monkeypatch):
+    history = [{"role": "user", "content": "By sales I mean recorded activations."},
+               {"role": "assistant", "content": "I will use recorded activations in this conversation."}]
+    original = deepcopy(history)
+    calls, _ = install_scope_provider(monkeypatch, measure_scope("activation_count"))
+    result = _run(run_agent("How many this month?", history, reporting_period="202603",
+                           investigation_context="Selected dealer 74050; payment workspace"))
+    assert history == original
+    assert calls[0]["messages"][:-1] == original
+    assert json.loads(calls[0]["messages"][-1]["content"]) == {
+        "question": "How many this month?", "reporting_period": "202603",
+        "investigation_context": "Selected dealer 74050; payment workspace"}
+    assert evidence_period(result)["total"] == 806
+    assert "payment" not in result["response"].lower()
 
 
-# ---------------------------------------------------------------------------
-# Test 6 — KB grounding (LIVE Anthropic API call)
-# ---------------------------------------------------------------------------
+def test_policy_quote_is_verified_against_complete_core_kb(monkeypatch):
+    quote = "| 5G ROUTER            | 68,465.12                | 8,215.81              | TOZED ROUMOD4393, ZTE MC888D 5G CPE, HUAWEI ROUWIR4332      |"
+    calls, _ = install_scope_provider(monkeypatch, {"kind": "knowledge", "knowledge_quote": quote})
+    result = _run(run_agent("What is the commission rate for a 5G Router activation?"))
+    assert "8,215.81" in result["response"]
+    assert result["tools_called"] == [] and result["raw_data"] == {}
+    assert prompts.KB_CONTENT in calls[0]["system"][0]["text"]
+
+
+def test_invented_policy_quote_does_not_cross_answer_boundary(monkeypatch):
+    install_scope_provider(monkeypatch, {"kind": "knowledge", "knowledge_quote": "All partners earn 99% commission."})
+    result = _run(run_agent("What is the rate?"))
+    assert result["response"] == FALLBACK_RESPONSE
+
+
+def test_financial_statements_render_source_lines_without_summing_them(monkeypatch):
+    install_scope_provider(monkeypatch, measure_scope("financial_statements", operation="breakdown"))
+    result = _run(run_agent("Show dealer 74050 financial statements for March 2026"))
+    period = evidence_period(result)
+    assert period["total"] is None
+    sales = next(row for row in period["rows"] if row["dimension"].endswith(": Sales revenue"))
+    assert sales["value"] == 12600000
+    assert "NGN 12,600,000.00" in result["response"]
+    assert "Synthetic" in result["response"] and "Sales revenue" in result["response"]
+    assert "get_financial_health_report" in result["tools_called"]
 
 
 @pytest.mark.live_agent
@@ -477,19 +176,3 @@ def test_kb_grounding_returns_5g_router_commission_rate() -> None:
         "Expected '8,215.81' (the KB-documented 5G ROUTER commission rate) "
         f"in the response, but got:\n\n{result['response']}"
     )
-
-
-def test_financial_report_tool_reaches_atlas_with_same_statement_evidence(monkeypatch):
-    from backend.db.financial_health import get_report
-    captured = _install_anthropic_mock(monkeypatch, responses=[
-        _FakeResponse([_FakeToolUseBlock('finance-report', 'get_financial_health_report',
-            {'distributor_code': '74050', 'mon_period': '202603'})], stop_reason='tool_use'),
-        _FakeResponse([_FakeTextBlock('Synthetic March 2026 net profit: NGN 2,240,000.00.')]),
-    ])
-    result = asyncio.run(run_agent('Explain the financial statements for dealer 74050 in March 2026.'))
-    assert not result.get('error')
-    assert 'get_financial_health_report' in result['tools_called']
-    tool_message = next(m for m in captured[1]['messages'] if m['role'] == 'user' and isinstance(m['content'], list))
-    evidence = json.loads(tool_message['content'][0]['content'])
-    assert evidence['report'] == get_report('74050', '202603')
-    assert evidence['report']['kpis'][0]['value'] == 40

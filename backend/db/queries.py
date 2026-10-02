@@ -1727,3 +1727,19 @@ def get_available_periods() -> list[str]:
         "get_available_periods is not implemented for live Presto mode yet "
         "— to be implemented when the service account is provisioned."
     )
+
+
+def has_source_period(source: str, period: str) -> bool:
+    """Verify actual source rows, not configured keys or another stream's dates."""
+    if not config.USE_SAMPLE_DATA:
+        return False  # Live queries have no implemented coverage contract yet.
+    entry = config.SAMPLE_DATA_PATHS.get(source)
+    path = entry.get(period) if isinstance(entry, dict) else entry
+    try:
+        if path is None or not path.is_file():
+            return False
+        with path.open(newline='') as handle:
+            return any(str(row.get('mon_period', row.get('report_month', ''))) == period
+                       for row in csv.DictReader(handle))
+    except (OSError, UnicodeError, csv.Error):
+        return False

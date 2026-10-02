@@ -167,9 +167,10 @@ def test_buffered_chat_logs_answer_ready_only_for_success(monkeypatch, caplog, o
     from backend.agent import agent
 
     response = SimpleNamespace(
-        content=[SimpleNamespace(type='text', text='NGN 100.00 recorded commission.')]
+        content=[SimpleNamespace(type='tool_use', name='resolve_measure_request',
+                                 input={'kind': 'clarification', 'clarification': 'sales_meaning'})]
         if outcome == 'success' else [],
-        stop_reason='end_turn', usage=None,
+        stop_reason='tool_use', usage=None,
     )
     create = AsyncMock(return_value=response)
     if outcome == 'provider_error':
@@ -185,13 +186,13 @@ def test_buffered_chat_logs_answer_ready_only_for_success(monkeypatch, caplog, o
     ready = [event for event in events if event['event'] == 'inference_answer_ready']
     assert not any(event['event'] == 'inference_first_text' for event in events)
     if outcome == 'success':
-        assert result['response'] == 'NGN 100.00 recorded commission.'
+        assert 'By sales, do you mean' in result['response']
         assert len(ready) == 1
         assert ready[0]['entry_point'] == 'chat'
         assert ready[0]['duration_seconds'] >= 0
         assert ready[0]['request_id'] == events[-1]['request_id']
     else:
-        assert result['response'] == ('' if outcome == 'empty_answer' else agent.FALLBACK_RESPONSE)
+        assert result['response'] == agent.FALLBACK_RESPONSE
         assert ready == []
     assert 'PRIVATE' not in caplog.text
     client.close.assert_awaited_once()

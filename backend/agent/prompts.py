@@ -324,6 +324,26 @@ def get_system_prompt() -> str:
     return SYSTEM_PROMPT
 
 
+def get_measure_system_prompt() -> str:
+    """Keep the full core KB while selecting the evidence-bound chat protocol."""
+    return SYSTEM_PROMPT + (
+        '\n\n# Current-turn response protocol\n'
+        'For this turn, call resolve_measure_request exactly once instead of '
+        'answering or calling data tools. The application retrieves and renders '
+        'the requested figures after validating your interpretation. '
+        'The latest user message is a JSON object: question is the current request; '
+        'reporting_period and investigation_context supply scope, not additional '
+        'requested measures. The latest explicit question takes precedence over '
+        'old questions. Use the conversation for already agreed meanings and '
+        'accepted alternatives, never infer acceptance from an assistant offer. '
+        'Do not choose a global meaning for sales. Preserve selected exact account '
+        'codes and the full requested date range. Missing data must not narrow '
+        'that range. No explanation, numeric answer or suggested next investigation '
+        'belongs in the scope contract. Its knowledge_quote option is for general '
+        'policy questions only and must quote a relevant core KB excerpt exactly.'
+    )
+
+
 def build_finding_explanation(evidence: dict) -> str:
     """Concise generation request over verified evidence and the unchanged KB."""
     import json
