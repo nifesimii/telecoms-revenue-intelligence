@@ -198,3 +198,44 @@ def load_payment_snapshot(period: str) -> PaymentCoverageResponse:
         data_source="SIMULATED",
         records=records,
     )
+
+
+# ---------------------------------------------------------------------------
+# Bounded Payment collection (All Payments and Exceptions share it)
+# ---------------------------------------------------------------------------
+
+# The statuses the Payments Exceptions view filters on: every settlement record
+# that is not FULLY_PAID.
+EXCEPTION_STATUSES = ("DISPUTED", "PARTIALLY_PAID", "PENDING")
+
+
+def payment_collection(
+    summary: PaymentCoverageResponse,
+    *,
+    statuses: set[str] | None = None,
+    search: str | None = None,
+    sort_column: str = "amount_unpaid",
+    direction: str = "desc",
+) -> pd.DataFrame:
+    """Filter and order one snapshot exactly as ``GET /payments`` does.
+
+    ``statuses`` and ``sort_column`` are already validated by the caller.
+    Ties break on dealer_id ascending; missing sort values are last.
+    """
+    df = pd.DataFrame([r.model_dump() for r in summary.records])
+    if df.empty:
+        df = pd.DataFrame(columns=list(PaymentSummaryRecord.model_fields))
+    if statuses:
+        df = df[df["payment_status"].isin(statuses)]
+    if search and search.strip():
+        q = search.strip().lower()
+        mask = (
+            df["dealer_id"].fillna("").astype(str).str.lower().str.contains(q, regex=False)
+            | df["dealer_name"].fillna("").astype(str).str.lower().str.contains(q, regex=False)
+        )
+        df = df[mask]
+    return df.sort_values(
+        [sort_column, "dealer_id"],
+        ascending=[direction == "asc", True],
+        na_position="last",
+    )

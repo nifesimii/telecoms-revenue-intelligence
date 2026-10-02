@@ -7,6 +7,7 @@ import re
 
 from backend.assurance.overview import SEVERITY_ORDER, UNCHECKED_STATUSES as _UNCHECKED_STATUSES
 from backend.audit.trail import CONCLUSIONS, CONFIDENCES, INSUFFICIENT_DATA as _INSUFFICIENT
+from backend.db.payment_snapshot import EXCEPTION_STATUSES
 
 _MAX_RENDERED_ROWS = 100
 _MAX_AUDIT_CAVEATS = 3
@@ -928,6 +929,223 @@ def _render_coverage(measure: dict, dealer_id: str | None) -> list[str]:
     return parts
 
 
+def _check_bounded_listing(period: dict, body: dict) -> int:
+    """Shared exception-listing shape; the matching dealer count, or -1 when the dealer is not found."""
+    if not isinstance(body, dict) or any(not isinstance(body[key], bool) for key in ("dealer_scoped", "found")):
+        raise ValueError("Available exception evidence requires scope flags")
+    if not body["found"]:
+        if not body["dealer_scoped"] or body["dealer_count"] is not None or body["dealers"] or period["rows"]:
+            raise ValueError("Only a dealer without records is not found")
+        return -1
+    count, dealers = body["dealer_count"], body["dealers"]
+    if not _is_count(count) or not isinstance(dealers, list) or len(dealers) > min(count, _MAX_RENDERED_ROWS):
+        raise ValueError("Exception dealer counts are inconsistent")
+    if body["dealer_scoped"] and count > 1:
+        raise ValueError("A dealer-scoped listing holds at most one dealer")
+    if len(period["rows"]) != len(dealers) or period["truncated"] != (count > len(dealers)):
+        raise ValueError("Exception rows must be one per listed dealer")
+    if count > len(dealers) and len(dealers) < _MAX_RENDERED_ROWS:
+        raise ValueError("A truncated listing shows the full bound")
+    for dealer in dealers:
+        if not isinstance(dealer["dealer_id"], str) or not isinstance(dealer["dealer_name"], str):
+            raise ValueError("Exception dealers require a code and name")
+    return count
+
+
+def _validate_activation_exceptions(period: dict) -> None:
+    """Activation exception evidence is the Activation Exceptions view; reject malformed shapes."""
+    try:
+        _check_activation_exceptions(period)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("Incomplete activation exception evidence") from exc
+
+
+def _check_finding_label(finding: dict) -> None:
+    if not isinstance(finding["type"], str) or not isinstance(finding["label"], str):
+        raise ValueError("Activation findings require a type and label")
+    if finding["severity"] not in _PRIORITY_SEVERITIES:
+        raise ValueError("Unsupported finding severity")
+
+
+def _check_activation_exceptions(period: dict) -> None:
+    body = period.get("activation_exceptions")
+    if period["status"] == "unavailable":
+        if body is not None:
+            raise ValueError("Unavailable exception evidence cannot carry exceptions")
+        return
+    count = _check_bounded_listing(period, body)
+    if count < 0:
+        if body["finding_count"] is not None or body["by_finding"]:
+            raise ValueError("A dealer without records has no findings")
+        return
+    findings, by_finding = body["finding_count"], body["by_finding"]
+    if not _is_count(findings) or not isinstance(by_finding, list):
+        raise ValueError("Activation exception counts are inconsistent")
+    for entry in by_finding:
+        _check_finding_label(entry)
+        if not _is_count(entry["dealer_count"]) or not 1 <= entry["dealer_count"] <= count:
+            raise ValueError("Finding dealer counts exceed the matching dealers")
+    if len({entry["type"] for entry in by_finding}) != len(by_finding) or (
+            sum(entry["dealer_count"] for entry in by_finding) != findings):
+        raise ValueError("Finding counts do not add up")
+    if bool(count) != bool(findings) or findings < count:
+        raise ValueError("Every listed dealer has at least one finding")
+    for dealer in body["dealers"]:
+        if not _is_count(dealer["activation_count"]) or not _is_count(dealer["zero_commission_count"]):
+            raise ValueError("Exception dealers require activation counts")
+        if not isinstance(dealer["findings"], list) or not dealer["findings"]:
+            raise ValueError("A listed dealer requires findings")
+        for finding in dealer["findings"]:
+            _check_finding_label(finding)
+
+
+def _validate_payment_exceptions(period: dict) -> None:
+    """Payment exception evidence is the Payments Exceptions view; reject malformed shapes."""
+    try:
+        _check_payment_exceptions(period)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("Incomplete payment exception evidence") from exc
+
+
+def _check_payment_exceptions(period: dict) -> None:
+    body = period.get("payment_exceptions")
+    if period["status"] == "unavailable":
+        if body is not None:
+            raise ValueError("Unavailable exception evidence cannot carry exceptions")
+        return
+    count = _check_bounded_listing(period, body)
+    if count < 0:
+        if body["outstanding_ngn"] is not None or body["status_counts"] or body["dealer_status"] is not None:
+            raise ValueError("A dealer without records has no payment exceptions")
+        return
+    if not _is_amount(body["outstanding_ngn"]) or _cents(body["outstanding_ngn"]) < 0:
+        raise ValueError("Outstanding total must be a nonnegative amount")
+    statuses = body["status_counts"]
+    if (not isinstance(statuses, list) or len({s["status"] for s in statuses}) != len(statuses)
+            or any(s["status"] not in EXCEPTION_STATUSES or not _is_count(s["dealer_count"])
+                   or not s["dealer_count"] for s in statuses)
+            or sum(s["dealer_count"] for s in statuses) != count):
+        raise ValueError("Payment status counts do not add up")
+    dealers = body["dealers"]
+    for dealer in dealers:
+        if dealer["payment_status"] not in EXCEPTION_STATUSES or not all(
+                _is_amount(dealer[key]) for key in ("commission_owed", "amount_paid", "amount_unpaid")):
+            raise ValueError("Payment exceptions require an exception status and amounts")
+        if dealer["exception_flag"] is not None and not isinstance(dealer["exception_flag"], str):
+            raise ValueError("Source flag must be text")
+    if len(dealers) == count and sum(_cents(d["amount_unpaid"]) for d in dealers) != _cents(body["outstanding_ngn"]):
+        raise ValueError("Outstanding total is not the sum of the exceptions")
+    status = body["dealer_status"]
+    if not body["dealer_scoped"]:
+        if status is not None:
+            raise ValueError("Only a dealer-scoped listing carries a dealer status")
+    elif not isinstance(status, str) or (status in EXCEPTION_STATUSES) != bool(count) or (
+            dealers and dealers[0]["payment_status"] != status):
+        raise ValueError("The dealer's recorded status must match its exceptions")
+
+
+def _exception_unavailable(label: str, period: dict, dealer_id: str | None) -> list[str]:
+    whom = f"dealer {_text(dealer_id)}, " if dealer_id else ""
+    note = _text(period.get("note") or "the source could not be read.")
+    return [f"{label} unavailable for {whom}{_text(period['period'])}: {note}",
+            "Missing evidence is not a clean result."]
+
+
+def _plural(count: int, word: str) -> str:
+    return f"{count:,} {word}{'' if count == 1 else 's'}"
+
+
+def _showing(body: dict) -> list[str]:
+    shown, total = len(body["dealers"]), body["dealer_count"]
+    return [f"Showing {shown:,} of {total:,}."] if total > shown else []
+
+
+def _render_activation_exceptions(measure: dict, dealer_id: str | None) -> list[str]:
+    """Each flagged dealer's findings as the Activation Exceptions view shows them."""
+    parts = []
+    for period in measure["periods"]:
+        month, body = _text(period["period"]), period.get("activation_exceptions")
+        if period["status"] == "unavailable":
+            parts.extend(_exception_unavailable("Activation exceptions", period, dealer_id))
+            continue
+        if not body["found"]:
+            parts.append(f"Dealer {_text(dealer_id)} has no recorded activations in {month}; check the dealer code.")
+            continue
+        if not body["dealer_count"]:
+            parts.append(f"Dealer {_text(dealer_id)} has no activation exception for {month} under the existing "
+                         "exception rules. This does not certify every record as correct.")
+            continue
+        if dealer_id:
+            parts.append(f"Activation exceptions for dealer {_text(dealer_id)}, {month}: "
+                         f"{_plural(body['finding_count'], 'finding')}.")
+        else:
+            parts.append(f"Activation exceptions for {month}: {_plural(body['dealer_count'], 'dealer')}, "
+                         f"{_plural(body['finding_count'], 'finding')}.")
+            parts.append("By finding: " + "; ".join(
+                f"{_text(e['label'])} ({_text(e['severity'])}): {_plural(e['dealer_count'], 'dealer')}"
+                for e in body["by_finding"]) + ".")
+        lines = ["| Dealer | Highest severity | Findings | Activations | Zero-commission activations |",
+                 "| --- | --- | --- | --- | --- |"]
+        for d in body["dealers"]:
+            lines.append(f"| {_text(d['dealer_name'])} ({_text(d['dealer_id'])}) | "
+                         f"{_text(d['findings'][0]['severity'])} | "
+                         f"{'; '.join(_text(f['label']) for f in d['findings'])} | "
+                         f"{d['activation_count']:,} | {d['zero_commission_count']:,} |")
+        parts.append("\n".join(lines))
+        parts.extend(_showing(body))
+        if not dealer_id:
+            parts.append("Ordered by highest finding severity, then dealer code.")
+        parts.append("Findings come from the existing activation exception rules; they flag "
+                     f"{'an account' if dealer_id else 'accounts'} to inspect and do not establish a cause.")
+    sources = dict.fromkeys(_text(period["source"]) for period in measure["periods"])
+    parts.append(f"Source: {', '.join(sources)}.")
+    return parts
+
+
+def _render_payment_exceptions(measure: dict, dealer_id: str | None) -> list[str]:
+    """Settlement records not fully paid, as the Payments Exceptions view shows them."""
+    parts = []
+    for period in measure["periods"]:
+        month, body = _text(period["period"]), period.get("payment_exceptions")
+        if period["status"] == "unavailable":
+            parts.extend(_exception_unavailable("Payment exceptions", period, dealer_id))
+            continue
+        if not body["found"]:
+            parts.append(f"Dealer {_text(dealer_id)} has no payment record for {month}; check the dealer code.")
+            continue
+        if not body["dealer_count"]:
+            parts.append(f"Dealer {_text(dealer_id)} has no payment exception for {month}; "
+                         f"the recorded payment status is {_text(body['dealer_status'])}.")
+            continue
+        outstanding = _number(body["outstanding_ngn"], "ngn")
+        if dealer_id:
+            parts.append(f"Payment exceptions for dealer {_text(dealer_id)}, {month}: "
+                         f"{_plural(body['dealer_count'], 'exception')}, {outstanding} outstanding.")
+        else:
+            parts.append(f"Payment exceptions for {month}: {_plural(body['dealer_count'], 'dealer')}, "
+                         f"{outstanding} outstanding.")
+            parts.append("By payment status: " + "; ".join(
+                f"{_text(s['status'])} {s['dealer_count']:,}" for s in body["status_counts"]) + ".")
+        lines = ["| Dealer | Payment status | Commission owed | Amount settled | Outstanding | Source flag |",
+                 "| --- | --- | --- | --- | --- | --- |"]
+        for d in body["dealers"]:
+            flag = _text(d["exception_flag"]) if d["exception_flag"] else "—"
+            lines.append(f"| {_text(d['dealer_name'])} ({_text(d['dealer_id'])}) | {_text(d['payment_status'])} | "
+                         f"{_number(d['commission_owed'], 'ngn')} | {_number(d['amount_paid'], 'ngn')} | "
+                         f"{_number(d['amount_unpaid'], 'ngn')} | {flag} |")
+        parts.append("\n".join(lines))
+        parts.extend(_showing(body))
+        if not dealer_id:
+            parts.append("Ordered by outstanding amount, largest first, then dealer code. The outstanding "
+                         f"total covers all {body['dealer_count']:,} dealers, not only those shown.")
+        parts.append("Payment exceptions are settlement records that are not fully paid: "
+                     f"{', '.join(map(_text, EXCEPTION_STATUSES[:-1]))} or {_text(EXCEPTION_STATUSES[-1])}, "
+                     "as on the Payments Exceptions view.")
+    sources = dict.fromkeys(_text(period["source"]) for period in measure["periods"])
+    parts.append(f"Source: {', '.join(sources)}.")
+    return parts
+
+
 # Standalone measures: each period carries one payload key that only its
 # measure may use. measure -> (payload key, validate(period), render(measure, dealer_id)).
 _STANDALONE = {
@@ -936,4 +1154,7 @@ _STANDALONE = {
     "verification_outcome": ("verification", _validate_verification, _render_verification),
     "commission_variance": ("variance", _validate_variance, _render_variance),
     "data_coverage": ("coverage", _validate_coverage, _render_coverage),
+    "activation_exceptions": ("activation_exceptions", _validate_activation_exceptions,
+                              _render_activation_exceptions),
+    "payment_exceptions": ("payment_exceptions", _validate_payment_exceptions, _render_payment_exceptions),
 }

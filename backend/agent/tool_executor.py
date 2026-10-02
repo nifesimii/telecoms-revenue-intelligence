@@ -60,6 +60,10 @@ _STANDALONE_EVIDENCE = {
     "commission_variance": ("Commission variance by product", "backend.db.variance_evidence",
                             "commission_variance_evidence"),
     "data_coverage": ("Data coverage", "backend.db.data_coverage_evidence", "data_coverage_evidence"),
+    "activation_exceptions": ("Activation exceptions", "backend.db.exception_evidence",
+                              "activation_exceptions_evidence"),
+    "payment_exceptions": ("Payment exceptions", "backend.db.exception_evidence",
+                           "payment_exceptions_evidence"),
 }
 
 

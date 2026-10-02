@@ -61,6 +61,7 @@ from backend.db.payment_snapshot import (
     PaymentSourceUnavailable,
     apdp_payment_snapshot,
     load_payment_snapshot,
+    payment_collection,
     row_to_payment_record,
 )
 from backend.assurance.registry import ASSURANCE_REGISTRY, is_implemented
@@ -706,31 +707,15 @@ def _payment_collection(mon_period, search, payment_status, sort_by, sort_direct
     except Exception:
         logger.exception("Payment source unavailable")
         raise HTTPException(503, "Payment source unavailable. Retry later.") from None
-    records = summary.records
-    df = pd.DataFrame([r.model_dump() for r in records])
-    if df.empty:
-        df = pd.DataFrame(columns=list(PaymentSummaryRecord.model_fields))
-
+    statuses = None
     if payment_status:
         statuses = {s.strip().upper() for s in payment_status.split(",") if s.strip()}
         allowed = set(_STATUS_RANK)
         if not statuses or not statuses <= allowed:
             raise HTTPException(status_code=422, detail="Unsupported payment status")
-        df = df[df["payment_status"].isin(statuses)]
-    if search and search.strip():
-        q = search.strip().lower()
-        mask = (
-            df["dealer_id"].fillna("").astype(str).str.lower().str.contains(q, regex=False)
-            | df["dealer_name"].fillna("").astype(str).str.lower().str.contains(q, regex=False)
-        )
-        df = df[mask]
-
-    column = _PAYMENT_SORTS[sort_by]
-    df = df.sort_values(
-        [column, "dealer_id"],
-        ascending=[sort_direction == "asc", True],
-        na_position="last",
-    )
+    # Atlas payment_exceptions reads the same filter/order (db layer).
+    df = payment_collection(summary, statuses=statuses, search=search,
+                            sort_column=_PAYMENT_SORTS[sort_by], direction=sort_direction)
     return summary, df
 
 

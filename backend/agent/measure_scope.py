@@ -20,13 +20,14 @@ Measure = Literal[
     'inventory_recorded_purchases', 'financial_revenue', 'financial_net_profit',
     'financial_statements', 'financial_kpis', 'investigation_priority',
     'dealer_statement', 'verification_outcome', 'commission_variance', 'data_coverage',
+    'activation_exceptions', 'payment_exceptions',
 ]
 # Each answers from one dealer-month evidence read: alone, one dealer, one month.
 DEALER_MONTH_MEASURES = frozenset({'investigation_priority', 'dealer_statement', 'verification_outcome'})
 # Each compares one dealer across two months: alone, one dealer, two months.
 DEALER_COMPARISON_MEASURES = frozenset({'commission_variance'})
 # Each answers for one month, across all dealers or one: alone, one month.
-MONTH_MEASURES = frozenset({'data_coverage'})
+MONTH_MEASURES = frozenset({'data_coverage', 'activation_exceptions', 'payment_exceptions'})
 # Answered from their own evidence read and renderer, never combined with other measures.
 STANDALONE_MEASURES = DEALER_MONTH_MEASURES | DEALER_COMPARISON_MEASURES | MONTH_MEASURES
 
@@ -149,6 +150,11 @@ SCOPE_TOOL = {
         'missing invoice (IFS) records or a missing account profile class, select measures '
         "['data_coverage'] alone for one month, operation total, with dealer_id only when one "
         'dealer is asked about. '
+        'Which dealers have activation exceptions, or how many, select measures '
+        "['activation_exceptions'] alone; which dealers have payment exceptions (disputed, "
+        "partially paid or pending settlements), or how many, select ['payment_exceptions'] "
+        'alone. Each is for one month, operation total, with dealer_id only when one dealer '
+        'is asked about. '
         'For a particular ratio, select financial_kpis and its exact kpi_ids. '
         'For a particular statement or line, select financial_statements and exact statement_ids '
         'and/or line_ids. Empty financial selectors mean ALL KPIs or statements, and are '

@@ -200,11 +200,19 @@ backend/
 │   ├── variance_evidence.py  Projects get_month_on_month_variance into Atlas
 │   │                        commission_variance evidence (one dealer, two months);
 │   │                        change = later − earlier per product from the same rows.
+│   ├── exception_evidence.py  Atlas activation_exceptions / payment_exceptions
+│   │                        evidence (one month, all dealers or one), read from the
+│   │                        screens' own computations: activation_workspace.collection
+│   │                        (view=exceptions) and the /payments snapshot filtered by
+│   │                        payment_snapshot.payment_collection. ≤100 dealers listed;
+│   │                        counts and outstanding cover every matching dealer.
 │   ├── apdp.py              Reads APDP's partner_settlements view (PAYMENT_SOURCE=apdp).
 │   ├── payment_snapshot.py  load_payment_snapshot(period): source-aware settlement
 │   │                        snapshot + PaymentSummaryRecord/PaymentCoverageResponse
 │   │                        (re-exported by api/schemas). Shared by Payments,
 │   │                        Overview and Atlas; APDP outage → PaymentSourceUnavailable.
+│   │                        payment_collection(): the GET /payments status/search
+│   │                        filter and ordering, shared with Atlas payment_exceptions.
 │   └── audit_store.py       Persists + queries verification trails in the FBB audit DB.
 │
 ├── assurance/              ── INTELLIGENCE: the "flaggers" ──
@@ -262,7 +270,8 @@ backend/
 │   │                        queue via assurance/overview (one dealer, one month);
 │   │                        dealer_statement reads db/dealer_statement_evidence.
 │   │                        verification_outcome reads audit/verification_outcome;
-│   │                        commission_variance and data_coverage read their
+│   │                        commission_variance, data_coverage,
+│   │                        activation_exceptions and payment_exceptions read their
 │   │                        db/*_evidence modules. All are STANDALONE_MEASURES.
 │   ├── prompts.py          Builds the system prompt. Injects the tiered KB (see §5).
 │   └── dispute_responder.py  Pure-Python (no LLM) generator for a finance-ready

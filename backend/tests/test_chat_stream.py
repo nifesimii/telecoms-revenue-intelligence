@@ -393,3 +393,27 @@ def test_chat_stream_evidence_failure_withholds_provider_figures(monkeypatch):
     events = collect()
     assert events[-1]['type'] == 'error'
     assert not any(event['type'] in ('text', 'complete') for event in events)
+
+
+def test_chat_stream_activation_exceptions_question_streams_the_findings(monkeypatch):
+    from backend.tests.test_exception_measures import ACTIVATION_DEALER_ANSWER
+    provider(monkeypatch, Stream('Draft: no exceptions.', stop='tool_use', tool=scope_tool(
+        measures=['activation_exceptions'], periods=['202606'], dealer_id='296065')))
+    events = collect()
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert text == ACTIVATION_DEALER_ANSWER and 'Draft' not in text
+    assert events[-1]['type'] == 'complete'
+    assert events[-1]['tools_called'] == ['activation_exceptions']
+
+
+def test_chat_stream_payment_exceptions_question_streams_the_exceptions(monkeypatch):
+    from backend import config
+    from backend.tests.test_exception_measures import PAYMENT_DEALER_ANSWER
+    monkeypatch.setattr(config, 'PAYMENT_SOURCE', 'simulated')
+    provider(monkeypatch, Stream('Draft: all paid.', stop='tool_use', tool=scope_tool(
+        measures=['payment_exceptions'], periods=['202606'], dealer_id='296065')))
+    events = collect()
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert text == PAYMENT_DEALER_ANSWER and 'Draft' not in text
+    assert events[-1]['type'] == 'complete'
+    assert events[-1]['tools_called'] == ['payment_exceptions']
