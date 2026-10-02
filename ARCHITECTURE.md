@@ -226,7 +226,10 @@ backend/
 │   └── overview.py                overview_snapshot(): the one Overview computation
 │                                  (findings + ranked investigation queue) used by
 │                                  GET /assurance/overview and Atlas via
-│                                  investigation_priority_evidence().
+│                                  investigation_priority_evidence() (one dealer)
+│                                  and investigation_queue_evidence() (the month's
+│                                  queue, filtered by severity/modules, at most
+│                                  100 listed; full-queue ranks and totals).
 │
 ├── audit/                 ── INTELLIGENCE: the "prover" (audit trails) ──
 │   ├── trail.py            TrailStep + VerificationTrail dataclasses + JSON sanitiser.
@@ -271,6 +274,8 @@ backend/
 │   │                        (get_kb_section, dossier) call handlers directly.
 │   │                        The investigation_priority measure reads the Overview
 │   │                        queue via assurance/overview (one dealer, one month);
+│   │                        investigation_queue reads the same queue for all
+│   │                        dealers (one month; no dealer allowed).
 │   │                        dealer_statement reads db/dealer_statement_evidence.
 │   │                        verification_outcome reads audit/verification_outcome;
 │   │                        commission_variance, data_coverage,

@@ -464,3 +464,29 @@ def test_chat_stream_ambiguous_dealer_name_asks_and_reads_no_evidence(monkeypatc
     assert text.startswith('Several recorded dealers match “River Isle” for 202606')
     assert text.endswith('Which dealer do you mean? Give the dealer code.')
     assert events[-1]['tools_called'] == ['get_dealer_codes']
+
+
+def test_chat_stream_investigation_queue_question_streams_the_bounded_queue(monkeypatch):
+    from backend import config
+    from backend.tests.test_investigation_queue import HIGH_ANSWER_HEAD
+    monkeypatch.setattr(config, 'PAYMENT_SOURCE', 'simulated')
+    provider(monkeypatch, Stream('Draft: nobody to investigate.', stop='tool_use', tool=scope_tool(
+        measures=['investigation_queue'], periods=['202606'], dealer_id=None, queue_severity='HIGH')))
+    events = collect()
+    phases = [e for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
+    assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert text.startswith(HIGH_ANSWER_HEAD + '\n\n| Rank | Dealer |')
+    assert 'Showing 10 of 61 matching dealers.' in text and 'Draft' not in text
+    assert events[-1]['type'] == 'complete'
+    assert events[-1]['tools_called'] == ['investigation_queue']
+
+
+def test_chat_stream_investigation_queue_for_one_dealer_reads_no_evidence(monkeypatch):
+    provider(monkeypatch, Stream('Draft: rank 1.', stop='tool_use', tool=scope_tool(
+        measures=['investigation_queue'], periods=['202606'], dealer_id='296065')))
+    monkeypatch.setattr(agent.tool_executor, 'execute_measure_request',
+                        lambda request: pytest.fail('queue read for a single dealer'))
+    events = collect()
+    assert not any(event['type'] in ('text', 'complete') for event in events)
+    assert events[-1]['type'] == 'error'

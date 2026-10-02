@@ -5,7 +5,10 @@ from decimal import Decimal
 from html import escape
 import re
 
-from backend.assurance.overview import SEVERITY_ORDER, UNCHECKED_STATUSES as _UNCHECKED_STATUSES
+from backend.assurance.overview import (
+    QUEUE_DEFAULT_LIMIT, QUEUE_MAX_LIMIT, SEVERITY_ORDER, UNCHECKED_STATUSES as _UNCHECKED_STATUSES,
+)
+from backend.assurance.registry import ASSURANCE_REGISTRY
 from backend.audit.trail import CONCLUSIONS, CONFIDENCES, INSUFFICIENT_DATA as _INSUFFICIENT
 from backend.db.payment_snapshot import EXCEPTION_STATUSES
 
@@ -102,6 +105,8 @@ def _validate(request: dict, evidence: dict) -> None:
             for name, (payload, validate, _) in _STANDALONE.items():
                 if name == measure["measure"]:
                     validate(period)
+                    if name == "investigation_queue" and period["status"] == "available":
+                        _check_queue_request(request, period["queue"])
                 elif payload in period:
                     raise ValueError(f"{payload} evidence belongs to the {name} measure")
             for row in period["rows"]:
@@ -1146,6 +1151,155 @@ def _render_payment_exceptions(measure: dict, dealer_id: str | None) -> list[str
     return parts
 
 
+_QUEUE_MODULES = tuple(ASSURANCE_REGISTRY)
+
+
+def _validate_queue(period: dict) -> None:
+    """Queue evidence is the Overview queue filtered and bounded; reject malformed shapes."""
+    try:
+        _check_queue(period)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("Incomplete investigation queue evidence") from exc
+
+
+def _check_queue(period: dict) -> None:
+    body = period.get("queue")
+    if period["status"] == "unavailable":
+        if body is not None:
+            raise ValueError("Unavailable queue evidence cannot carry a queue")
+        return
+    if not isinstance(body, dict):
+        raise ValueError("Available queue evidence requires a queue")
+    severity, modules, limit = body["severity"], body["modules"], body["limit"]
+    if severity is not None and severity not in _PRIORITY_SEVERITIES:
+        raise ValueError("Unsupported queue severity filter")
+    if (not isinstance(modules, list) or len(set(modules)) != len(modules)
+            or any(module not in _QUEUE_MODULES for module in modules)):
+        raise ValueError("Queue module filter must be distinct assurance modules")
+    if not _is_count(limit) or not 1 <= limit <= QUEUE_MAX_LIMIT:
+        raise ValueError("Queue limit out of bounds")
+    size, count, dealers = body["queue_size"], body["match_count"], body["dealers"]
+    if (not _is_count(size) or not _is_count(count) or count > size or not isinstance(dealers, list)
+            or (not severity and not modules and count != size)):
+        raise ValueError("Queue counts are inconsistent")
+    if len(dealers) != min(count, limit) or period["truncated"] != (count > len(dealers)):
+        raise ValueError("A queue listing shows every match up to the limit")
+    if len(period["rows"]) != len(dealers):
+        raise ValueError("Queue rows must be one per listed dealer")
+    unchecked = body["unchecked_modules"]
+    if not isinstance(unchecked, list) or any(module not in _QUEUE_MODULES for module in unchecked):
+        raise ValueError("Unchecked modules must be assurance modules")
+    previous = 0
+    for dealer in dealers:
+        rank = dealer["rank"]
+        if not _is_count(rank) or not previous < rank <= size:
+            raise ValueError("Queue ranks must rise within the full queue")
+        previous = rank
+        if not isinstance(dealer["dealer_id"], str) or not isinstance(dealer["dealer_name"], str):
+            raise ValueError("Queue dealers require a code and name")
+        if dealer["severity"] not in _PRIORITY_SEVERITIES or (severity and dealer["severity"] != severity):
+            raise ValueError("Queue dealer severity does not match the filter")
+        listed = dealer["modules"]
+        if (not isinstance(listed, list) or not listed or any(m not in _QUEUE_MODULES for m in listed)
+                or not set(modules) <= set(listed) or dealer["lead_module"] not in listed
+                or not isinstance(dealer["lead_type"], str)):
+            raise ValueError("Queue dealer modules do not match the filter")
+        amount = dealer["amount_outstanding"]
+        if amount is not None and (not _is_amount(amount) or _cents(amount) < 0):
+            raise ValueError("Amount outstanding must be a nonnegative amount")
+    outstanding, paid = body["outstanding_ngn"], body["payment_dealer_count"]
+    if "payment" in unchecked:
+        if outstanding is not None or paid is not None:
+            raise ValueError("An unchecked payment module has no outstanding total")
+        return
+    if not _is_amount(outstanding) or _cents(outstanding) < 0 or not _is_count(paid) or paid > count:
+        raise ValueError("Queue outstanding total is inconsistent")
+    if len(dealers) == count:
+        amounts = [d["amount_outstanding"] for d in dealers if d["amount_outstanding"] is not None]
+        if paid != len(amounts) or sum(map(_cents, amounts)) != _cents(outstanding):
+            raise ValueError("Outstanding total is not the sum of the matching dealers")
+
+
+def _check_queue_request(request: dict, body: dict) -> None:
+    """The evidence must carry exactly the filters the scope asked for."""
+    limit = request.get("limit")
+    if (body["severity"] != request.get("queue_severity")
+            or body["modules"] != list(request.get("queue_modules") or [])
+            or body["limit"] != (QUEUE_DEFAULT_LIMIT if limit is None else limit)):
+        raise ValueError("Queue evidence filters do not match the request")
+
+
+def _module_list(modules: list) -> str:
+    names = [_text(module) for module in modules]
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+def _queue_filter(body: dict, plural: bool) -> str:
+    """The filter as a verb phrase, e.g. "match HIGH severity with findings in payment"."""
+    severity, modules = body["severity"], body["modules"]
+    findings = f"findings in {_module_list(modules)}" if modules else ""
+    if severity:
+        return (f"{'match' if plural else 'matches'} {_text(severity)} severity"
+                + (f" with {findings}" if findings else ""))
+    return f"{'have' if plural else 'has'} {findings}"
+
+
+def _render_queue(measure: dict, dealer_id: str | None) -> list[str]:
+    """The month's investigation queue in its own order; missing evidence is never an empty queue."""
+    parts = []
+    for period in measure["periods"]:
+        month, body = _text(period["period"]), period.get("queue")
+        if period["status"] == "unavailable":
+            note = _text(period.get("note") or "the investigation queue could not be read.")
+            parts.append(f"Investigation queue unavailable for {month}: {note}")
+            parts.append("Missing evidence is not an empty queue.")
+            continue
+        filtered = bool(body["severity"] or body["modules"])
+        size, count, dealers = body["queue_size"], body["match_count"], body["dealers"]
+        if not count:
+            if filtered:
+                parts.append(f"No dealers in the {month} investigation queue {_queue_filter(body, True)} "
+                             f"(queue of {_plural(size, 'dealer')}).")
+            else:
+                parts.append(f"No dealers are in the {month} investigation queue.")
+        else:
+            matched = _plural(count, "dealer") + (f" {_queue_filter(body, count != 1)}" if filtered else "")
+            context = f" (of {size:,} in the queue)" if filtered else ""
+            showing = (f"showing the top {len(dealers):,}" if count > len(dealers)
+                       else "showing it" if count == 1 else f"showing all {count:,}")
+            parts.append(f"Investigation queue for {month}: {matched}{context}; {showing}.")
+            payment_unchecked = "payment" in body["unchecked_modules"]
+            lines = ["| Rank | Dealer | Severity | Lead finding | Modules | Amount outstanding |",
+                     "| --- | --- | --- | --- | --- | --- |"]
+            for d in dealers:
+                amount = d["amount_outstanding"]
+                shown = ("Unavailable" if payment_unchecked else "No payment record" if amount is None
+                         else _number(amount, "ngn"))
+                lines.append(f"| {d['rank']:,} | {_text(d['dealer_name'])} ({_text(d['dealer_id'])}) | "
+                             f"{_text(d['severity'])} | {_text(d['lead_module'].capitalize())} · "
+                             f"{_text(d['lead_type'])} | "
+                             f"{', '.join(_text(m.capitalize()) for m in d['modules'])} | {shown} |")
+            parts.append("\n".join(lines))
+            if count > len(dealers):
+                parts.append(f"Showing {len(dealers):,} of {count:,} matching dealers.")
+            if payment_unchecked:
+                parts.append("Amount outstanding unavailable: the payment module could not be checked.")
+            else:
+                kind = "matching dealer" if filtered else "dealer in the queue"
+                whom = f"the 1 {kind}" if count == 1 else (
+                    f"all {count:,} {'matching dealers' if filtered else 'dealers in the queue'}")
+                parts.append(f"Amount outstanding across {whom}: {_number(body['outstanding_ngn'], 'ngn')} "
+                             f"(counting only the {_plural(body['payment_dealer_count'], 'dealer')} "
+                             "with a payment record).")
+            parts.append("Queue order: severity, then amount outstanding (largest first).")
+        if body["unchecked_modules"]:
+            parts.append(f"Not checked: {', '.join(map(_text, body['unchecked_modules']))}; "
+                         "the queue may be incomplete.")
+    sources = dict.fromkeys(_text(period["source"]) for period in measure["periods"])
+    parts.append(f"Source: {', '.join(sources)}.")
+    return parts
+
+
 # Standalone measures: each period carries one payload key that only its
 # measure may use. measure -> (payload key, validate(period), render(measure, dealer_id)).
 _STANDALONE = {
@@ -1157,4 +1311,5 @@ _STANDALONE = {
     "activation_exceptions": ("activation_exceptions", _validate_activation_exceptions,
                               _render_activation_exceptions),
     "payment_exceptions": ("payment_exceptions", _validate_payment_exceptions, _render_payment_exceptions),
+    "investigation_queue": ("queue", _validate_queue, _render_queue),
 }

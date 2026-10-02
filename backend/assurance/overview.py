@@ -3,13 +3,15 @@
 No SQL or new business rules: findings come from the registered services;
 payment findings use the same source-aware settlement snapshot as Payments.
 ``overview_snapshot`` is the one entry point shared by ``GET /assurance/overview``
-and Atlas (``investigation_priority_evidence``), so both see the same queue.
+and Atlas (``investigation_priority_evidence`` for one dealer,
+``investigation_queue_evidence`` for the month), so all see the same queue.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
 from datetime import datetime, timezone
+from decimal import Decimal
 
 from backend.assurance.registry import ASSURANCE_REGISTRY, is_implemented
 from backend.assurance.payment_assurance import classify_payment_status
@@ -136,16 +138,41 @@ def rank_dealers(findings, payment):
         -(r["amount_outstanding"] or 0), r["dealer_id"]))
 
 
-def _unavailable(period, note):
+def _unavailable(period, note, payload="priority"):
     return {"period": period, "status": "unavailable",
             "source": INVESTIGATION_QUEUE_SOURCE, "tool": INVESTIGATION_QUEUE_TOOL,
             "total": None, "truncated": False, "total_rows": 0, "note": note,
-            "rows": [], "priority": None}
+            "rows": [], payload: None}
 
 
 def _finding_summary(finding):
     return {"module": finding["module"], "severity": finding["severity"],
             "type": finding["type"], "description": finding["description"]}
+
+
+def _read_queue(period):
+    """The full unfiltered queue, or the note that makes it unavailable.
+
+    Returns ``(note, queue, statuses, unchecked)``; ``note`` is ``None`` when
+    the queue can be read. An unknown month, an overview failure or no checked
+    module is missing evidence, never an empty queue.
+    """
+    try:
+        summary, queue, _ = asyncio.run(overview_snapshot(period))
+    except UnknownOverviewPeriod:
+        return (f"The investigation queue is unavailable for {period}: "
+                "no data is recorded for this month."), None, None, None
+    except Exception:
+        logger.exception("Investigation queue unavailable: %s", period)
+        return (f"The investigation queue is unavailable for {period}: "
+                "the overview could not be computed."), None, None, None
+    statuses = {m["module"]: m["status"] for m in summary["modules"]}
+    unchecked = [name for name, status in statuses.items() if status in UNCHECKED_STATUSES]
+    if len(unchecked) == len(statuses):
+        # No module ran, so an empty queue is missing evidence, not a clear result.
+        return (f"The investigation queue is unavailable for {period}: "
+                "no assurance module could be checked."), None, None, None
+    return None, queue, statuses, unchecked
 
 
 def investigation_priority_evidence(period: str, dealer_id: str | None) -> dict:
@@ -158,22 +185,9 @@ def investigation_priority_evidence(period: str, dealer_id: str | None) -> dict:
     """
     if dealer_id is None:
         return _unavailable(period, "Investigation priority needs a dealer account; select or name one.")
-    try:
-        summary, queue, _ = asyncio.run(overview_snapshot(period))
-    except UnknownOverviewPeriod:
-        return _unavailable(period, f"The investigation queue is unavailable for {period}: "
-                                    "no data is recorded for this month.")
-    except Exception:
-        logger.exception("Investigation queue unavailable: %s", period)
-        return _unavailable(period, f"The investigation queue is unavailable for {period}: "
-                                    "the overview could not be computed.")
-
-    statuses = {m["module"]: m["status"] for m in summary["modules"]}
-    unchecked = [name for name, status in statuses.items() if status in UNCHECKED_STATUSES]
-    if len(unchecked) == len(statuses):
-        # No module ran, so an empty queue is missing evidence, not a clear result.
-        return _unavailable(period, f"The investigation queue is unavailable for {period}: "
-                                    "no assurance module could be checked.")
+    note, queue, statuses, unchecked = _read_queue(period)
+    if note:
+        return _unavailable(period, note)
     code = str(dealer_id)
     rank, entry = next(((i, r) for i, r in enumerate(queue, 1) if r["dealer_id"] == code),
                        (None, None))
@@ -207,5 +221,59 @@ def investigation_priority_evidence(period: str, dealer_id: str | None) -> dict:
             "unchecked_modules": unchecked,
             "payment_status": entry["payment_status"] if entry else None,
             "amount_outstanding": entry["amount_outstanding"] if entry else None,
+        },
+    }
+
+
+QUEUE_DEFAULT_LIMIT = 10
+QUEUE_MAX_LIMIT = 100
+
+
+def investigation_queue_evidence(period: str, dealer_id: str | None = None, *, severity: str | None = None,
+                                 modules=(), limit: int = QUEUE_DEFAULT_LIMIT) -> dict:
+    """The month's whole investigation queue, filtered and bounded for Atlas.
+
+    The queue is the same full, unfiltered ranking ``investigation_priority``
+    and the Overview screen read. ``severity`` keeps dealers whose overall
+    severity matches; ``modules`` keeps dealers with findings in every listed
+    module. Filters never re-rank: each listed dealer keeps its full-queue rank.
+    At most ``limit`` dealers are listed; counts and the outstanding total cover
+    every matching dealer (only dealers with a payment record have an amount).
+    """
+    if dealer_id is not None:
+        raise ValueError("The investigation queue covers all dealers; use investigation_priority for one")
+    modules = list(modules)
+    if not 1 <= limit <= QUEUE_MAX_LIMIT:
+        raise ValueError("Queue limit must be between 1 and 100")
+    note, queue, _, unchecked = _read_queue(period)
+    if note:
+        return _unavailable(period, note, "queue")
+    matching = [(rank, entry) for rank, entry in enumerate(queue, 1)
+                if (severity is None or entry["severity"] == severity)
+                and set(modules) <= set(entry["modules"])]
+    payment_checked = "payment" not in unchecked
+    with_payment = [entry["amount_outstanding"] for _, entry in matching
+                    if entry["amount_outstanding"] is not None]
+    dealers = [{"rank": rank, "dealer_id": entry["dealer_id"], "dealer_name": entry["dealer_name"],
+                "severity": entry["severity"], "lead_module": entry["lead_finding"]["module"],
+                "lead_type": entry["lead_finding"]["type"], "modules": list(entry["modules"]),
+                "amount_outstanding": entry["amount_outstanding"]}
+               for rank, entry in matching[:limit]]
+    rows = [{"dealer_id": d["dealer_id"], "dealer_name": d["dealer_name"], "dimension": f"Rank {d['rank']}",
+             "value": f"{d['severity']}: {d['lead_module'].capitalize()} · {d['lead_type']}"}
+            for d in dealers]
+    outstanding = sum((Decimal(str(value)) for value in with_payment), Decimal("0"))
+    return {
+        "period": period, "status": "available",
+        "source": INVESTIGATION_QUEUE_SOURCE, "tool": INVESTIGATION_QUEUE_TOOL,
+        "total": None, "note": "", "truncated": len(matching) > len(dealers),
+        "total_rows": len(rows), "rows": rows,
+        "queue": {
+            "severity": severity, "modules": modules, "limit": limit,
+            "queue_size": len(queue), "match_count": len(matching),
+            # Dealers without a payment record add nothing; an unchecked payment module has no total.
+            "outstanding_ngn": float(outstanding.quantize(Decimal("0.01"))) if payment_checked else None,
+            "payment_dealer_count": len(with_payment) if payment_checked else None,
+            "unchecked_modules": unchecked, "dealers": dealers,
         },
     }

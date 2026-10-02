@@ -20,14 +20,17 @@ Measure = Literal[
     'inventory_recorded_purchases', 'financial_revenue', 'financial_net_profit',
     'financial_statements', 'financial_kpis', 'investigation_priority',
     'dealer_statement', 'verification_outcome', 'commission_variance', 'data_coverage',
-    'activation_exceptions', 'payment_exceptions',
+    'activation_exceptions', 'payment_exceptions', 'investigation_queue',
 ]
 # Each answers from one dealer-month evidence read: alone, one dealer, one month.
 DEALER_MONTH_MEASURES = frozenset({'investigation_priority', 'dealer_statement', 'verification_outcome'})
 # Each compares one dealer across two months: alone, one dealer, two months.
 DEALER_COMPARISON_MEASURES = frozenset({'commission_variance'})
 # Each answers for one month, across all dealers or one: alone, one month.
-MONTH_MEASURES = frozenset({'data_coverage', 'activation_exceptions', 'payment_exceptions'})
+MONTH_MEASURES = frozenset({'data_coverage', 'activation_exceptions', 'payment_exceptions',
+                            'investigation_queue'})
+# Month measures over every dealer at once; a dealer is never part of their scope.
+ALL_DEALER_MEASURES = frozenset({'investigation_queue'})
 # Answered from their own evidence read and renderer, never combined with other measures.
 STANDALONE_MEASURES = DEALER_MONTH_MEASURES | DEALER_COMPARISON_MEASURES | MONTH_MEASURES
 
@@ -57,6 +60,11 @@ class MeasureScope(BaseModel):
         'operating_cash_flow', 'capital_expenditure', 'investing_cash_flow', 'new_borrowing',
         'principal_paid', 'financing_cash_flow', 'opening_cash', 'net_cash_change', 'closing_cash',
     ]] = Field(default_factory=list, max_length=40)
+    # Investigation queue filters; valid only with investigation_queue (limit default 10).
+    queue_severity: Literal['HIGH', 'MEDIUM', 'LOW'] | None = None
+    queue_modules: list[Literal['commission', 'activation', 'inventory', 'payment']] = Field(
+        default_factory=list, max_length=4)
+    limit: int | None = Field(default=None, ge=1, le=100)
     clarification: Literal['sales_meaning', 'measure', 'period', 'dealer', 'request'] | None = None
     knowledge_quote: str | None = Field(default=None, min_length=1, max_length=1600)
 
@@ -75,6 +83,11 @@ class MeasureScope(BaseModel):
                 self.dealer_id is not None or not self.dealer_name.strip()):
             raise ValueError('A measure dealer is a code or a recorded name, not both')
         dealer = self.dealer_id or self.dealer_name
+        if (self.queue_severity or self.queue_modules or self.limit is not None) and (
+                self.measures != ['investigation_queue']):
+            raise ValueError('Queue filters and limit require an investigation_queue request')
+        if len(set(self.queue_modules)) != len(self.queue_modules):
+            raise ValueError('Duplicate queue modules')
         if self.kpi_ids and 'financial_kpis' not in self.measures:
             raise ValueError('KPI selectors require a financial KPI request')
         if (self.statement_ids or self.line_ids) and 'financial_statements' not in self.measures:
@@ -98,6 +111,8 @@ class MeasureScope(BaseModel):
                     len(self.measures) != 1 or len(self.periods) != 1
                     or self.operation != 'total' or self.filter != 'all'):
                 raise ValueError('Month measures stand alone for one month')
+            if ALL_DEALER_MEASURES.intersection(self.measures) and dealer:
+                raise ValueError('The investigation queue covers all dealers; one dealer is investigation_priority')
         elif self.kind == 'clarification':
             if not self.clarification or self.measures or self.knowledge_quote:
                 raise ValueError('A clarification cannot authorize evidence or quote policy')
@@ -135,10 +150,17 @@ SCOPE_TOOL = {
         'Inventory comparison can request inventory_gap and inventory_recorded_purchases; '
         'these are not total dealer purchases. financial_* metrics are whole-business Financial '
         'Health statements, including non-MTN activity; use them only for statement terms. '
-        'Questions such as whether a dealer is a (high) priority, whether to investigate a dealer, '
-        'or where it sits in the investigation queue, including priority "on commission", select '
+        'Questions about ONE dealer, such as whether it is a (high) priority, whether to investigate '
+        'it, or where it sits in the investigation queue, including priority "on commission", select '
         "measures ['investigation_priority'] alone for the reporting month and the active dealer, "
         'one period, operation total. If no dealer is active or named, clarify dealer. '
+        'Month-wide queue questions across all dealers, such as the top or HIGH-priority dealers '
+        'this month, which dealers have both payment and inventory findings, who to investigate '
+        "first, or which dealers' assurance health is worst (not Financial Health statements), "
+        "select measures ['investigation_queue'] alone for one month, operation total, with no "
+        'dealer_id or dealer_name, even when a dealer is active; it never answers for one dealer. Set queue_severity only when '
+        'a severity is asked for, queue_modules only for modules the dealer must have findings in '
+        '(all listed), and limit only when a number of dealers is asked for (default 10, max 100). '
         "A dealer's statement, or what MTN owes a dealer together with what has been paid and "
         "what is outstanding in one answer, selects measures ['dealer_statement'] alone for the "
         'reporting month and the active dealer, one period, operation total; a single payment '

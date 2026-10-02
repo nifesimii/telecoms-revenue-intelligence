@@ -48,7 +48,7 @@ _INTERNAL_QUERY_NAMES = {"get_subscription_demo_records"}
 
 
 # measure -> (label, module, reader). Readers return one period-evidence dict:
-# reader(period, dealer_id) per requested month, or for a dealer comparison
+# reader(period, dealer_id, **_reader_options) per requested month, or for a dealer comparison
 # reader(earlier, later, dealer_id) once, keyed on the later month.
 _STANDALONE_EVIDENCE = {
     "investigation_priority": ("Investigation priority", "backend.assurance.overview",
@@ -64,7 +64,20 @@ _STANDALONE_EVIDENCE = {
                               "activation_exceptions_evidence"),
     "payment_exceptions": ("Payment exceptions", "backend.db.exception_evidence",
                            "payment_exceptions_evidence"),
+    "investigation_queue": ("Investigation queue", "backend.assurance.overview",
+                            "investigation_queue_evidence"),
 }
+
+
+def _reader_options(measure: str, request: dict[str, Any]) -> dict[str, Any]:
+    """Validated scope filters a reader takes besides month and dealer."""
+    if measure != "investigation_queue":
+        return {}
+    options = {"severity": request.get("queue_severity"),
+               "modules": list(request.get("queue_modules") or [])}
+    if request.get("limit") is not None:
+        options["limit"] = request["limit"]
+    return options
 
 
 def execute_measure_request(request: dict[str, Any]) -> dict[str, Any]:
@@ -83,7 +96,8 @@ def execute_measure_request(request: dict[str, Any]) -> dict[str, Any]:
     if measure in DEALER_COMPARISON_MEASURES:
         evidence = [read(*sorted(periods), dealer_id)]
     else:
-        evidence = [read(period, dealer_id) for period in periods]
+        options = _reader_options(measure, request)
+        evidence = [read(period, dealer_id, **options) for period in periods]
     return {"requested_periods": periods, "dealer_id": dealer_id, "explanations": [], "measures": [{
         "measure": measure, "label": label, "unit": "text", "aggregation": "none", "note": "",
         "periods": evidence,
