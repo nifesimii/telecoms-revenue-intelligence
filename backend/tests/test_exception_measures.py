@@ -227,3 +227,23 @@ def test_executor_routes_to_the_exception_reader(measure, tool):
     [entry] = evidence["measures"]
     assert entry["measure"] == measure and entry["unit"] == "text"
     assert [p["tool"] for p in entry["periods"]] == [tool]
+
+
+@pytest.mark.parametrize("measure, reader, headline", [
+    ("activation_exceptions", activation_exceptions_evidence,
+     "No activation exceptions for 202606 under the existing exception rules. "
+     "This does not certify every record as correct."),
+    ("payment_exceptions", payment_exceptions_evidence,
+     "No payment exceptions for 202606: no settlement record is disputed, partially paid or pending."),
+])
+def test_month_without_exceptions_never_names_a_dealer(measure, reader, headline):
+    evidence = copy.deepcopy(reader("202606", None))
+    body = evidence[measure]
+    body.update(dealer_count=0, dealers=[])
+    for key, empty in (("finding_count", 0), ("by_finding", []), ("status_counts", []), ("outstanding_ngn", 0.0)):
+        if key in body:
+            body[key] = empty
+    evidence.update(rows=[], total_rows=0, truncated=False)
+    text = render_measure_response(request(measure), envelope(measure, evidence))
+    assert text.split("\n\n")[0] == headline
+    assert "None" not in text and "Dealer" not in text.split("\n\n")[0]

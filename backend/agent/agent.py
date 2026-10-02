@@ -181,7 +181,7 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
                                 'tool': MEASURE_STATUS_TOOL, 'tools_called': tools_called, 'raw_data': raw_data})
                     await emit({'type': 'text', 'text': resolution.text})
                 return {'response': resolution.text, 'tools_called': tools_called, 'raw_data': raw_data}
-            request.update(dealer_id=resolution.dealer_id, dealer_name=None)
+            request = {**request, 'dealer_id': resolution.dealer_id, 'dealer_name': None}
         evidence = await asyncio.to_thread(tool_executor.execute_measure_request, request)
         run.remaining()
         answer = render_measure_response(request, evidence)

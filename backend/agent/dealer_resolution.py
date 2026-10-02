@@ -16,7 +16,9 @@ from backend.agent.measure_response import _text
 
 MAX_CANDIDATES = 5
 
-Status = Literal['matched', 'none', 'ambiguous', 'unavailable']
+Status = Literal['matched', 'none', 'ambiguous', 'unavailable', 'invalid']
+# The recorded name/code lookup searches a contiguous span of at most this many months.
+MAX_LOOKUP_MONTHS = 24
 
 
 @dataclass(frozen=True)
@@ -46,9 +48,15 @@ def _candidate(row: dict) -> tuple[str, str]:
 def resolve_dealer_name(request: dict, lookup: Callable[[dict], dict] | None = None) -> DealerResolution:
     """Resolve request['dealer_name'] for request['periods']; never picks among several dealers."""
     lookup = lookup or tool_executor.execute_dealer_lookup
-    name = ' '.join(request['dealer_name'].split())
+    written = request['dealer_name'].strip()
+    name = ' '.join(written.split())
     periods = list(request.get('periods') or [])
-    quoted = f'“{_text(name)}”'
+    quoted = f'“{_text(written)}”'
+    if len(_span(periods)) > MAX_LOOKUP_MONTHS:
+        first, last = min(periods), max(periods)
+        return DealerResolution('invalid', (
+            f'Dealer names can be searched across at most {MAX_LOOKUP_MONTHS} months; {_text(first)} and '
+            f'{_text(last)} are further apart. Give the dealer code to continue.'))
     try:
         evidence = None
         for match in ('exact', 'contains'):
@@ -61,6 +69,12 @@ def resolve_dealer_name(request: dict, lookup: Callable[[dict], dict] | None = N
             f'{_months(periods)} could not be read; give the dealer code to continue.'))
     rows = evidence['rows']
     total = evidence.get('total_codes', len(rows))
+    coverage = evidence.get('coverage_by_source')
+    if not rows and coverage is not None and not any(coverage.values()):
+        # No source holds records for these months: the name could not be checked.
+        return DealerResolution('unavailable', (
+            f'The dealer name {quoted} could not be resolved because no dealer records are available for '
+            f'{_months(periods)}; give the dealer code to continue.'), lookup=evidence)
     if not rows:
         return DealerResolution('none', (
             f'No dealer named {quoted} is recorded for {_months(periods)}; '

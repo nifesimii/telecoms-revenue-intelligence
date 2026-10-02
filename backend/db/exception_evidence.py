@@ -6,7 +6,7 @@ re-derived, re-classified or recalculated here. Read-only.
   * **activation_exceptions** — the Activation workspace Exceptions view:
     :func:`backend.db.activation_workspace.collection` with view
     ``exceptions``, ordered by highest finding severity, then dealer code
-    (the view's default order). Finding types, labels and severities are the
+    (the screen's ``severity`` sort; its default sort is activation count). Finding types, labels and severities are the
     workspace's own.
   * **payment_exceptions** — the Payments Exceptions view: the source-aware
     :func:`backend.db.payment_snapshot.load_payment_snapshot` filtered and

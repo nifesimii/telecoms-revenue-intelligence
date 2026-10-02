@@ -1072,7 +1072,8 @@ def _render_activation_exceptions(measure: dict, dealer_id: str | None) -> list[
             parts.append(f"Dealer {_text(dealer_id)} has no recorded activations in {month}; check the dealer code.")
             continue
         if not body["dealer_count"]:
-            parts.append(f"Dealer {_text(dealer_id)} has no activation exception for {month} under the existing "
+            subject = f"Dealer {_text(dealer_id)} has no activation exception" if dealer_id else "No activation exceptions"
+            parts.append(f"{subject} for {month} under the existing "
                          "exception rules. This does not certify every record as correct.")
             continue
         if dealer_id:
@@ -1114,8 +1115,12 @@ def _render_payment_exceptions(measure: dict, dealer_id: str | None) -> list[str
             parts.append(f"Dealer {_text(dealer_id)} has no payment record for {month}; check the dealer code.")
             continue
         if not body["dealer_count"]:
-            parts.append(f"Dealer {_text(dealer_id)} has no payment exception for {month}; "
-                         f"the recorded payment status is {_text(body['dealer_status'])}.")
+            if dealer_id:
+                parts.append(f"Dealer {_text(dealer_id)} has no payment exception for {month}; "
+                             f"the recorded payment status is {_text(body['dealer_status'])}.")
+            else:
+                parts.append(f"No payment exceptions for {month}: no settlement record is disputed, "
+                             "partially paid or pending.")
             continue
         outstanding = _number(body["outstanding_ngn"], "ngn")
         if dealer_id:
