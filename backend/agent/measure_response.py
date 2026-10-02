@@ -96,10 +96,11 @@ def _validate(request: dict, evidence: dict) -> None:
             seen.add(key)
             if period["status"] not in {"available", "unavailable"}:
                 raise ValueError("Unsupported evidence status")
-            if measure["measure"] == "investigation_priority":
-                _validate_priority(period)
-            elif "priority" in period:
-                raise ValueError("Priority evidence belongs to the investigation priority measure")
+            for name, (payload, validate, _) in _DEALER_MONTH.items():
+                if name == measure["measure"]:
+                    validate(period)
+                elif payload in period:
+                    raise ValueError(f"{payload} evidence belongs to the {name} measure")
             for row in period["rows"]:
                 if dealer is not None and row.get("dealer_id") != dealer:
                     raise ValueError("Evidence row belongs to a different dealer")
@@ -139,8 +140,8 @@ def render_measure_response(request: dict, evidence: dict) -> str:
     _validate(request, evidence)
     parts = []
     for measure in evidence["measures"]:
-        if measure["measure"] == "investigation_priority":
-            parts.extend(_render_priority(measure, evidence.get("dealer_id")))
+        if measure["measure"] in _DEALER_MONTH:
+            parts.extend(_DEALER_MONTH[measure["measure"]][2](measure, evidence.get("dealer_id")))
             continue
         periods = measure["periods"]
         is_text = measure["unit"] == "text"
@@ -306,3 +307,8 @@ def render_dealer_codes(evidence: dict) -> str:
     if evidence.get('association_note'):
         parts.append(_text(evidence['association_note']))
     return '\n\n'.join(parts)
+
+
+# Dealer-month measures: each period carries one payload key that only its
+# measure may use. measure -> (payload key, validate(period), render(measure, dealer_id)).
+_DEALER_MONTH = {"investigation_priority": ("priority", _validate_priority, _render_priority)}

@@ -20,6 +20,8 @@ Measure = Literal[
     'inventory_recorded_purchases', 'financial_revenue', 'financial_net_profit',
     'financial_statements', 'financial_kpis', 'investigation_priority',
 ]
+# Each answers from one dealer-month evidence read: alone, one dealer, one month.
+DEALER_MONTH_MEASURES = frozenset({'investigation_priority'})
 
 
 class MeasureScope(BaseModel):
@@ -71,11 +73,10 @@ class MeasureScope(BaseModel):
                 raise ValueError('A measure request requires measures and periods only')
             if self.operation in {'compare', 'explain'} and len(self.periods) > 2:
                 raise ValueError('Comparisons support at most two explicit months')
-            # Each answer runs one full Overview computation: one dealer, one month.
-            if 'investigation_priority' in self.measures and (
-                    self.measures != ['investigation_priority'] or len(self.periods) != 1
+            if DEALER_MONTH_MEASURES.intersection(self.measures) and (
+                    len(self.measures) != 1 or len(self.periods) != 1
                     or not self.dealer_id or self.operation != 'total' or self.filter != 'all'):
-                raise ValueError('Investigation priority stands alone for one dealer and one month')
+                raise ValueError('Dealer-month measures stand alone for one dealer and one month')
         elif self.kind == 'clarification':
             if not self.clarification or self.measures or self.knowledge_quote:
                 raise ValueError('A clarification cannot authorize evidence or quote policy')

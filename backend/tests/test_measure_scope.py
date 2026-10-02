@@ -277,3 +277,14 @@ def test_priority_scope_validates_alone_and_leaves_other_combos_intact():
     other = agent.MeasureScope.model_validate({'kind': 'measure', 'periods': ['202605', '202606'],
         'measures': ['zero_commission_count', 'activation_commission'], 'operation': 'compare'})
     assert other.dealer_id is None
+
+
+def test_dealer_month_measures_are_registered_at_every_seam():
+    from typing import get_args
+    from backend.agent import measure_response, tool_executor
+    from backend.agent.measure_scope import DEALER_MONTH_MEASURES, Measure
+    assert DEALER_MONTH_MEASURES <= set(get_args(Measure))
+    assert set(tool_executor._DEALER_MONTH_EVIDENCE) == DEALER_MONTH_MEASURES
+    assert set(measure_response._DEALER_MONTH) == DEALER_MONTH_MEASURES
+    payloads = [payload for payload, _, _ in measure_response._DEALER_MONTH.values()]
+    assert len(payloads) == len(set(payloads))

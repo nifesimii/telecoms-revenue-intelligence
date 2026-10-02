@@ -19,6 +19,7 @@ the agent loop forwards them to Claude so it can recover or apologise.
 from __future__ import annotations
 
 import json
+import importlib
 from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -45,21 +46,29 @@ _TOOL_ROW_CAP = 500
 _INTERNAL_QUERY_NAMES = {"get_subscription_demo_records"}
 
 
+# measure -> (label, module, reader(period, dealer_id) -> one period-evidence dict).
+_DEALER_MONTH_EVIDENCE = {
+    "investigation_priority": ("Investigation priority", "backend.assurance.overview",
+                               "investigation_priority_evidence"),
+}
+
+
 def execute_measure_request(request: dict[str, Any]) -> dict[str, Any]:
     """Route a validated measure request without exposing unrelated query fields."""
     from backend.db.measure_evidence import collect_measure_evidence
 
-    if request.get("measures") != ["investigation_priority"]:
+    measures = request.get("measures") or []
+    if len(measures) != 1 or measures[0] not in _DEALER_MONTH_EVIDENCE:
         return collect_measure_evidence(request)
-    # The Overview investigation queue is assurance-layer evidence; reuse its
-    # computation unchanged rather than re-deriving priority here.
-    from backend.assurance import overview
-
+    # Dealer-month evidence reuses an existing computation unchanged; the
+    # reader is resolved at call time so its layer loads only when asked.
+    measure = measures[0]
+    label, module, reader = _DEALER_MONTH_EVIDENCE[measure]
+    read = getattr(importlib.import_module(module), reader)
     periods, dealer_id = list(request["periods"]), request.get("dealer_id")
     return {"requested_periods": periods, "dealer_id": dealer_id, "explanations": [], "measures": [{
-        "measure": "investigation_priority", "label": "Investigation priority",
-        "unit": "text", "aggregation": "none", "note": "",
-        "periods": [overview.investigation_priority_evidence(period, dealer_id) for period in periods],
+        "measure": measure, "label": label, "unit": "text", "aggregation": "none", "note": "",
+        "periods": [read(period, dealer_id) for period in periods],
     }]}
 
 
