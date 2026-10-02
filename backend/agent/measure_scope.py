@@ -19,9 +19,10 @@ Measure = Literal[
     'retail_sales_value', 'dealer_purchases', 'inventory_gap',
     'inventory_recorded_purchases', 'financial_revenue', 'financial_net_profit',
     'financial_statements', 'financial_kpis', 'investigation_priority',
+    'dealer_statement',
 ]
 # Each answers from one dealer-month evidence read: alone, one dealer, one month.
-DEALER_MONTH_MEASURES = frozenset({'investigation_priority'})
+DEALER_MONTH_MEASURES = frozenset({'investigation_priority', 'dealer_statement'})
 
 
 class MeasureScope(BaseModel):
@@ -118,6 +119,10 @@ SCOPE_TOOL = {
         'or where it sits in the investigation queue, including priority "on commission", select '
         "measures ['investigation_priority'] alone for the reporting month and the active dealer, "
         'one period, operation total. If no dealer is active or named, clarify dealer. '
+        "A dealer's statement, or what MTN owes a dealer together with what has been paid and "
+        "what is outstanding in one answer, selects measures ['dealer_statement'] alone for the "
+        'reporting month and the active dealer, one period, operation total; a single payment '
+        'figure asked on its own keeps its payment_* measure. If no dealer is active or named, clarify dealer. '
         'For a particular ratio, select financial_kpis and its exact kpi_ids. '
         'For a particular statement or line, select financial_statements and exact statement_ids '
         'and/or line_ids. Empty financial selectors mean ALL KPIs or statements, and are '

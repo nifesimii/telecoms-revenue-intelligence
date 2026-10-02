@@ -281,6 +281,137 @@ def _render_priority(measure: dict, dealer_id: str | None) -> list[str]:
     return parts
 
 
+_STATEMENT_POSITIONS = {"PAID_IN_FULL": "paid in full", "UNDERPAID": "underpaid", "OVERPAID": "overpaid"}
+
+
+def _is_amount(value: object) -> bool:
+    return (isinstance(value, (int, float, Decimal)) and not isinstance(value, bool)
+            and Decimal(str(value)).is_finite())
+
+
+def _validate_statement(period: dict) -> None:
+    """Statement evidence is projected from the dealer statement composer; reject malformed shapes."""
+    try:
+        _check_statement(period)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("Incomplete dealer statement evidence") from exc
+
+
+def _check_statement(period: dict) -> None:
+    statement = period.get("statement")
+    if period["status"] == "unavailable":
+        if statement is not None:
+            raise ValueError("Unavailable statement evidence cannot carry a statement")
+        return
+    if not isinstance(statement, dict) or not isinstance(statement.get("found"), bool):
+        raise ValueError("Available statement evidence requires a statement")
+    if not statement["found"]:
+        if period["rows"]:
+            raise ValueError("A dealer without activity has no statement lines")
+        return
+    if not isinstance(statement["dealer_name"], str):
+        raise ValueError("Statement dealer name must be text")
+    commission, position, payment = statement["commission"], statement["position"], statement["payment"]
+    counts = [commission[key] for key in ("total_activations", "qualified_activation_count", "zero_commission_count")]
+    if not all(_is_count(count) for count in counts) or max(counts[1:]) > counts[0]:
+        raise ValueError("Statement activation counts are inconsistent")
+    by_denomination = commission["by_denomination"]
+    if not isinstance(by_denomination, dict) or any(
+            not isinstance(key, str) or not _is_amount(value) for key, value in by_denomination.items()):
+        raise ValueError("Statement commission lines must be amounts")
+    amounts = [commission["expected_ngn"], payment["amount_paid_ngn"],
+               *(position[key] for key in ("expected_ngn", "paid_ngn", "outstanding_ngn"))]
+    if not all(_is_amount(value) for value in amounts):
+        raise ValueError("Statement amounts must be finite numbers")
+    if commission["expected_ngn"] != position["expected_ngn"]:
+        raise ValueError("Statement amount owed is inconsistent")
+    if position["variance_pct"] is not None and not _is_amount(position["variance_pct"]):
+        raise ValueError("Statement variance must be a number")
+    if position["headline"] not in _STATEMENT_POSITIONS:
+        raise ValueError("Unsupported statement position")
+    if not isinstance(payment["payment_found"], bool) or not isinstance(payment["source"], str):
+        raise ValueError("Statement payment evidence is incomplete")
+    if payment["payment_status"] is not None and not isinstance(payment["payment_status"], str):
+        raise ValueError("Statement payment status must be text")
+    orsc = statement["orsc"]
+    if orsc is not None and (not _is_count(orsc["device_count"]) or not _is_count(orsc["zero_amount_count"])
+                             or not _is_amount(orsc["total_subscription_amount_ngn"])):
+        raise ValueError("Statement subscription evidence is incomplete")
+    audit = statement["audit"]
+    trails = audit["trails"]
+    if not isinstance(audit["readable"], bool) or not isinstance(trails, list) or (trails and not audit["readable"]):
+        raise ValueError("Statement audit evidence is inconsistent")
+    for trail in trails:
+        if not isinstance(trail["module"], str) or not isinstance(trail["label"], str) or not (
+                trail["conclusion"] is None or isinstance(trail["conclusion"], str)):
+            raise ValueError("Statement audit trails require text fields")
+
+
+def _render_statement(measure: dict, dealer_id: str | None) -> list[str]:
+    """Owed, paid, outstanding and status first; missing evidence is never zero."""
+    parts = []
+    for period in measure["periods"]:
+        month, statement = _text(period["period"]), period.get("statement")
+        dealer = _text(dealer_id or "—")
+        if period["status"] == "unavailable":
+            note = _text(period.get("note") or "the dealer statement could not be composed.")
+            parts.append(f"Dealer statement unavailable for dealer {dealer}, {month}: {note}")
+            parts.append("Missing evidence is not zero.")
+            continue
+        if not statement["found"]:
+            parts.append(f"Dealer {dealer} has no recorded activity for {month}: no activation records, "
+                         "so no statement is composed. This is not an unavailable source.")
+            continue
+        commission, position, payment = statement["commission"], statement["position"], statement["payment"]
+        parts.append(f"Dealer statement for {_text(statement['dealer_name'])} ({dealer}), {month}.")
+        parts.append(f"Amount owed: {_number(position['expected_ngn'], 'ngn')} (activation commission).")
+        if payment["payment_found"]:
+            share = (f" ({_number(position['variance_pct'], 'count')}% of amount owed)"
+                     if position["variance_pct"] is not None else "")
+            status = _text(payment["payment_status"] or "not recorded")
+            parts.append(f"Amount paid: {_number(position['paid_ngn'], 'ngn')}.")
+            parts.append(f"Amount outstanding: {_number(position['outstanding_ngn'], 'ngn')}{share}.")
+            parts.append(f"Payment status: {status}; statement position: "
+                         f"{_STATEMENT_POSITIONS[position['headline']]}.")
+        else:
+            parts.append(f"Amount paid: unavailable — no payment record was found in "
+                         f"{_text(payment['source'])} for this dealer-month. Missing is not zero.")
+            parts.append("Amount outstanding: unavailable without a payment record.")
+            parts.append("Payment status: no payment record.")
+        lines = ["| Component | Amount |", "| --- | --- |"]
+        for denomination, amount in commission["by_denomination"].items():
+            lines.append(f"| Activation commission · {_text(denomination)} | {_number(amount, 'ngn')} |")
+        lines.append(f"| Activation commission (amount owed) | {_number(commission['expected_ngn'], 'ngn')} |")
+        orsc = statement["orsc"]
+        if orsc is not None:
+            lines.append("| Subscription amount (ORSC; not part of amount owed) | "
+                         f"{_number(orsc['total_subscription_amount_ngn'], 'ngn')} |")
+        parts.append("\n".join(lines))
+        parts.append(f"Activations: {commission['total_activations']:,} recorded, "
+                     f"{commission['qualified_activation_count']:,} commission-bearing, "
+                     f"{commission['zero_commission_count']:,} zero-commission.")
+        if orsc is None:
+            parts.append("Subscription (ORSC): unavailable — no subscription record was returned for this "
+                         "month (none recorded, or the subscription source could not be read). Not zero.")
+        else:
+            parts.append(f"Subscription (ORSC): {orsc['device_count']:,} devices, "
+                         f"{orsc['zero_amount_count']:,} zero-amount records.")
+        audit = statement["audit"]
+        if audit["trails"]:
+            conclusions = "; ".join(f"{_text(t['label'])}: {_text(t['conclusion'] or 'no conclusion recorded')}"
+                                    for t in audit["trails"])
+            parts.append(f"Linked audit trails: {conclusions}.")
+        elif audit["readable"]:
+            parts.append("Linked audit trails: none recorded for this dealer-month.")
+        else:
+            parts.append("Linked audit trails: unavailable — the audit store could not be read.")
+        if period.get("note"):
+            parts.append(_text(period["note"]))
+        parts.append(f"Sources: activation commission and subscription records; {_text(payment['source'])}; "
+                     "verification audit trails.")
+    return parts
+
+
 def render_dealer_codes(evidence: dict) -> str:
     """Render bounded recorded identities without projecting financial fields."""
     rows = evidence['rows']
@@ -311,4 +442,7 @@ def render_dealer_codes(evidence: dict) -> str:
 
 # Dealer-month measures: each period carries one payload key that only its
 # measure may use. measure -> (payload key, validate(period), render(measure, dealer_id)).
-_DEALER_MONTH = {"investigation_priority": ("priority", _validate_priority, _render_priority)}
+_DEALER_MONTH = {
+    "investigation_priority": ("priority", _validate_priority, _render_priority),
+    "dealer_statement": ("statement", _validate_statement, _render_statement),
+}

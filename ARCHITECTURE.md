@@ -188,6 +188,8 @@ backend/
 │   │                        Joins commission + ORSC + payment (respects
 │   │                        PAYMENT_SOURCE) + linked audit trails into one dict —
 │   │                        powers GET /dealers/{id}/statement.
+│   ├── dealer_statement_evidence.py  Projects that statement into Atlas
+│   │                        dealer_statement evidence (owed/paid/outstanding).
 │   ├── triage.py            TRIAGE_HANDLERS: shape/trim query results for the agent.
 │   ├── data_coverage.py     Compiles the IFS/USP data-gap ServiceNow ticket.
 │   ├── apdp.py              Reads APDP's partner_settlements view (PAYMENT_SOURCE=apdp).
@@ -246,7 +248,8 @@ backend/
 │   │                        QUERY tools go through execute_query; DIRECT tools
 │   │                        (get_kb_section, dossier) call handlers directly.
 │   │                        The investigation_priority measure reads the Overview
-│   │                        queue via assurance/overview (one dealer, one month).
+│   │                        queue via assurance/overview (one dealer, one month);
+│   │                        dealer_statement reads db/dealer_statement_evidence.
 │   ├── prompts.py          Builds the system prompt. Injects the tiered KB (see §5).
 │   └── dispute_responder.py  Pure-Python (no LLM) generator for a finance-ready
 │                            dispute-response letter.

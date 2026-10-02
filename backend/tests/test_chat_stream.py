@@ -220,6 +220,25 @@ def test_chat_stream_priority_question_streams_queue_rank(monkeypatch):
     assert events[-1]['type'] == 'complete'
 
 
+def test_chat_stream_statement_question_streams_owed_paid_outstanding(monkeypatch):
+    from backend import config
+    from backend.db import audit_store
+    from backend.tests.test_dealer_statement_measure import ORACLE_ANSWER
+    monkeypatch.setattr(config, 'PAYMENT_SOURCE', 'simulated')
+    monkeypatch.setattr(audit_store, 'healthcheck', lambda: True)
+    monkeypatch.setattr(audit_store, 'get_partner_trail', lambda *args: None)
+    provider(monkeypatch, Stream('Draft: NGN 0.00 owed.', stop='tool_use', tool=scope_tool(
+        measures=['dealer_statement'], periods=['202606'], dealer_id='296065')))
+    events = collect()
+    phases = [e for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
+    assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
+    assert all(e['tool'] == 'measure_evidence' for e in phases)
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert text == ORACLE_ANSWER and 'Draft' not in text
+    assert events[-1]['type'] == 'complete'
+    assert events[-1]['tools_called'] == ['dealer_statement']
+
+
 def test_chat_stream_sales_clarification_is_deterministic_and_has_no_evidence(monkeypatch):
     tool = ToolUseBlock(type='tool_use', id='scope_1', name='resolve_measure_request',
         input={'kind': 'clarification', 'clarification': 'sales_meaning'})
