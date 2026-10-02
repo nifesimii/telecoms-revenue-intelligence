@@ -4,10 +4,9 @@ For each registered audit module, the evidence is the trail the Audit
 Trails tab would show: the latest *saved* trail when that module has a
 saved run for the month (``backend.db.audit_store``, run timestamp stated).
 When it has none, or the audit store cannot be read, the module's own
-``gather_inputs`` + ``build_trail`` run for this one dealer in memory
-("checked on request") with the subject selection its ``run_period``
-applies, so the result equals that dealer's trail in a full run. Nothing is
-written. A module that cannot be checked either way is unavailable — never
+``run_dealer`` builds this one dealer's trails in memory ("checked on
+request"). ``run_dealer`` shares its ``run_period``'s subject selection, so
+the result equals that dealer's trail in a full run. Nothing is written. A module that cannot be checked either way is unavailable — never
 a pass. A dealer that is not one of a module's subjects (e.g. no
 zero-commission records) is "no subject", distinct from unavailable.
 
@@ -23,6 +22,12 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend import config
+from backend.audit import (
+    eligibility_window_audit,
+    inventory_mismatch_audit,
+    payment_reconciliation_audit,
+    zero_commission_audit,
+)
 from backend.audit.trail import INSUFFICIENT_DATA
 
 logger = logging.getLogger(__name__)
@@ -59,73 +64,22 @@ class _NoSavedRun(LookupError):
     """No saved run for this module and month includes this dealer as a subject."""
 
 
-# ── Per-dealer, in-memory trail builders (each mirrors its run_period) ──────
+# ── Per-dealer, in-memory trails: each module's own run_dealer ────────────
+# run_dealer selects subjects with the same code as the module's run_period,
+# so the trails equal that dealer's slice of a full run. Never persisted.
 
 def _summary_row(period: str, dealer_id: str) -> dict | None:
+    """The dealer's summary row, used only to tell an unknown dealer apart."""
     from backend.db.connection import execute_query
     df = execute_query("get_dealer_summary", {"mon_period": period, "distributor_code": dealer_id})
     return None if df is None or df.empty else df.iloc[0].to_dict()
 
 
-def _zero_commission(period: str, dealer_id: str, source: str):
-    from backend.audit import zero_commission_audit as audit
-    from backend.audit.payment_data import known_periods
-    row = _summary_row(period, dealer_id)
-    if not row or int(row["zero_commission_count"]) <= 0:
-        return []
-    return [audit.build_trail(audit.gather_inputs(
-        str(row["dealer_id"]), period, source, summary_row=row, all_periods=known_periods()))]
-
-
-def _eligibility_window(period: str, dealer_id: str, source: str):
-    from backend.audit import eligibility_window_audit as audit
-    row = _summary_row(period, dealer_id)
-    if not row or int(row["zero_commission_count"]) <= 0:
-        return []
-    return [audit.build_trail(audit.gather_inputs(
-        str(row["dealer_id"]), str(row.get("dealer_name") or row["dealer_id"]),
-        row.get("account_profile_class") or None, period))]
-
-
-def _payment_reconciliation(period: str, dealer_id: str, source: str):
-    from backend.audit import payment_reconciliation_audit as audit
-    from backend.audit.payment_data import known_periods
-    row = _summary_row(period, dealer_id)
-    if not row or int(row["total_activations"]) <= 0:
-        return []
-    return [audit.build_trail(audit.gather_inputs(
-        str(row["dealer_id"]), period, source, summary_row=row, all_periods=known_periods()))]
-
-
-def _inventory_mismatch(period: str, dealer_id: str, source: str):
-    from backend.audit import inventory_mismatch_audit as audit
-    from backend.audit.payment_data import known_periods
-    from backend.db.connection import execute_query
-    period_df = execute_query("get_inventory_comparison", {"mon_period": period})
-    if period_df is None or period_df.empty:
-        return []
-    flagged = period_df[(period_df["dealer_id"].astype(str) == dealer_id)
-                        & period_df["finding_type"].isin(["CONFIRMED_MISMATCH", "NO_INVOICE_RECORD"])]
-    if flagged.empty:
-        return []
-    prior_period = audit.prior_period(period, known_periods())
-    prior_df = None
-    if prior_period:
-        try:
-            prior_df = execute_query("get_inventory_comparison", {"mon_period": prior_period})
-        except Exception:
-            prior_df = None
-    ifs_present = audit.ifs_covers_period(period)
-    return [audit.build_trail(audit.gather_inputs(
-        row.to_dict(), period, period_df=period_df, prior_period=prior_period,
-        prior_df=prior_df, ifs_records_present=ifs_present)) for _, row in flagged.iterrows()]
-
-
 _ON_REQUEST = {
-    "zero_commission": _zero_commission,
-    "eligibility_window": _eligibility_window,
-    "payment_reconciliation": _payment_reconciliation,
-    "inventory_mismatch": _inventory_mismatch,
+    "zero_commission": zero_commission_audit.run_dealer,
+    "eligibility_window": eligibility_window_audit.run_dealer,
+    "payment_reconciliation": payment_reconciliation_audit.run_dealer,
+    "inventory_mismatch": inventory_mismatch_audit.run_dealer,
 }
 
 

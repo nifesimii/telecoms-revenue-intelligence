@@ -154,7 +154,7 @@ def test_oracle_trails_equal_the_full_period_run(no_store):
     full = [t.to_dict() for t in get_module("payment_reconciliation").build_trails("202606", "simulated")
             if t.partner_code == "296065"]
     assert len(full) == 1
-    built = vo._payment_reconciliation("202606", "296065", "simulated")
+    built = vo._ON_REQUEST["payment_reconciliation"]("202606", "296065", "simulated")
     assert [t.to_dict() for t in built] == full
     assert modules_by_name(evidence)["payment_reconciliation"]["trails"][0] == \
         vo._trail_summary("payment_reconciliation", full[0])
@@ -214,7 +214,7 @@ def test_module_that_fails_is_unavailable_while_others_answer(no_store, monkeypa
 
 def test_saved_trails_are_preferred_and_dated(monkeypatch):
     """A module with a saved run answers from its LATEST run only, never re-running."""
-    real = vo._zero_commission("202606", "296065", "simulated")[0].to_dict()
+    real = vo._ON_REQUEST["zero_commission"]("202606", "296065", "simulated")[0].to_dict()
     older = {**copy.deepcopy(real), "conclusion": "PAID", "run_id": "run-a",
              "generated_at": datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc), "payment_source": "simulated"}
     latest = {**copy.deepcopy(real), "run_id": "run-b",

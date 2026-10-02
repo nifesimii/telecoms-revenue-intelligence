@@ -421,17 +421,18 @@ def gather_inputs(
 # Orchestrator — run the whole period.
 # ---------------------------------------------------------------------------
 
-def run_period(mon_period: str, payment_source: str | None = None) -> list[VerificationTrail]:
-    """Build a trail for every partner flagged with zero-commission activity
-    in the period. Returns the trails; persistence is the caller's job.
+def _select_subjects(mon_period: str) -> pd.DataFrame:
+    """The period's audit subjects: dealer-summary rows of every partner
+    flagged with zero-commission activity. The ONE subject filter shared by
+    :func:`run_period` and :func:`run_dealer`.
     """
-    source = payment_source or config.PAYMENT_SOURCE
-
     summary_df = execute_query("get_dealer_summary", {"mon_period": mon_period})
     if summary_df.empty:
-        return []
+        return summary_df
+    return summary_df[summary_df["zero_commission_count"].astype(int) > 0]
 
-    flagged = summary_df[summary_df["zero_commission_count"].astype(int) > 0]
+
+def _build_trails(mon_period: str, source: str, flagged: pd.DataFrame) -> list[VerificationTrail]:
     if flagged.empty:
         return []
 
@@ -458,6 +459,28 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
         )
         trails.append(build_trail(inp))
     return trails
+
+
+def run_period(mon_period: str, payment_source: str | None = None) -> list[VerificationTrail]:
+    """Build a trail for every partner flagged with zero-commission activity
+    in the period. Returns the trails; persistence is the caller's job.
+    """
+    source = payment_source or config.PAYMENT_SOURCE
+    return _build_trails(mon_period, source, _select_subjects(mon_period))
+
+
+def run_dealer(
+    mon_period: str, dealer_id: str, payment_source: str | None = None,
+) -> list[VerificationTrail]:
+    """One dealer's trails, exactly as :func:`run_period` would build them;
+    ``[]`` when the dealer is not a subject. Read-only — never persisted.
+    """
+    source = payment_source or config.PAYMENT_SOURCE
+    flagged = _select_subjects(mon_period)
+    if flagged.empty:
+        return []
+    mine = flagged[flagged["dealer_id"].astype(str) == str(dealer_id).strip()]
+    return _build_trails(mon_period, source, mine)
 
 
 # ---------------------------------------------------------------------------

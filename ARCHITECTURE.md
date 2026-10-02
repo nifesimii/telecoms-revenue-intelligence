@@ -235,8 +235,8 @@ backend/
 │                            rollup, per-IMEI evidence in step details.
 │                            POLICY_MET / POLICY_VIOLATED / MIXED_ATTRIBUTION.
 │   └── verification_outcome.py  Atlas read-only dealer-month verdicts: the latest saved
-│                            run per module when the dealer is in it, else its own single-dealer
-│                            check in memory ("checked on request"); never persists.
+│                            run per module when the dealer is in it, else the module's own
+│                            run_dealer in memory ("checked on request"); never persists.
 │
 ├── agent/                 ── AGENT LAYER (Claude chat) ──
 │   ├── agent.py            Shared buffered/streamed turn: resolves a structured
@@ -664,7 +664,12 @@ is a *structured, persisted* object (not a text explanation): an ordered list of
 steps, each with what-was-checked / result / caveat, plus a conclusion and
 confidence. `AuditModule` (`audit/base.py`) makes the whole machinery
 domain-agnostic — a new audit domain is one new `*_audit.py` + a `register(...)`
-call, with no changes to storage, endpoints, or UI. *Why:* the trail must be
+call, with no changes to storage, endpoints, or UI. Each module exposes
+`run_period(period, source)` (the registered builder, persisted only by the run
+endpoint) and `run_dealer(period, dealer_id, source)`, which filters the same
+private `_select_subjects` that `run_period` uses to one dealer and never
+persists; `verification_outcome` calls `run_dealer` so a dealer's on-request trail
+cannot drift from its slice of a full run. *Why:* the trail must be
 queryable for audit ("prove this claim") and for evaluation ("how often did we
 mislabel a data gap as not-paid?"), which a text blob can't support.
 

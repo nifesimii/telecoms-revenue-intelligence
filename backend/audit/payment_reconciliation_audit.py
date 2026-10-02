@@ -368,19 +368,18 @@ def gather_inputs(
 # Orchestrator — run the whole period.
 # ---------------------------------------------------------------------------
 
-def run_period(mon_period: str, payment_source: str | None = None) -> list[VerificationTrail]:
-    """Build a trail for every partner with activation activity in the
-    period. Broader net than zero_commission (which only trails flagged
-    partners) — this is a full reconciliation sweep.
+def _select_subjects(mon_period: str) -> pd.DataFrame:
+    """The period's audit subjects: dealer-summary rows of every partner with
+    any activation activity — full reconciliation coverage. The ONE subject
+    filter shared by :func:`run_period` and :func:`run_dealer`.
     """
-    source = payment_source or config.PAYMENT_SOURCE
-
     summary_df = execute_query("get_dealer_summary", {"mon_period": mon_period})
     if summary_df.empty:
-        return []
+        return summary_df
+    return summary_df[summary_df["total_activations"].astype(int) > 0]
 
-    # All partners with any activity — full reconciliation coverage.
-    active = summary_df[summary_df["total_activations"].astype(int) > 0]
+
+def _build_trails(mon_period: str, source: str, active: pd.DataFrame) -> list[VerificationTrail]:
     if active.empty:
         return []
 
@@ -404,6 +403,28 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
         )
         trails.append(build_trail(inp))
     return trails
+
+
+def run_period(mon_period: str, payment_source: str | None = None) -> list[VerificationTrail]:
+    """Build a trail for every partner with activation activity in the
+    period. Broader net than zero_commission (which only trails flagged
+    partners) — this is a full reconciliation sweep.
+    """
+    source = payment_source or config.PAYMENT_SOURCE
+    return _build_trails(mon_period, source, _select_subjects(mon_period))
+
+
+def run_dealer(
+    mon_period: str, dealer_id: str, payment_source: str | None = None,
+) -> list[VerificationTrail]:
+    """One dealer's trail, exactly as :func:`run_period` would build it;
+    ``[]`` when the dealer is not a subject. Read-only — never persisted.
+    """
+    source = payment_source or config.PAYMENT_SOURCE
+    active = _select_subjects(mon_period)
+    if active.empty:
+        return []
+    return _build_trails(mon_period, source, active[active["dealer_id"].astype(str) == str(dealer_id).strip()])
 
 
 # ---------------------------------------------------------------------------

@@ -487,36 +487,43 @@ def gather_inputs(
 # Orchestrator — run the whole period.
 # ---------------------------------------------------------------------------
 
-def run_period(mon_period: str, payment_source: str | None = None) -> list[VerificationTrail]:
-    """Build a trail for every (dealer, product) flagged by the inventory
-    assurance for the period. ``payment_source`` is accepted for interface
-    parity with the generic ``AuditModule.build`` signature but ignored —
-    this module always reads IFS.
+def _select_subjects(mon_period: str) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    """The period's audit subjects: ``(period_df, flagged)``, where ``flagged``
+    holds the (dealer, product) rows the inventory assurance flagged and
+    ``period_df`` is the whole comparison (sibling purchases are read from
+    it). ``None`` when the period has no subjects. The ONE subject filter
+    shared by :func:`run_period` and :func:`run_dealer`.
     """
-    _ = payment_source  # interface parity with AuditModule.build
-
     # Reject unknown periods early — the sample-data reader raises when the
     # period isn't in the CSV partition map, and pandas may raise inside the
     # merge if either side of the join is empty. Returning [] for an unknown
     # period mirrors what the UI expects.
     known = _known_periods()
     if known and str(mon_period) not in known:
-        return []
+        return None
 
     try:
         period_df = execute_query(
             "get_inventory_comparison", {"mon_period": str(mon_period)}
         )
     except Exception:
-        return []
+        return None
     if period_df is None or period_df.empty:
-        return []
+        return None
 
     # Emit trails for the two flagged finding types. WITHIN_ALLOCATION rows
     # are not audit subjects — no claim to verify.
     flagged = period_df[period_df["finding_type"].isin(
         ["CONFIRMED_MISMATCH", "NO_INVOICE_RECORD"]
     )]
+    if flagged.empty:
+        return None
+    return period_df, flagged
+
+
+def _build_trails(
+    mon_period: str, period_df: pd.DataFrame, flagged: pd.DataFrame,
+) -> list[VerificationTrail]:
     if flagged.empty:
         return []
 
@@ -545,6 +552,35 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
         )
         trails.append(build_trail(inp))
     return trails
+
+
+def run_period(mon_period: str, payment_source: str | None = None) -> list[VerificationTrail]:
+    """Build a trail for every (dealer, product) flagged by the inventory
+    assurance for the period. ``payment_source`` is accepted for interface
+    parity with the generic ``AuditModule.build`` signature but ignored —
+    this module always reads IFS.
+    """
+    _ = payment_source  # interface parity with AuditModule.build
+    subjects = _select_subjects(mon_period)
+    if subjects is None:
+        return []
+    return _build_trails(mon_period, *subjects)
+
+
+def run_dealer(
+    mon_period: str, dealer_id: str, payment_source: str | None = None,
+) -> list[VerificationTrail]:
+    """One dealer's (dealer, product) trails, exactly as :func:`run_period`
+    would build them; ``[]`` when none of the dealer's products is flagged.
+    Read-only — never persisted. ``payment_source`` is ignored (IFS only).
+    """
+    _ = payment_source
+    subjects = _select_subjects(mon_period)
+    if subjects is None:
+        return []
+    period_df, flagged = subjects
+    return _build_trails(mon_period, period_df,
+                         flagged[flagged["dealer_id"].astype(str) == str(dealer_id).strip()])
 
 
 def ifs_covers_period(mon_period: str) -> bool:
