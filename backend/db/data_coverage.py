@@ -44,7 +44,7 @@ def _severity_for(total_dealers: int) -> tuple[str, str]:
     return "HIGH", "Prioritize confirmation of source coverage and the IFS / USP snapshot window across the affected dealers; dealer count alone does not diagnose a source fault."
 
 
-def _collect_ifs_missing(mon_period: str) -> list[dict[str, Any]]:
+def collect_ifs_missing(mon_period: str) -> list[dict[str, Any]]:
     """Group NO_INVOICE_RECORD rows from the inventory comparison by dealer."""
     df = execute_query(
         "get_inventory_comparison",
@@ -68,7 +68,7 @@ def _collect_ifs_missing(mon_period: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _collect_usp_missing(mon_period: str) -> list[dict[str, Any]]:
+def collect_profile_class_missing(mon_period: str) -> list[dict[str, Any]]:
     """Dealers whose ``account_profile_class`` is NULL or empty.
 
     Per KB: a missing account_profile_class is one of the four documented
@@ -227,9 +227,9 @@ def compile_data_coverage_ticket(
     usp_missing: list[dict[str, Any]] = []
 
     if source in ("ifs", "both"):
-        ifs_missing = _collect_ifs_missing(mon_period)
+        ifs_missing = collect_ifs_missing(mon_period)
     if source in ("usp", "both"):
-        usp_missing = _collect_usp_missing(mon_period)
+        usp_missing = collect_profile_class_missing(mon_period)
 
     affected = len({r["dealer_id"] for r in ifs_missing} | {r["dealer_id"] for r in usp_missing})
     severity, severity_action = _severity_for(affected)

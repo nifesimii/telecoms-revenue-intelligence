@@ -194,6 +194,12 @@ backend/
 │   │                        commission type, plus a plain-sum combined total).
 │   ├── triage.py            TRIAGE_HANDLERS: shape/trim query results for the agent.
 │   ├── data_coverage.py     Compiles the IFS/USP data-gap ServiceNow ticket.
+│   ├── data_coverage_evidence.py  Projects its two collectors into Atlas
+│   │                        data_coverage evidence (one month, all dealers or one);
+│   │                        a failed collector is unavailable, never zero dealers.
+│   ├── variance_evidence.py  Projects get_month_on_month_variance into Atlas
+│   │                        commission_variance evidence (one dealer, two months);
+│   │                        change = later − earlier per product from the same rows.
 │   ├── apdp.py              Reads APDP's partner_settlements view (PAYMENT_SOURCE=apdp).
 │   ├── payment_snapshot.py  load_payment_snapshot(period): source-aware settlement
 │   │                        snapshot + PaymentSummaryRecord/PaymentCoverageResponse
@@ -255,7 +261,9 @@ backend/
 │   │                        The investigation_priority measure reads the Overview
 │   │                        queue via assurance/overview (one dealer, one month);
 │   │                        dealer_statement reads db/dealer_statement_evidence.
-│   │                        verification_outcome reads audit/verification_outcome.
+│   │                        verification_outcome reads audit/verification_outcome;
+│   │                        commission_variance and data_coverage read their
+│   │                        db/*_evidence modules. All are STANDALONE_MEASURES.
 │   ├── prompts.py          Builds the system prompt. Injects the tiered KB (see §5).
 │   └── dispute_responder.py  Pure-Python (no LLM) generator for a finance-ready
 │                            dispute-response letter.

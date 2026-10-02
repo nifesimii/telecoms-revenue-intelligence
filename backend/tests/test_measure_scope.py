@@ -279,12 +279,12 @@ def test_priority_scope_validates_alone_and_leaves_other_combos_intact():
     assert other.dealer_id is None
 
 
-def test_dealer_month_measures_are_registered_at_every_seam():
+def test_standalone_measures_are_registered_at_every_seam():
     from typing import get_args
     from backend.agent import measure_response, tool_executor
-    from backend.agent.measure_scope import DEALER_MONTH_MEASURES, Measure
-    assert DEALER_MONTH_MEASURES <= set(get_args(Measure))
-    assert set(tool_executor._DEALER_MONTH_EVIDENCE) == DEALER_MONTH_MEASURES
-    assert set(measure_response._DEALER_MONTH) == DEALER_MONTH_MEASURES
-    payloads = [payload for payload, _, _ in measure_response._DEALER_MONTH.values()]
+    from backend.agent.measure_scope import STANDALONE_MEASURES, Measure
+    assert STANDALONE_MEASURES <= set(get_args(Measure))
+    assert set(tool_executor._STANDALONE_EVIDENCE) == STANDALONE_MEASURES
+    assert set(measure_response._STANDALONE) == STANDALONE_MEASURES
+    payloads = [payload for payload, _, _ in measure_response._STANDALONE.values()]
     assert len(payloads) == len(set(payloads))

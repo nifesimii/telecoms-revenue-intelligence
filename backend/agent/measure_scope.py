@@ -19,10 +19,16 @@ Measure = Literal[
     'retail_sales_value', 'dealer_purchases', 'inventory_gap',
     'inventory_recorded_purchases', 'financial_revenue', 'financial_net_profit',
     'financial_statements', 'financial_kpis', 'investigation_priority',
-    'dealer_statement', 'verification_outcome',
+    'dealer_statement', 'verification_outcome', 'commission_variance', 'data_coverage',
 ]
 # Each answers from one dealer-month evidence read: alone, one dealer, one month.
 DEALER_MONTH_MEASURES = frozenset({'investigation_priority', 'dealer_statement', 'verification_outcome'})
+# Each compares one dealer across two months: alone, one dealer, two months.
+DEALER_COMPARISON_MEASURES = frozenset({'commission_variance'})
+# Each answers for one month, across all dealers or one: alone, one month.
+MONTH_MEASURES = frozenset({'data_coverage'})
+# Answered from their own evidence read and renderer, never combined with other measures.
+STANDALONE_MEASURES = DEALER_MONTH_MEASURES | DEALER_COMPARISON_MEASURES | MONTH_MEASURES
 
 
 class MeasureScope(BaseModel):
@@ -78,6 +84,14 @@ class MeasureScope(BaseModel):
                     len(self.measures) != 1 or len(self.periods) != 1
                     or not self.dealer_id or self.operation != 'total' or self.filter != 'all'):
                 raise ValueError('Dealer-month measures stand alone for one dealer and one month')
+            if DEALER_COMPARISON_MEASURES.intersection(self.measures) and (
+                    len(self.measures) != 1 or len(self.periods) != 2 or not self.dealer_id
+                    or self.operation not in {'compare', 'explain'} or self.filter != 'all'):
+                raise ValueError('Dealer comparison measures stand alone for one dealer and two months')
+            if MONTH_MEASURES.intersection(self.measures) and (
+                    len(self.measures) != 1 or len(self.periods) != 1
+                    or self.operation != 'total' or self.filter != 'all'):
+                raise ValueError('Month measures stand alone for one month')
         elif self.kind == 'clarification':
             if not self.clarification or self.measures or self.knowledge_quote:
                 raise ValueError('A clarification cannot authorize evidence or quote policy')
@@ -126,6 +140,15 @@ SCOPE_TOOL = {
         'Questions whether a dealer was paid correctly, whether it can be proven, what the audit '
         'found, or whether zero-commission records are really outside the eligibility window select '
         "measures ['verification_outcome'] alone, the same way (one dealer, one month, total). "
+        "Why a dealer's commission changed between two months, or how the change splits by "
+        "product or denomination, selects measures ['commission_variance'] alone for the active "
+        'dealer and exactly two months (the reporting month and the month before it unless both '
+        'are named), operation explain for why or compare otherwise. If no dealer is active or '
+        'named, clarify dealer. '
+        'Whether the data for a month can be trusted, which dealers have missing source data, '
+        'missing invoice (IFS) records or a missing account profile class, select measures '
+        "['data_coverage'] alone for one month, operation total, with dealer_id only when one "
+        'dealer is asked about. '
         'For a particular ratio, select financial_kpis and its exact kpi_ids. '
         'For a particular statement or line, select financial_statements and exact statement_ids '
         'and/or line_ids. Empty financial selectors mean ALL KPIs or statements, and are '

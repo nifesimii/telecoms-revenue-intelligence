@@ -98,7 +98,7 @@ def _validate(request: dict, evidence: dict) -> None:
             seen.add(key)
             if period["status"] not in {"available", "unavailable"}:
                 raise ValueError("Unsupported evidence status")
-            for name, (payload, validate, _) in _DEALER_MONTH.items():
+            for name, (payload, validate, _) in _STANDALONE.items():
                 if name == measure["measure"]:
                     validate(period)
                 elif payload in period:
@@ -142,8 +142,8 @@ def render_measure_response(request: dict, evidence: dict) -> str:
     _validate(request, evidence)
     parts = []
     for measure in evidence["measures"]:
-        if measure["measure"] in _DEALER_MONTH:
-            parts.extend(_DEALER_MONTH[measure["measure"]][2](measure, evidence.get("dealer_id")))
+        if measure["measure"] in _STANDALONE:
+            parts.extend(_STANDALONE[measure["measure"]][2](measure, evidence.get("dealer_id")))
             continue
         periods = measure["periods"]
         is_text = measure["unit"] == "text"
@@ -215,7 +215,8 @@ def render_measure_response(request: dict, evidence: dict) -> str:
             if note:
                 details += f" {_text(note)}"
             parts.append(details)
-    if request.get("operation") == "explain":
+    # Standalone renderers state their own limits on cause.
+    if request.get("operation") == "explain" and not set(request["measures"]) & set(_STANDALONE):
         explanations = evidence.get("explanations", [])
         if explanations:
             for observation in explanations:
@@ -706,10 +707,233 @@ def _render_verification(measure: dict, dealer_id: str | None) -> list[str]:
     return parts
 
 
-# Dealer-month measures: each period carries one payload key that only its
+def _validate_variance(period: dict) -> None:
+    """Variance evidence is projected from the month-on-month query; reject malformed shapes."""
+    try:
+        _check_variance(period)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("Incomplete commission variance evidence") from exc
+
+
+_VARIANCE_COUNTS = ("earlier_activations", "later_activations")
+_VARIANCE_AMOUNTS = ("earlier_ngn", "later_ngn", "change_ngn")
+
+
+def _check_variance(period: dict) -> None:
+    variance = period.get("variance")
+    if period["status"] == "unavailable":
+        if variance is not None:
+            raise ValueError("Unavailable variance evidence cannot carry a variance")
+        return
+    if not isinstance(variance, dict) or not isinstance(variance.get("found"), bool):
+        raise ValueError("Available variance evidence requires a found flag")
+    earlier, later = variance["earlier"], variance["later"]
+    if not isinstance(earlier, str) or later != period["period"] or not earlier < later:
+        raise ValueError("Variance months must be the earlier month and the evidence month")
+    if not variance["found"]:
+        if period["rows"]:
+            raise ValueError("A dealer without activity has no variance lines")
+        return
+    if not isinstance(variance["earlier_recorded"], bool) or not isinstance(variance["later_recorded"], bool):
+        raise ValueError("Variance must state which months have records")
+    products, totals = variance["products"], variance["totals"]
+    if not isinstance(products, list) or not products or len({p["product"] for p in products}) != len(products):
+        raise ValueError("Variance requires distinct product lines")
+    for line in [*products, totals]:
+        if not all(_is_count(line[key]) for key in _VARIANCE_COUNTS) or not all(
+                _is_amount(line[key]) for key in _VARIANCE_AMOUNTS):
+            raise ValueError("Variance lines require counts and amounts")
+        if _cents(line["later_ngn"]) - _cents(line["earlier_ngn"]) != _cents(line["change_ngn"]):
+            raise ValueError("Variance change is not the later amount less the earlier amount")
+    if any(not isinstance(p["product"], str) for p in products):
+        raise ValueError("Variance products must be text")
+    for key in (*_VARIANCE_COUNTS, "earlier_ngn", "later_ngn"):
+        if _cents(sum(Decimal(str(p[key])) for p in products)) != _cents(totals[key]):
+            raise ValueError("Variance totals are not the sum of the product lines")
+
+
+def _change_words(value: object) -> str:
+    """A change in words: never a negative amount."""
+    amount = _cents(value)
+    if amount == 0:
+        return "no change"
+    return f"{'up' if amount > 0 else 'down'} {_number(abs(amount), 'ngn')}"
+
+
+def _change_share(change: object, earlier: object) -> str:
+    base = _cents(earlier)
+    if base == 0:
+        return "new" if _cents(change) else "—"
+    return f"{_number(abs(_cents(change) / base * 100).quantize(Decimal('0.1')), 'count')}%"
+
+
+def _render_variance(measure: dict, dealer_id: str | None) -> list[str]:
+    """Each product's commission in both months and the change; never a cause."""
+    parts, dealer = [], _text(dealer_id or "—")
+    for period in measure["periods"]:
+        variance = period.get("variance")
+        if period["status"] == "unavailable":
+            note = _text(period.get("note") or "the activation commission records could not be read.")
+            parts.append(f"Commission variance unavailable for dealer {dealer}, {_text(period['period'])}: {note}")
+            parts.append("Missing evidence is not zero.")
+            continue
+        earlier, later = _text(variance["earlier"]), _text(variance["later"])
+        if not variance["found"]:
+            parts.append(f"Dealer {dealer} has no recorded activations in {earlier} or {later}; check the dealer code.")
+            continue
+        totals = variance["totals"]
+        change = _change_words(totals["change_ngn"])
+        share = _change_share(totals["change_ngn"], totals["earlier_ngn"])
+        parts.append(f"Activation commission for dealer {dealer}, {earlier} to {later}: {change} "
+                     f"(from {_number(totals['earlier_ngn'], 'ngn')} to {_number(totals['later_ngn'], 'ngn')}"
+                     f"{'' if share in {'new', '—'} or change == 'no change' else ', ' + share}).")
+        for month, recorded in ((earlier, variance["earlier_recorded"]), (later, variance["later_recorded"])):
+            if not recorded:
+                parts.append(f"Dealer {dealer} has no recorded activations in {month}; "
+                             "that month is counted as no recorded activity.")
+        lines = [f"| Product | Activations {earlier} | Commission {earlier} | Activations {later} | "
+                 f"Commission {later} | Change | Change % |", "| --- | --- | --- | --- | --- | --- | --- |"]
+        for label, line in [*((_text(p["product"]), p) for p in variance["products"]), ("Total", totals)]:
+            lines.append(f"| {label} | {line['earlier_activations']:,} | {_number(line['earlier_ngn'], 'ngn')} | "
+                         f"{line['later_activations']:,} | {_number(line['later_ngn'], 'ngn')} | "
+                         f"{_change_words(line['change_ngn'])} | {_change_share(line['change_ngn'], line['earlier_ngn'])} |")
+        parts.append("\n".join(lines))
+        movers = sorted((p for p in variance["products"] if _cents(p["change_ngn"])),
+                        key=lambda p: (-abs(_cents(p["change_ngn"])), p["product"]))
+        if movers:
+            parts.append(f"Largest change: {_text(movers[0]['product'])}, {_change_words(movers[0]['change_ngn'])}.")
+        parts.append("This splits the change by product; it does not establish why it changed. "
+                     "Ask for the verification outcome to check zero-commission records against the documented causes.")
+        if period.get("note"):
+            parts.append(_text(period["note"]))
+    sources = dict.fromkeys(_text(period["source"]) for period in measure["periods"])
+    parts.append(f"Source: {', '.join(sources)}.")
+    return parts
+
+
+_GAP_KINDS = ("profile_class", "invoice")
+_GAP_LABELS = {"profile_class": "Account profile class not recorded", "invoice": "No IFS invoice record"}
+_GAP_PHRASES = {"profile_class": "account profile class not recorded", "invoice": "no IFS invoice record"}
+_GAP_FIELDS = {"profile_class": ("total_activations", "zero_commission_count"),
+               "invoice": ("activation_count", "affected_products")}
+
+
+def _validate_coverage(period: dict) -> None:
+    """Coverage evidence is copied from the data coverage collectors; reject malformed shapes."""
+    try:
+        _check_coverage(period)
+    except (KeyError, TypeError, AttributeError) as exc:
+        raise ValueError("Incomplete data coverage evidence") from exc
+
+
+def _check_coverage(period: dict) -> None:
+    coverage = period.get("coverage")
+    if period["status"] == "unavailable":
+        if coverage is not None:
+            raise ValueError("Unavailable coverage evidence cannot carry gaps")
+        return
+    if not isinstance(coverage, dict) or any(
+            not isinstance(coverage[key], bool) for key in ("dealer_scoped", "found", "sample_data")):
+        raise ValueError("Available coverage evidence requires scope flags")
+    if not coverage["found"]:
+        if not coverage["dealer_scoped"] or coverage["gaps"] is not None or period["rows"]:
+            raise ValueError("Only a dealer without activity has no coverage gaps")
+        return
+    gaps = coverage["gaps"]
+    if not isinstance(gaps, dict) or tuple(gaps) != _GAP_KINDS:
+        raise ValueError("Coverage evidence requires both gap checks")
+    if all(gaps[kind]["status"] == "unavailable" for kind in _GAP_KINDS):
+        raise ValueError("Coverage with no readable check is unavailable")
+    listed = 0
+    for kind in _GAP_KINDS:
+        gap = gaps[kind]
+        dealers, count = gap["dealers"], gap["dealer_count"]
+        if gap["status"] == "unavailable":
+            if count is not None or dealers:
+                raise ValueError("An unreadable coverage check cannot list dealers")
+            continue
+        if gap["status"] != "checked" or not _is_count(count) or not isinstance(dealers, list) or len(dealers) > count:
+            raise ValueError("Coverage dealer counts are inconsistent")
+        for dealer in dealers:
+            if not isinstance(dealer["dealer_id"], str) or not isinstance(dealer["dealer_name"], str) or not all(
+                    _is_count(dealer[field]) for field in _GAP_FIELDS[kind]):
+                raise ValueError("Coverage dealers require names and counts")
+        listed += len(dealers)
+    if len(period["rows"]) != listed:
+        raise ValueError("Coverage rows must be one per listed dealer")
+
+
+def _gap_line(kind: str, dealer: dict) -> str:
+    name = f"{_text(dealer['dealer_name'])} ({_text(dealer['dealer_id'])})"
+    if kind == "profile_class":
+        return (f"| {name} | {dealer['total_activations']:,} | "
+                f"{dealer['zero_commission_count']:,} zero-commission |")
+    return f"| {name} | {dealer['activation_count']:,} | {dealer['affected_products']:,} products |"
+
+
+def _render_coverage(measure: dict, dealer_id: str | None) -> list[str]:
+    """Name each source data gap; an unreadable check is never a clean bill."""
+    parts = []
+    for period in measure["periods"]:
+        month, coverage = _text(period["period"]), period.get("coverage")
+        whom = f"dealer {_text(dealer_id)}, " if dealer_id else ""
+        if period["status"] == "unavailable":
+            note = _text(period.get("note") or "the coverage sources could not be read.")
+            parts.append(f"Data coverage unavailable for {whom}{month}: {note}")
+            parts.append("Missing evidence is not a clean result.")
+            continue
+        if not coverage["found"]:
+            parts.append(f"Dealer {_text(dealer_id)} has no recorded activity in {month}; check the dealer code.")
+            continue
+        gaps = coverage["gaps"]
+        checked = [kind for kind in _GAP_KINDS if gaps[kind]["status"] == "checked"]
+        named = [kind for kind in checked if gaps[kind]["dealer_count"]]
+        if dealer_id:
+            found = ", ".join(_GAP_PHRASES[kind] for kind in named)
+            parts.append(f"Data coverage for {whom}{month}: " + (f"gaps found — {found}." if named
+                         else "no gap found in the checks that ran."))
+        else:
+            counts = "; ".join(f"{_GAP_PHRASES[kind]}: {gaps[kind]['dealer_count']:,} "
+                               f"dealer{'' if gaps[kind]['dealer_count'] == 1 else 's'}" for kind in checked)
+            parts.append(f"Data coverage for {month}: {counts}.")
+        for kind in _GAP_KINDS:
+            gap = gaps[kind]
+            if gap["status"] == "unavailable":
+                parts.append(f"{_GAP_LABELS[kind]}: check unavailable — the source could not be read. "
+                             "Not checked is not a clean result.")
+                continue
+            if not gap["dealer_count"]:
+                continue
+            header = ("| Dealer | Activations | Zero-commission records |" if kind == "profile_class"
+                      else "| Dealer | Activations on those products | Products without an invoice |")
+            lines = [f"{_GAP_LABELS[kind]}:", header, "| --- | --- | --- |",
+                     *(_gap_line(kind, dealer) for dealer in gap["dealers"])]
+            parts.append("\n".join(lines))
+            if gap["dealer_count"] > len(gap["dealers"]):
+                parts.append(f"Showing {len(gap['dealers']):,} of {gap['dealer_count']:,} dealers, "
+                             "most activations first.")
+        if "profile_class" in named:
+            parts.append("A missing account profile class means the dealer code has no customer-master "
+                         "entry; it is one of the four documented zero-commission causes.")
+        if "invoice" in named:
+            parts.append("A missing invoice record limits the inventory comparison for those products; "
+                         "it does not by itself establish a mismatch or an amount owed.")
+        if coverage["sample_data"]:
+            parts.append("Sample data: invoice gaps may include synthetic demonstration scenarios, "
+                         "not authentic IFS evidence.")
+        if period.get("note"):
+            parts.append(_text(period["note"]))
+    sources = dict.fromkeys(_text(period["source"]) for period in measure["periods"])
+    parts.append(f"Source: {', '.join(sources)} (activation records and IFS invoice comparison).")
+    return parts
+
+
+# Standalone measures: each period carries one payload key that only its
 # measure may use. measure -> (payload key, validate(period), render(measure, dealer_id)).
-_DEALER_MONTH = {
+_STANDALONE = {
     "investigation_priority": ("priority", _validate_priority, _render_priority),
     "dealer_statement": ("statement", _validate_statement, _render_statement),
     "verification_outcome": ("verification", _validate_verification, _render_verification),
+    "commission_variance": ("variance", _validate_variance, _render_variance),
+    "data_coverage": ("coverage", _validate_coverage, _render_coverage),
 }

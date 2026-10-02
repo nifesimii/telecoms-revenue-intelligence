@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, Field
 import pandas as pd
 
 from backend.agent import prompts
+from backend.agent.measure_scope import DEALER_COMPARISON_MEASURES
 from backend.db import queries, financial_health
 from backend.db.composite import assemble_dealer_full_context
 from backend.db.connection import execute_query
@@ -46,14 +47,19 @@ _TOOL_ROW_CAP = 500
 _INTERNAL_QUERY_NAMES = {"get_subscription_demo_records"}
 
 
-# measure -> (label, module, reader(period, dealer_id) -> one period-evidence dict).
-_DEALER_MONTH_EVIDENCE = {
+# measure -> (label, module, reader). Readers return one period-evidence dict:
+# reader(period, dealer_id) per requested month, or for a dealer comparison
+# reader(earlier, later, dealer_id) once, keyed on the later month.
+_STANDALONE_EVIDENCE = {
     "investigation_priority": ("Investigation priority", "backend.assurance.overview",
                                "investigation_priority_evidence"),
     "dealer_statement": ("Dealer statement", "backend.db.dealer_statement_evidence",
                          "dealer_statement_evidence"),
     "verification_outcome": ("Verification outcome", "backend.audit.verification_outcome",
                              "verification_outcome_evidence"),
+    "commission_variance": ("Commission variance by product", "backend.db.variance_evidence",
+                            "commission_variance_evidence"),
+    "data_coverage": ("Data coverage", "backend.db.data_coverage_evidence", "data_coverage_evidence"),
 }
 
 
@@ -62,17 +68,21 @@ def execute_measure_request(request: dict[str, Any]) -> dict[str, Any]:
     from backend.db.measure_evidence import collect_measure_evidence
 
     measures = request.get("measures") or []
-    if len(measures) != 1 or measures[0] not in _DEALER_MONTH_EVIDENCE:
+    if len(measures) != 1 or measures[0] not in _STANDALONE_EVIDENCE:
         return collect_measure_evidence(request)
-    # Dealer-month evidence reuses an existing computation unchanged; the
+    # Standalone evidence reuses an existing computation unchanged; the
     # reader is resolved at call time so its layer loads only when asked.
     measure = measures[0]
-    label, module, reader = _DEALER_MONTH_EVIDENCE[measure]
+    label, module, reader = _STANDALONE_EVIDENCE[measure]
     read = getattr(importlib.import_module(module), reader)
     periods, dealer_id = list(request["periods"]), request.get("dealer_id")
+    if measure in DEALER_COMPARISON_MEASURES:
+        evidence = [read(*sorted(periods), dealer_id)]
+    else:
+        evidence = [read(period, dealer_id) for period in periods]
     return {"requested_periods": periods, "dealer_id": dealer_id, "explanations": [], "measures": [{
         "measure": measure, "label": label, "unit": "text", "aggregation": "none", "note": "",
-        "periods": [read(period, dealer_id) for period in periods],
+        "periods": evidence,
     }]}
 
 

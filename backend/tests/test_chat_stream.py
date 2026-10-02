@@ -255,6 +255,29 @@ def test_chat_stream_verification_question_streams_audit_verdicts(monkeypatch):
     assert events[-1]['type'] == 'complete'
 
 
+def test_chat_stream_variance_question_streams_change_by_product(monkeypatch):
+    from backend.tests.test_commission_variance_measure import ORACLE_ANSWER
+    provider(monkeypatch, Stream('Draft: commission fell.', stop='tool_use', tool=scope_tool(
+        measures=['commission_variance'], periods=['202605', '202606'], dealer_id='296065',
+        operation='explain')))
+    events = collect()
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert text == ORACLE_ANSWER and 'Draft' not in text
+    assert events[-1]['type'] == 'complete'
+    assert events[-1]['tools_called'] == ['get_month_on_month_variance']
+
+
+def test_chat_stream_coverage_question_streams_named_gaps(monkeypatch):
+    from backend.tests.test_data_coverage_measure import DEALER_ANSWER
+    provider(monkeypatch, Stream('Draft: data is fine.', stop='tool_use', tool=scope_tool(
+        measures=['data_coverage'], periods=['202606'], dealer_id='296065')))
+    events = collect()
+    text = ''.join(e['text'] for e in events if e['type'] == 'text')
+    assert text == DEALER_ANSWER and 'Draft' not in text
+    assert events[-1]['type'] == 'complete'
+    assert events[-1]['tools_called'] == ['data_coverage']
+
+
 def test_chat_stream_sales_clarification_is_deterministic_and_has_no_evidence(monkeypatch):
     tool = ToolUseBlock(type='tool_use', id='scope_1', name='resolve_measure_request',
         input={'kind': 'clarification', 'clarification': 'sales_meaning'})
