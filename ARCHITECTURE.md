@@ -185,11 +185,13 @@ backend/
 │   │                        activation + inventory + payment for one dealer into a
 │   │                        single call (saves the agent 4 round-trips).
 │   ├── dealer_statement.py  Per-period Finance/RA internal statement composer.
-│   │                        Joins commission + ORSC + payment (respects
+│   │                        Joins activation commission + subscription commission
+│   │                        + subscription revenue + payment (respects
 │   │                        PAYMENT_SOURCE) + linked audit trails into one dict —
 │   │                        powers GET /dealers/{id}/statement.
 │   ├── dealer_statement_evidence.py  Projects that statement into Atlas
-│   │                        dealer_statement evidence (owed/paid/outstanding).
+│   │                        dealer_statement evidence (owed/paid/outstanding per
+│   │                        commission type, plus a plain-sum combined total).
 │   ├── triage.py            TRIAGE_HANDLERS: shape/trim query results for the agent.
 │   ├── data_coverage.py     Compiles the IFS/USP data-gap ServiceNow ticket.
 │   ├── apdp.py              Reads APDP's partner_settlements view (PAYMENT_SOURCE=apdp).
@@ -583,7 +585,10 @@ Statement button in Payment Intelligence dealer row
   → api/client.js GET /dealers/{dealer_id}/statement?mon_period=YYYYMM
     → routes.py → db/dealer_statement.compose_dealer_statement()
       → execute_query("get_dealer_summary", ...)         (commission side)
-      → execute_query("get_orsc_summary", ...)           (informational)
+      → execute_query("get_orsc_summary", ...)           (subscription revenue,
+                                                          informational)
+      → subscription_evidence.summaries(period)          (subscription commission
+                                                          owed/settled/outstanding)
       → payment_data.payment_lookup(period, source)      (settlement side,
                                                           respects PAYMENT_SOURCE)
       → audit_store.get_partner_trail(...) per module    (linked evidence)
@@ -728,10 +733,16 @@ in the localhost-aligned Render preview. An APDP-enabled environment's first boo
 
 **Dealer-statement composer (`backend/db/dealer_statement.py`).** A
 formatter, not a new data source. Reads commission-side (`get_dealer_summary`)
-+ ORSC + payment-side (`payment_data.payment_lookup` — respects
-`PAYMENT_SOURCE`) + linked audit trails (`audit_store.get_partner_trail`
-per registered module) and shapes them into one per-period statement
-dict. The Position headline (PAID_IN_FULL / UNDERPAID / OVERPAID) uses
++ subscription revenue (`get_orsc_summary`, informational) + subscription
+commission (`subscription_evidence.summaries`, its own settlement) +
+payment-side (`payment_data.payment_lookup` — respects `PAYMENT_SOURCE`,
+activation commission only) + linked audit trails
+(`audit_store.get_partner_trail` per registered module) and shapes them into
+one per-period statement dict. `combined` is a plain sum of the two commission
+types and includes subscription commission only when it is recorded; the
+subscription sides carry a status (recorded / not_recorded / unavailable,
+using `queries.has_source_period` coverage) so an uncovered or unreadable
+source is never shown as zero or "none". The Position headline (PAID_IN_FULL / UNDERPAID / OVERPAID) uses
 the same tolerance rules as `payment_reconciliation_audit`, so a
 dealer's Statement and their audit trail never contradict each other
 on the same (dealer, period).

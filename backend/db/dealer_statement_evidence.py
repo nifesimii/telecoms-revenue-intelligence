@@ -92,6 +92,7 @@ def dealer_statement_evidence(period: str, dealer_id: str | None) -> dict[str, A
     name = composed["dealer_name"]
     commission, payment, position = composed["commission"], composed["payment"], composed["position"]
     orsc = composed["orsc"]
+    subscription, combined = composed["subscription_commission"], composed["combined"]
     trails = composed["audit_trails"]
     statement = {
         "found": True,
@@ -102,6 +103,12 @@ def dealer_statement_evidence(period: str, dealer_id: str | None) -> dict[str, A
             "zero_commission_count", "by_denomination")},
         "orsc": None if orsc is None else {key: orsc[key] for key in (
             "device_count", "total_subscription_amount_ngn", "zero_amount_count")},
+        "orsc_status": composed["orsc_status"],
+        # Amounts and record count only: statement/settlement references stay internal.
+        "subscription_commission": {key: subscription[key] for key in (
+            "status", "owed_ngn", "paid_ngn", "outstanding_ngn", "record_count")},
+        "combined": {key: combined[key] for key in (
+            "includes_subscription", "owed_ngn", "paid_ngn", "outstanding_ngn")},
         "payment": {"source": payment_source_label(),
                     "payment_found": payment["payment_found"],
                     "amount_paid_ngn": payment["amount_paid_ngn"],
@@ -120,9 +127,19 @@ def dealer_statement_evidence(period: str, dealer_id: str | None) -> dict[str, A
     rows = [row(f"Activation commission · {denomination}", _ngn(amount))
             for denomination, amount in commission["by_denomination"].items()]
     rows.append(row("Activation commission (amount owed)", _ngn(commission["expected_ngn"])))
-    if orsc is not None:
-        rows.append(row("Subscription amount (ORSC)", _ngn(orsc["total_subscription_amount_ngn"])))
     if payment["payment_found"]:
-        rows.append(row("Amount paid", _ngn(position["paid_ngn"])))
-        rows.append(row("Amount outstanding", _ngn(position["outstanding_ngn"])))
+        rows.append(row("Activation commission paid", _ngn(position["paid_ngn"])))
+        rows.append(row("Activation commission outstanding", _ngn(position["outstanding_ngn"])))
+    if subscription["status"] == "recorded":
+        rows.append(row("Subscription commission (amount owed)", _ngn(subscription["owed_ngn"])))
+        rows.append(row("Subscription commission paid", _ngn(subscription["paid_ngn"])))
+        rows.append(row("Subscription commission outstanding", _ngn(subscription["outstanding_ngn"])))
+    scope = "" if combined["includes_subscription"] else " (activation only)"
+    rows.append(row(f"Total amount owed{scope}", _ngn(combined["owed_ngn"])))
+    if combined["paid_ngn"] is not None:
+        rows.append(row(f"Total amount paid{scope}", _ngn(combined["paid_ngn"])))
+        rows.append(row(f"Total amount outstanding{scope}", _ngn(combined["outstanding_ngn"])))
+    if orsc is not None:
+        rows.append(row("Subscription revenue (not part of amount owed)",
+                        _ngn(orsc["total_subscription_amount_ngn"])))
     return {**base, "total_rows": len(rows), "rows": rows, "statement": statement}
