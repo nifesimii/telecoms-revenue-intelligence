@@ -66,7 +66,7 @@ ORACLE_ANSWER = (
     '**Payment Reconciliation**: UNDERPAID (confidence HIGH). Checked on request with the current audit code; nothing was saved.\n'
     '- Step 2, expected commission: Expected commission NGN 991,086.80.\n'
     '- Step 3, payment record search: No payment record found for this partner/period.\n'
-    '- Step 4, amount comparison: Delta = NGN -991,086.80 (-100.00% of expected).\n'
+    '- Step 4, amount comparison: Paid NGN 991,086.80 less than expected (100.00% of expected).\n'
     '- Caveat: Amount classified as UNDERPAID — see step-4 detail.\n'
     '\n'
     '**Zero-Commission**: NOT_PAID (confidence MEDIUM). Checked on request with the current audit code; nothing was saved.\n'
@@ -206,27 +206,66 @@ def test_module_that_fails_is_unavailable_while_others_answer(no_store, monkeypa
 
 
 def test_saved_trails_are_preferred_and_dated(monkeypatch):
-    """A module with a saved run answers from the store (latest trail), never re-running."""
+    """A module with a saved run answers from its LATEST run only, never re-running."""
     real = vo._zero_commission("202606", "296065", "simulated")[0].to_dict()
-    older = {**copy.deepcopy(real), "conclusion": "PAID",
+    older = {**copy.deepcopy(real), "conclusion": "PAID", "run_id": "run-a",
              "generated_at": datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc), "payment_source": "simulated"}
-    latest = {**copy.deepcopy(real), "generated_at": datetime(2026, 8, 7, 17, 3, tzinfo=timezone.utc),
-              "payment_source": "apdp"}
-    other = {**copy.deepcopy(real), "partner_code": "999",
+    latest = {**copy.deepcopy(real), "run_id": "run-b",
+              "generated_at": datetime(2026, 8, 7, 17, 3, tzinfo=timezone.utc), "payment_source": "apdp"}
+    other = {**copy.deepcopy(real), "partner_code": "999", "run_id": "run-b",
              "generated_at": datetime(2026, 8, 7, 17, 3, tzinfo=timezone.utc)}
-    saved = {"zero_commission": [older, latest, other], "eligibility_window": [other]}
+    saved = {"zero_commission": [older, latest, other]}
     monkeypatch.setattr(audit_store, "healthcheck", lambda: True)
     monkeypatch.setattr(audit_store, "get_period_trails", lambda period, module: saved.get(module, []))
     monkeypatch.setitem(vo._ON_REQUEST, "zero_commission", lambda *a: pytest.fail("saved run exists"))
-    monkeypatch.setitem(vo._ON_REQUEST, "eligibility_window", lambda *a: pytest.fail("saved run exists"))
     by = modules_by_name(verification_outcome_evidence("202606", "296065"))
     zero = by["zero_commission"]
     assert (zero["status"], zero["basis"], zero["run_at"]) == ("verified", "saved", "2026-08-07 17:03 UTC")
-    assert zero["trails"][0]["conclusion"] == "NOT_PAID"
+    assert zero["subject_count"] == 1 and zero["trails"][0]["conclusion"] == "NOT_PAID"
     assert zero["caveats"] == ["The saved run used a different payment source from the current setting."]
-    window = by["eligibility_window"]
-    assert (window["status"], window["basis"], window["run_at"]) == ("no_subject", "saved", "2026-08-07 17:03 UTC")
     assert by["payment_reconciliation"]["basis"] == "on_request"
+
+
+def test_saved_trails_come_from_the_latest_run_only(monkeypatch):
+    """Subjects present only in an older run are not mixed into the latest run's answer."""
+    def inv(product, run_id, at, conclusion="EXCESS_ACTIVATION"):
+        return {"partner_code": f"296065:{product}", "conclusion": conclusion, "confidence": "HIGH",
+                "run_id": run_id, "generated_at": at, "payment_source": "simulated", "steps": []}
+    old_at = datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc)
+    new_at = datetime(2026, 8, 7, 17, 3, tzinfo=timezone.utc)
+    saved = {"inventory_mismatch": [inv("P1", "run-a", old_at), inv("P2", "run-a", old_at),
+                                    inv("P1", "run-b", new_at, "RECONCILED")]}
+    monkeypatch.setattr(audit_store, "healthcheck", lambda: True)
+    monkeypatch.setattr(audit_store, "get_period_trails", lambda period, module: saved.get(module, []))
+    monkeypatch.setitem(vo._ON_REQUEST, "inventory_mismatch", lambda *a: pytest.fail("saved run exists"))
+    inventory = modules_by_name(verification_outcome_evidence("202606", "296065"))["inventory_mismatch"]
+    assert (inventory["basis"], inventory["run_at"], inventory["subject_count"]) == (
+        "saved", "2026-08-07 17:03 UTC", 1)
+    assert inventory["conclusions"] == [{"conclusion": "RECONCILED", "count": 1}]
+
+
+def test_dealer_absent_from_the_latest_saved_run_is_checked_on_request(monkeypatch):
+    """Not a subject of the latest saved run: check on request, never 'no subject' stamped with that run."""
+    other = {"partner_code": "999", "conclusion": "PAID", "confidence": "HIGH", "run_id": "run-b",
+             "generated_at": datetime(2026, 8, 7, 17, 3, tzinfo=timezone.utc), "steps": []}
+    older_self = {**other, "partner_code": "296065", "run_id": "run-a",
+                  "generated_at": datetime(2026, 8, 1, 9, 0, tzinfo=timezone.utc)}
+    monkeypatch.setattr(audit_store, "healthcheck", lambda: True)
+    monkeypatch.setattr(audit_store, "get_period_trails",
+                        lambda period, module: [older_self, other] if module == "eligibility_window" else [])
+    window = modules_by_name(verification_outcome_evidence("202606", "296065"))["eligibility_window"]
+    assert (window["status"], window["basis"], window["run_at"]) == ("verified", "on_request", None)
+    assert window["trails"][0]["conclusion"] == "MIXED_ATTRIBUTION"
+
+
+def test_unknown_dealer_code_is_no_recorded_activity_not_four_no_subjects(no_store, monkeypatch):
+    for name in list(vo._ON_REQUEST):
+        monkeypatch.setitem(vo._ON_REQUEST, name, lambda *a: pytest.fail("no audit for an unknown dealer"))
+    evidence = verification_outcome_evidence("202606", " NO_SUCH_DEALER ")
+    assert evidence["status"] == "available"
+    assert evidence["verification"] == {"found": False} and evidence["rows"] == []
+    answer = plain(render_measure_response(request_for("NO_SUCH_DEALER"), wrap(evidence, "NO_SUCH_DEALER")))
+    assert answer == "Dealer NO_SUCH_DEALER has no recorded activity in 202606; check the dealer code."
 
 
 def test_scenario_trail_text_is_withheld_and_disclosed_neutrally():
@@ -240,6 +279,7 @@ def test_scenario_trail_text_is_withheld_and_disclosed_neutrally():
          "the sampled records.", "passed": False, "caveat": None, "detail": {}}]}
     summary = vo._trail_summary("inventory_mismatch", trail)
     assert summary["limited"] is True and summary["caveats"] == []
+    assert summary["withheld"] == 3
     assert [e["result"] for e in summary["evidence"]] == ["Flagged as CONFIRMED_MISMATCH."]
 
 
@@ -258,7 +298,7 @@ def fake_trail(subject="296065", conclusion="UNDERPAID", confidence="HIGH", **ex
     return {"subject": subject, "product_code": subject.split(":", 1)[1] if ":" in subject else None,
             "conclusion": conclusion, "confidence": confidence,
             "evidence": [{"step": 4, "name": "amount comparison", "result": "Delta = NGN -10.00."}],
-            "caveats": ["Amount classified as UNDERPAID."], "limited": False, **extra}
+            "caveats": ["Amount classified as UNDERPAID."], "limited": False, "withheld": 0, **extra}
 
 
 def fake_module(module="payment_reconciliation", label="Payment Reconciliation", status="verified",
@@ -296,7 +336,7 @@ def test_render_single_verdict_with_step_evidence_and_caveat():
     assert parts[1].splitlines() == [
         "**Payment Reconciliation**: UNDERPAID (confidence HIGH). "
         "Checked on request with the current audit code; nothing was saved.",
-        "- Step 4, amount comparison: Delta = NGN -10.00.",
+        "- Step 4, amount comparison: Paid NGN 10.00 less than expected.",
         "- Caveat: Amount classified as UNDERPAID.",
     ]
     assert parts[-1] == "Source: Audit trails."
@@ -321,7 +361,7 @@ def test_render_multi_subject_module_is_bounded_with_counts():
     module = fake_module("inventory_mismatch", "Inventory Mismatch", trails=trails, subject_count=7)
     answer = render(module)
     assert ("**Inventory Mismatch**: 7 subjects — EXCESS_ACTIVATION 1, INSUFFICIENT_DATA 6.") in answer
-    assert "- Product P1: EXCESS_ACTIVATION (confidence HIGH). Delta = NGN -10.00." in answer
+    assert "- Product P1: EXCESS_ACTIVATION (confidence HIGH). Paid NGN 10.00 less than expected." in answer
     assert "- Product P2: INSUFFICIENT_DATA (confidence LOW), unverified." in answer
     assert ("This product's comparison evidence is not authentic invoice or stock data; no purchase, "
             "carryover or alias conclusion is established.") in answer
@@ -345,6 +385,31 @@ def test_render_no_subject_and_unavailable_are_distinct():
             "Not verified; missing evidence is not a pass.") in answer
 
 
+def test_render_overpaid_delta_has_no_negative_or_signed_amounts():
+    trail = fake_trail("296065", "OVERPAID", evidence=[
+        {"step": 4, "name": "amount comparison", "result": "Delta = NGN +2,500.00 (+2.50% of expected)."}])
+    answer = render(fake_module(trails=[trail]))
+    assert "- Step 4, amount comparison: Overpaid by NGN 2,500.00 (overpaid by 2.50% of expected)." in answer
+    assert not re.search(r"[+-]\s?\d|NGN [+-]", answer)
+
+
+def test_render_underpaid_delta_states_shortfall_in_words():
+    trail = fake_trail(evidence=[
+        {"step": 4, "name": "amount comparison", "result": "Delta = NGN -991,086.80 (-100.00% of expected)."}])
+    answer = render(fake_module(trails=[trail]))
+    assert "Paid NGN 991,086.80 less than expected (100.00% of expected)." in answer
+    assert "NGN -" not in answer and "(-" not in answer
+
+
+def test_render_discloses_withheld_trail_details_neutrally():
+    trails = [fake_trail("296065:P1", "EXCESS_ACTIVATION", withheld=2),
+              fake_trail("296065:P2", "INSUFFICIENT_DATA", "LOW", withheld=1)]
+    answer = render(fake_module("inventory_mismatch", "Inventory Mismatch", trails=trails))
+    assert "- 3 trail detail(s) not shown." in answer
+    assert not DEMO_WORDING.search(answer)
+    assert "not shown" not in render()
+
+
 def test_render_escapes_trail_text():
     trail = fake_trail(evidence=[{"step": 1, "name": "x", "result": "<b>*bold*</b> | pipe"}], caveats=[])
     answer = render_measure_response(request_for(), wrap(fake_period(fake_module(trails=[trail]))))
@@ -366,6 +431,9 @@ def test_render_escapes_trail_text():
     lambda p: p["verification"]["modules"][0].update(trails=[]),
     lambda p: p["verification"]["modules"][0].update(status="unavailable", basis=None, note=None),
     lambda p: p["verification"]["modules"][0].pop("label"),
+    lambda p: p["verification"]["modules"][0]["trails"][0].update(withheld=-1),
+    lambda p: p.update(verification={"found": False}),
+    lambda p: p.update(verification={"found": "no"}, rows=[]),
     lambda p: p.update(status="unavailable"),
 ])
 def test_malformed_verification_payload_raises_value_error(mutate):

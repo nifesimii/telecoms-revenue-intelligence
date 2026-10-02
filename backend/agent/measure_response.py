@@ -6,7 +6,7 @@ from html import escape
 import re
 
 from backend.assurance.overview import SEVERITY_ORDER, UNCHECKED_STATUSES as _UNCHECKED_STATUSES
-from backend.audit.trail import CONCLUSIONS, CONFIDENCES
+from backend.audit.trail import CONCLUSIONS, CONFIDENCES, INSUFFICIENT_DATA as _INSUFFICIENT
 
 _MAX_RENDERED_ROWS = 100
 _MAX_AUDIT_CAVEATS = 3
@@ -349,6 +349,14 @@ def _check_statement(period: dict) -> None:
             raise ValueError("Statement audit trails require text fields")
 
 
+def _linked_conclusion(conclusion: str | None) -> str:
+    if conclusion is None:
+        return "no conclusion recorded"
+    if conclusion == _INSUFFICIENT:
+        return f"{_text(conclusion)} (unverified — not a pass)"
+    return _text(conclusion)
+
+
 def _render_statement(measure: dict, dealer_id: str | None) -> list[str]:
     """Owed, paid, outstanding and status first; missing evidence is never zero."""
     parts = []
@@ -361,18 +369,22 @@ def _render_statement(measure: dict, dealer_id: str | None) -> list[str]:
             parts.append("Missing evidence is not zero.")
             continue
         if not statement["found"]:
-            parts.append(f"Dealer {dealer} has no recorded activity for {month}: no activation records, "
-                         "so no statement is composed. This is not an unavailable source.")
+            parts.append(f"Dealer {dealer} has no recorded activity in {month}; check the dealer code.")
             continue
         commission, position, payment = statement["commission"], statement["position"], statement["payment"]
         parts.append(f"Dealer statement for {_text(statement['dealer_name'])} ({dealer}), {month}.")
         parts.append(f"Amount owed: {_number(position['expected_ngn'], 'ngn')} (activation commission).")
         if payment["payment_found"]:
-            share = (f" ({_number(position['variance_pct'], 'count')}% of amount owed)"
-                     if position["variance_pct"] is not None else "")
+            outstanding, pct = Decimal(str(position["outstanding_ngn"])), position["variance_pct"]
+            overpaid = outstanding < 0
+            share = ("" if pct is None else
+                     f" ({'overpaid by ' if overpaid else ''}{_number(abs(Decimal(str(pct))), 'count')}% of amount owed)")
             status = _text(payment["payment_status"] or "not recorded")
             parts.append(f"Amount paid: {_number(position['paid_ngn'], 'ngn')}.")
-            parts.append(f"Amount outstanding: {_number(position['outstanding_ngn'], 'ngn')}{share}.")
+            if overpaid:
+                parts.append(f"Amount outstanding: none — overpaid by {_number(-outstanding, 'ngn')}{share}.")
+            else:
+                parts.append(f"Amount outstanding: {_number(outstanding, 'ngn')}{share}.")
             parts.append(f"Payment status: {status}; statement position: "
                          f"{_STATEMENT_POSITIONS[position['headline']]}.")
         else:
@@ -399,14 +411,17 @@ def _render_statement(measure: dict, dealer_id: str | None) -> list[str]:
             parts.append(f"Subscription (ORSC): {orsc['device_count']:,} devices, "
                          f"{orsc['zero_amount_count']:,} zero-amount records.")
         audit = statement["audit"]
+        # The composer reads only some modules and skips per-module read failures:
+        # state what was returned, never "none recorded".
         if audit["trails"]:
-            conclusions = "; ".join(f"{_text(t['label'])}: {_text(t['conclusion'] or 'no conclusion recorded')}"
+            conclusions = "; ".join(f"{_text(t['label'])}: {_linked_conclusion(t['conclusion'])}"
                                     for t in audit["trails"])
-            parts.append(f"Linked audit trails: {conclusions}.")
+            parts.append(f"Linked audit conclusions: {conclusions}.")
         elif audit["readable"]:
-            parts.append("Linked audit trails: none recorded for this dealer-month.")
+            parts.append("Linked audit conclusions: none returned.")
         else:
             parts.append("Linked audit trails: unavailable — the audit store could not be read.")
+        parts.append("Ask for the verification outcome for full audit results.")
         if period.get("note"):
             parts.append(_text(period["note"]))
         parts.append(f"Sources: activation commission and subscription records; {_text(payment['source'])}; "
@@ -444,7 +459,6 @@ def render_dealer_codes(evidence: dict) -> str:
 
 _VERIFIED_STATUSES = ("verified", "no_subject", "unavailable")
 _VERIFICATION_BASES = {"saved", "on_request"}
-_INSUFFICIENT = "INSUFFICIENT_DATA"
 _LIMITED_TRAIL = ("This product's comparison evidence is not authentic invoice or stock data; "
                   "no purchase, carryover or alias conclusion is established.")
 
@@ -466,6 +480,12 @@ def _check_verification(period: dict) -> None:
     if period["status"] == "unavailable":
         if verification is not None:
             raise ValueError("Unavailable verification evidence cannot carry verdicts")
+        return
+    if not isinstance(verification, dict) or not isinstance(verification.get("found", True), bool):
+        raise ValueError("Available verification evidence requires a found flag")
+    if verification.get("found") is False:
+        if period["rows"] or verification.get("modules"):
+            raise ValueError("A dealer without recorded activity has no audit verdicts")
         return
     modules = verification["modules"] if isinstance(verification, dict) else None
     if not isinstance(modules, list) or not modules:
@@ -504,11 +524,34 @@ def _check_verification(period: dict) -> None:
                 raise ValueError("Audit trail belongs to a different dealer")
             if trail["product_code"] is not None and not isinstance(trail["product_code"], str):
                 raise ValueError("Product code must be text")
-            if not _texts(trail["caveats"]) or not isinstance(trail["limited"], bool):
+            if (not _texts(trail["caveats"]) or not isinstance(trail["limited"], bool)
+                    or not _is_count(trail.get("withheld", 0))):
                 raise ValueError("Audit trail caveats must be text")
             for line in trail["evidence"]:
                 if not _is_count(line["step"]) or any(not isinstance(line[k], str) for k in ("name", "result")):
                     raise ValueError("Audit step evidence must be text")
+
+
+_DELTA = re.compile(r"Delta = NGN ([+-])([\d,]+\.\d{2})"
+                    r"(?: \(([+-])(\d[\d,]*\.\d+)% of expected\)| (\(expected is zero — % undefined\)))?\.")
+
+
+def _delta_words(text: str) -> str:
+    """The reconciliation's signed delta, stated in words: never a negative amount or percentage."""
+    def words(match: re.Match) -> str:
+        sign, amount, _, pct, undefined = match.groups()
+        if float(amount.replace(",", "")) == 0:
+            lead, share = f"Paid as expected (difference NGN {amount})", "of expected"
+        elif sign == "-":
+            lead, share = f"Paid NGN {amount} less than expected", "of expected"
+        else:
+            lead, share = f"Overpaid by NGN {amount}", "of expected"
+            if pct is not None:
+                return f"{lead} (overpaid by {pct}% {share})."
+        if pct is not None:
+            return f"{lead} ({pct}% {share})."
+        return f"{lead} {undefined}." if undefined else f"{lead}."
+    return _DELTA.sub(words, text)
 
 
 def _render_audit_module(module: dict, dealer: str) -> str:
@@ -531,7 +574,7 @@ def _render_audit_module(module: dict, dealer: str) -> str:
         verdict = (f"{trail['conclusion']} (confidence {trail['confidence']})"
                    + (": unverified, not a pass." if trail["conclusion"] == _INSUFFICIENT else "."))
         header = f"{verdict} {basis}"
-        bullets.extend(f"Step {e['step']}, {e['name']}: {e['result']}" for e in trail["evidence"])
+        bullets.extend(f"Step {e['step']}, {e['name']}: {_delta_words(e['result'])}" for e in trail["evidence"])
         if trail["limited"]:
             bullets.append(_LIMITED_TRAIL)
     else:
@@ -542,7 +585,7 @@ def _render_audit_module(module: dict, dealer: str) -> str:
                        else f"Subject {trail['subject']}")
             words = [f"{subject}: {trail['conclusion']} (confidence {trail['confidence']})"
                      + (", unverified." if trail["conclusion"] == _INSUFFICIENT else "."),
-                     *(e["result"] for e in trail["evidence"])]
+                     *(_delta_words(e["result"]) for e in trail["evidence"])]
             if trail["limited"]:
                 words.append(_LIMITED_TRAIL)
             bullets.append(" ".join(words))
@@ -550,6 +593,9 @@ def _render_audit_module(module: dict, dealer: str) -> str:
             bullets.append(f"Showing {len(trails)} of {count:,} subjects.")
     caveats = [*module["caveats"], *(c for trail in trails for c in trail["caveats"])]
     bullets.extend(f"Caveat: {c}" for c in list(dict.fromkeys(caveats))[:_MAX_AUDIT_CAVEATS])
+    withheld = sum(trail.get("withheld", 0) for trail in trails)
+    if withheld:
+        bullets.append(f"{withheld:,} trail detail(s) not shown.")
     if count > 1 and any(c["conclusion"] == _INSUFFICIENT for c in module["conclusions"]):
         bullets.append("INSUFFICIENT_DATA means the audit could not verify the claim; it is not a pass.")
     return "\n".join([f"{label}: {_text(header)}", *(f"- {_text(bullet)}" for bullet in bullets)])
@@ -565,6 +611,9 @@ def _render_verification(measure: dict, dealer_id: str | None) -> list[str]:
             parts.append(f"Verification outcome unavailable for {month}: {note}")
             parts.append("Missing evidence is not a pass.")
             continue
+        if not period["verification"].get("found", True):
+            parts.append(f"Dealer {_text(dealer)} has no recorded activity in {month}; check the dealer code.")
+            continue
         modules = period["verification"]["modules"]
         tally = {status: sum(m["status"] == status for m in modules) for status in _VERIFIED_STATUSES}
         noun = "module" if len(modules) == 1 else "modules"
@@ -574,8 +623,10 @@ def _render_verification(measure: dict, dealer_id: str | None) -> list[str]:
         parts.extend(_render_audit_module(module, dealer) for module in modules)
         if period.get("note"):
             parts.append(_text(period["note"]))
-    sources = dict.fromkeys(_text(period["source"]) for period in measure["periods"])
-    parts.append(f"Source: {', '.join(sources)}.")
+    if any(period["status"] == "unavailable" or period["verification"].get("found", True)
+           for period in measure["periods"]):
+        sources = dict.fromkeys(_text(period["source"]) for period in measure["periods"])
+        parts.append(f"Source: {', '.join(sources)}.")
     return parts
 
 

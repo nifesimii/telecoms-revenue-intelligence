@@ -362,7 +362,7 @@ def _conclude(
 # Input gathering — fetch from the existing query layer.
 # ---------------------------------------------------------------------------
 
-def _prior_period(mon_period: str, known_periods: list[str]) -> str | None:
+def prior_period(mon_period: str, known_periods: list[str]) -> str | None:
     """The period immediately before ``mon_period`` in the known set."""
     if not known_periods:
         return None
@@ -521,17 +521,17 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
         return []
 
     # Shared lookups — fetched once, reused across rows.
-    prior_period = _prior_period(mon_period, _known_periods())
+    prior = prior_period(mon_period, _known_periods())
     prior_df = None
-    if prior_period:
+    if prior:
         try:
             prior_df = execute_query(
-                "get_inventory_comparison", {"mon_period": prior_period}
+                "get_inventory_comparison", {"mon_period": prior}
             )
         except Exception:
             prior_df = None
 
-    ifs_records_present = _ifs_covers_period(mon_period)
+    ifs_records_present = ifs_covers_period(mon_period)
 
     trails: list[VerificationTrail] = []
     for _, row in flagged.iterrows():
@@ -539,7 +539,7 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
             row.to_dict(),
             mon_period,
             period_df=period_df,
-            prior_period=prior_period,
+            prior_period=prior,
             prior_df=prior_df,
             ifs_records_present=ifs_records_present,
         )
@@ -547,7 +547,7 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
     return trails
 
 
-def _ifs_covers_period(mon_period: str) -> bool:
+def ifs_covers_period(mon_period: str) -> bool:
     """True if the IFS sample/table has any rows relevant to this period.
 
     Sample mode: the ifs_invoice_history CSV isn't partitioned by period,

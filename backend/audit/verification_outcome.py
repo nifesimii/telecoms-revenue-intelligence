@@ -23,13 +23,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from backend import config
+from backend.audit.trail import INSUFFICIENT_DATA
 
 logger = logging.getLogger(__name__)
 
 VERIFICATION_SOURCE = "Audit trails"
 VERIFICATION_TOOL = "audit_trails"
 MAX_TRAILS = 5          # trails shown per module; counts always cover every subject
-MAX_CAVEATS = 3         # distinct caveats shown per module
 
 # Answer order: "was the dealer paid correctly" first.
 _ORDER = ("payment_reconciliation", "zero_commission", "eligibility_window", "inventory_mismatch")
@@ -50,13 +50,13 @@ _KEY_STEPS = {
     "inventory_mismatch": {"mismatch_signal", "purchase_record_lookup", "allocation_calculation"},
 }
 _PAYMENT_MODULES = {"payment_reconciliation", "zero_commission"}
-_DECISIVE_LAST = "INSUFFICIENT_DATA"
+_INSUFFICIENT_SORTS_LAST = INSUFFICIENT_DATA   # shown trails list unverified subjects after verdicts
 # Recorded trail text that names non-authentic evidence is withheld from answers.
 _WITHHELD_WORDING = re.compile(r"synthetic|simulated|sample|demo", re.IGNORECASE)
 
 
 class _NoSavedRun(LookupError):
-    """The audit store has no saved run for this module and month."""
+    """No saved run for this module and month includes this dealer as a subject."""
 
 
 # ── Per-dealer, in-memory trail builders (each mirrors its run_period) ──────
@@ -108,14 +108,14 @@ def _inventory_mismatch(period: str, dealer_id: str, source: str):
                         & period_df["finding_type"].isin(["CONFIRMED_MISMATCH", "NO_INVOICE_RECORD"])]
     if flagged.empty:
         return []
-    prior_period = audit._prior_period(period, known_periods())
+    prior_period = audit.prior_period(period, known_periods())
     prior_df = None
     if prior_period:
         try:
             prior_df = execute_query("get_inventory_comparison", {"mon_period": prior_period})
         except Exception:
             prior_df = None
-    ifs_present = audit._ifs_covers_period(period)
+    ifs_present = audit.ifs_covers_period(period)
     return [audit.build_trail(audit.gather_inputs(
         row.to_dict(), period, period_df=period_df, prior_period=prior_period,
         prior_df=prior_df, ifs_records_present=ifs_present)) for _, row in flagged.iterrows()]
@@ -132,20 +132,25 @@ _ON_REQUEST = {
 # ── Saved trails (the Audit Trails tab's store) ───────────────────────────
 
 def _saved_trails(module: str, period: str, dealer_id: str):
-    """(latest trail per subject for this dealer, run timestamp). Raises _NoSavedRun."""
+    """(this dealer's trails in the LATEST saved run, that run's timestamp).
+
+    Raises _NoSavedRun when the module has no saved run for the month, or
+    when the dealer is not a subject of the latest one (the caller then
+    checks on request rather than stamping "no subject" with that run).
+    """
     from backend.db import audit_store
     rows = audit_store.get_period_trails(period, module)
     if not rows:
         raise _NoSavedRun(module)
-    latest: dict[str, dict] = {}
-    for row in rows:
-        code = str(row["partner_code"])
-        if code.split(":")[0] != dealer_id:
-            continue
-        if code not in latest or row["generated_at"] > latest[code]["generated_at"]:
-            latest[code] = row
-    stamped = list(latest.values()) or rows
-    return list(latest.values()), max(row["generated_at"] for row in stamped)
+    run_at = max(row["generated_at"] for row in rows)
+    latest = next(row for row in rows if row["generated_at"] == run_at)
+    run = latest.get("run_id")
+    in_run = [row for row in rows
+              if (row.get("run_id") == run if run is not None else row["generated_at"] == run_at)]
+    mine = [row for row in in_run if str(row["partner_code"]).split(":")[0] == dealer_id]
+    if not mine:
+        raise _NoSavedRun(module)
+    return mine, run_at
 
 
 def _stamp(value: datetime) -> str:
@@ -156,8 +161,12 @@ def _stamp(value: datetime) -> str:
 
 # ── Payload shaping ───────────────────────────────────────────────────────
 
+def _withheld(text: Any) -> bool:
+    return isinstance(text, str) and bool(_WITHHELD_WORDING.search(text))
+
+
 def _shown(module: str, text: Any) -> str | None:
-    if not isinstance(text, str) or not text.strip() or _WITHHELD_WORDING.search(text):
+    if not isinstance(text, str) or not text.strip() or _withheld(text):
         return None
     if module == "eligibility_window":
         # Same display qualification as the Audit Trails tab (db.audit_workspace.detail):
@@ -173,6 +182,9 @@ def _trail_summary(module: str, trail: dict) -> dict:
                  "result": _shown(module, s.get("result"))}
                 for s in steps if s["name"] in keys or not s.get("passed")]
     code = str(trail["partner_code"])
+    shown_steps = [s for s in steps if s["name"] in keys or not s.get("passed")]
+    withheld = (sum(_withheld(s.get("result")) for s in shown_steps)
+                + sum(_withheld(s.get("caveat")) for s in steps))
     return {
         "subject": code,
         "product_code": code.split(":", 1)[1] if ":" in code else None,
@@ -182,11 +194,13 @@ def _trail_summary(module: str, trail: dict) -> dict:
         "caveats": [c for c in (_shown(module, s.get("caveat")) for s in steps) if c],
         # Inventory comparison scenarios disclose that they are not authentic records.
         "limited": any((s.get("detail") or {}).get("scenario_id") for s in steps),
+        # Recorded text withheld above, disclosed as a count so evidence is never silently shortened.
+        "withheld": withheld,
     }
 
 
 def _module_payload(module, label, status, basis, run_at, trails, note=None, payment_source=None):
-    trails = sorted(trails, key=lambda t: (t["conclusion"] == _DECISIVE_LAST, str(t["partner_code"])))
+    trails = sorted(trails, key=lambda t: (t["conclusion"] == _INSUFFICIENT_SORTS_LAST, str(t["partner_code"])))
     counts = Counter(t["conclusion"] for t in trails)
     caveats = []
     if (basis == "saved" and module in _PAYMENT_MODULES and payment_source
@@ -248,9 +262,18 @@ def verification_outcome_evidence(period: str, dealer_id: str | None) -> dict:
     if period not in known:
         return _unavailable(period, f"Audit verification is unavailable for {period}: "
                                     "no data is recorded for this month.")
+    dealer = str(dealer_id).strip()
+    try:
+        recorded = _summary_row(period, dealer) is not None
+    except Exception:
+        logger.exception("Dealer summary unreadable: %s %s", period, dealer)
+        recorded = True   # unknown, not absent: let each module answer or be unavailable
+    if not recorded:
+        return {"period": period, "status": "available", "source": VERIFICATION_SOURCE,
+                "tool": VERIFICATION_TOOL, "total": None, "truncated": False, "total_rows": 0,
+                "note": "", "rows": [], "verification": {"found": False}}
     from backend.audit.base import list_modules
     from backend.db import audit_store
-    dealer = str(dealer_id)
     store_ok = audit_store.healthcheck()
     rank = {name: i for i, name in enumerate(_ORDER)}
     modules = sorted(list_modules(), key=lambda m: (rank.get(m.name, len(rank)), m.name))
@@ -268,4 +291,4 @@ def verification_outcome_evidence(period: str, dealer_id: str | None) -> dict:
     return {"period": period, "status": "available", "source": VERIFICATION_SOURCE,
             "tool": VERIFICATION_TOOL, "total": None, "truncated": False,
             "total_rows": len(rows), "note": "", "rows": rows,
-            "verification": {"modules": results}}
+            "verification": {"found": True, "modules": results}}

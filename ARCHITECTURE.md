@@ -234,8 +234,8 @@ backend/
 │                            6-month invoice→activation window?" Per-partner
 │                            rollup, per-IMEI evidence in step details.
 │                            POLICY_MET / POLICY_VIOLATED / MIXED_ATTRIBUTION.
-│   └── verification_outcome.py  Atlas read-only dealer-month verdicts: latest saved
-│                            trail per module, else that module's own single-dealer
+│   └── verification_outcome.py  Atlas read-only dealer-month verdicts: the latest saved
+│                            run per module when the dealer is in it, else its own single-dealer
 │                            check in memory ("checked on request"); never persists.
 │
 ├── agent/                 ── AGENT LAYER (Claude chat) ──

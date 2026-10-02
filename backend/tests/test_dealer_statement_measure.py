@@ -6,6 +6,7 @@ pinned, because whether a local audit Postgres is running is environmental.
 """
 import asyncio
 import os
+import re
 
 os.environ["USE_SAMPLE_DATA"] = "true"
 
@@ -41,7 +42,8 @@ ORACLE_ANSWER = "\n\n".join([
     ]),
     "Activations: 495 recorded, 445 commission-bearing, 50 zero-commission.",
     "Subscription (ORSC): 2 devices, 0 zero-amount records.",
-    "Linked audit trails: none recorded for this dealer-month.",
+    "Linked audit conclusions: none returned.",
+    "Ask for the verification outcome for full audit results.",
     "Sources: activation commission and subscription records; Payment records; verification audit trails.",
 ])
 
@@ -103,8 +105,7 @@ def test_dealer_without_activity_is_no_recorded_activity_not_unavailable():
     assert evidence["status"] == "available"
     assert evidence["statement"] == {"found": False} and evidence["rows"] == []
     answer = render_measure_response(request("NO_SUCH_DEALER"), envelope(evidence, "NO_SUCH_DEALER"))
-    assert answer.startswith("Dealer NO\\_SUCH\\_DEALER has no recorded activity for 202606")
-    assert "NGN" not in answer and "unavailable source" in answer
+    assert answer == "Dealer NO\\_SUCH\\_DEALER has no recorded activity in 202606; check the dealer code."
 
 
 def test_unknown_month_and_missing_dealer_are_unavailable():
@@ -137,6 +138,7 @@ def test_audit_store_offline_is_stated_separately(monkeypatch):
     assert evidence["statement"]["audit"] == {"readable": False, "trails": []}
     answer = render_measure_response(request(), envelope(evidence))
     assert "Linked audit trails: unavailable — the audit store could not be read." in answer
+    assert "Ask for the verification outcome for full audit results." in answer
     assert "Amount owed: NGN 991,086.80" in answer
 
 
@@ -152,8 +154,9 @@ def test_linked_audit_trails_show_module_and_conclusion_only(monkeypatch):
     assert [set(t) for t in trails] == [{"module", "label", "conclusion"}]
     answer = render_measure_response(request(), envelope(evidence))
     assert trails[0]["module"] == "zero_commission"
-    assert "Linked audit trails: " in answer and ": ROOT\\_CAUSE\\_IDENTIFIED." in answer
+    assert "Linked audit conclusions: " in answer and ": ROOT\\_CAUSE\\_IDENTIFIED." in answer
     assert "t1" not in answer and "0.9" not in answer
+    assert "Ask for the verification outcome for full audit results." in answer
 
 
 # ── Renderer with fakes ─────────────────────────────────────────────────────
@@ -191,6 +194,33 @@ def test_paid_statement_leads_with_owed_paid_outstanding_and_status():
     # Missing subscription evidence is unavailable, never a zero line.
     assert "Subscription (ORSC): unavailable" in answer and "Not zero." in answer
     assert "| Subscription amount" not in answer
+
+
+def test_linked_audit_conclusions_render_only_what_was_read():
+    answer = render_measure_response(request(), envelope(paid_period()))
+    assert "Linked audit conclusions: none returned." in answer
+    assert "Linked audit trails: none recorded" not in answer
+    assert "Ask for the verification outcome for full audit results." in answer
+
+
+def test_linked_insufficient_data_is_unverified_not_a_pass():
+    audit = {"readable": True, "trails": [
+        {"module": "payment_reconciliation", "label": "Payment Reconciliation", "conclusion": "INSUFFICIENT_DATA"},
+        {"module": "zero_commission", "label": "Zero-Commission", "conclusion": "NOT_PAID"}]}
+    answer = render_measure_response(request(), envelope(paid_period(audit=audit)))
+    assert ("Linked audit conclusions: Payment Reconciliation: INSUFFICIENT\\_DATA (unverified — not a pass); "
+            "Zero\\-Commission: NOT\\_PAID.") in answer
+
+
+def test_overpaid_statement_has_no_negative_amount_or_percentage():
+    period = paid_period()
+    period["statement"]["payment"].update(amount_paid_ngn=991586.8, payment_status="PAID")
+    period["statement"]["position"].update(paid_ngn=991586.8, outstanding_ngn=-500.0, variance_pct=-0.05,
+                                           headline="OVERPAID")
+    answer = render_measure_response(request(), envelope(period))
+    assert "Amount outstanding: none — overpaid by NGN 500.00 (overpaid by 0.05% of amount owed)." in answer
+    assert not re.search(r"-\s?\d|NGN \\?-", answer)
+    assert "statement position: overpaid." in answer
 
 
 def test_statement_answers_carry_no_demo_wording():
