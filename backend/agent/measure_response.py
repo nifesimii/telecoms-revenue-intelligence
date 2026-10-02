@@ -353,6 +353,8 @@ def _check_statement(period: dict) -> None:
 
 
 _SUBSCRIPTION_STATES = {"recorded", "not_recorded", "unavailable"}
+# Subscription commission can also be held back when the dealer's records are incomplete.
+_SUBSCRIPTION_COMMISSION_STATES = _SUBSCRIPTION_STATES | {"incomplete"}
 _SUBSCRIPTION_AMOUNTS = ("owed_ngn", "paid_ngn", "outstanding_ngn")
 
 
@@ -364,7 +366,7 @@ def _check_statement_subscription(statement: dict) -> None:
     """Subscription commission is its own settlement; the combined total is a plain sum."""
     subscription, combined = statement["subscription_commission"], statement["combined"]
     status = subscription["status"]
-    if status not in _SUBSCRIPTION_STATES or not _is_count(subscription["record_count"]):
+    if status not in _SUBSCRIPTION_COMMISSION_STATES or not _is_count(subscription["record_count"]):
         raise ValueError("Unsupported subscription commission state")
     amounts = [subscription[key] for key in _SUBSCRIPTION_AMOUNTS]
     recorded = status == "recorded"
@@ -459,6 +461,9 @@ def _render_statement(measure: dict, dealer_id: str | None) -> list[str]:
         parts.append("\n".join(lines))
         if subscription["status"] == "not_recorded":
             parts.append(f"Subscription commission: none recorded for this dealer in {month}.")
+        elif subscription["status"] == "incomplete":
+            parts.append(f"Subscription commission: this dealer's subscription records for {month} are "
+                         "incomplete, so it is not stated — missing is not zero.")
         elif not recorded:
             parts.append("Subscription commission: unavailable for this month — missing is not zero.")
         lines = ["| Component | Amount |", "| --- | --- |"]

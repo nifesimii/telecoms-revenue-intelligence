@@ -403,15 +403,21 @@ def test_unreadable_subscription_source_is_unavailable_not_none(monkeypatch):
     assert "none recorded" not in answer
 
 
-def test_incomplete_dealer_subscription_records_are_unavailable(monkeypatch):
+def test_incomplete_dealer_subscription_records_are_incomplete_not_unavailable(monkeypatch):
     from backend.db import subscription_evidence
     monkeypatch.setattr(subscription_evidence, "summaries", lambda period: {"296065": {
         "subscription_commission_ngn": None, "subscription_settled_ngn": None,
         "subscription_outstanding_ngn": None, "subscription_commission_record_count": 1,
         "subscription_commission_complete": False}})
-    statement = dealer_statement_evidence("202606", "296065")["statement"]
-    assert statement["subscription_commission"]["status"] == "unavailable"
+    evidence = dealer_statement_evidence("202606", "296065")
+    statement = evidence["statement"]
+    assert statement["subscription_commission"]["status"] == "incomplete"
     assert statement["combined"]["includes_subscription"] is False
+    answer = render_measure_response(request(), envelope(evidence))
+    assert ("Subscription commission: this dealer's subscription records for 202606 are "
+            "incomplete, so it is not stated — missing is not zero.") in answer
+    assert "unavailable for this month" not in answer
+    assert "Total (activation only)" in answer
 
 
 def _recorded_subscription():

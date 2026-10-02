@@ -492,7 +492,8 @@ def _select_subjects(mon_period: str) -> tuple[pd.DataFrame, pd.DataFrame] | Non
     holds the (dealer, product) rows the inventory assurance flagged and
     ``period_df`` is the whole comparison (sibling purchases are read from
     it). ``None`` when the period has no subjects. The ONE subject filter
-    shared by :func:`run_period` and :func:`run_dealer`.
+    shared by :func:`run_period` and :func:`run_dealer`. A source read
+    failure propagates: an unreadable source is not "no subjects".
     """
     # Reject unknown periods early — the sample-data reader raises when the
     # period isn't in the CSV partition map, and pandas may raise inside the
@@ -502,12 +503,9 @@ def _select_subjects(mon_period: str) -> tuple[pd.DataFrame, pd.DataFrame] | Non
     if known and str(mon_period) not in known:
         return None
 
-    try:
-        period_df = execute_query(
-            "get_inventory_comparison", {"mon_period": str(mon_period)}
-        )
-    except Exception:
-        return None
+    period_df = execute_query(
+        "get_inventory_comparison", {"mon_period": str(mon_period)}
+    )
     if period_df is None or period_df.empty:
         return None
 
@@ -561,7 +559,11 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
     this module always reads IFS.
     """
     _ = payment_source  # interface parity with AuditModule.build
-    subjects = _select_subjects(mon_period)
+    try:
+        subjects = _select_subjects(mon_period)
+    except Exception:
+        # The period run has always degraded to no trails on a read failure.
+        return []
     if subjects is None:
         return []
     return _build_trails(mon_period, *subjects)
@@ -572,6 +574,7 @@ def run_dealer(
 ) -> list[VerificationTrail]:
     """One dealer's (dealer, product) trails, exactly as :func:`run_period`
     would build them; ``[]`` when none of the dealer's products is flagged.
+    A source read failure raises, so callers report the check unavailable.
     Read-only — never persisted. ``payment_source`` is ignored (IFS only).
     """
     _ = payment_source

@@ -14,11 +14,12 @@ not a new data source. Reads:
   * ``payment_data.payment_lookup`` — activation settlement-side (respects
     ``PAYMENT_SOURCE=apdp|simulated``)
 
-``combined`` is a plain sum of the two commission types; it includes
-subscription commission only when that is recorded for the dealer-month.
   * ``audit_store`` — persisted verification trails for the same
     (dealer, period), so the statement links out to the audit evidence
     behind each number
+
+``combined`` is a plain sum of the two commission types; it includes
+subscription commission only when that is recorded for the dealer-month.
 
 Finance-internal tone: shows system-y detail (data source badges, trail
 ids, run ids). If a dealer-facing variant is needed later, wrap this
@@ -230,9 +231,10 @@ def _subscription_revenue(dealer_id: str, mon_period: str) -> tuple[dict[str, An
 def _subscription_commission(dealer_id: str, mon_period: str) -> dict[str, Any]:
     """The dealer's subscription commission owed, settled and outstanding, as the source reports it.
 
-    ``unavailable`` when the source does not cover the month, cannot be read,
-    or the dealer's records are incomplete; ``not_recorded`` when the source
-    covers the month but holds nothing for this dealer. Never zero-filled.
+    ``unavailable`` when the source does not cover the month or cannot be read;
+    ``incomplete`` when the dealer's records are incomplete; ``not_recorded``
+    when the source covers the month but holds nothing for this dealer.
+    Never zero-filled.
     """
     from backend.db import queries, subscription_evidence
     unknown = {"owed_ngn": None, "paid_ngn": None, "outstanding_ngn": None, "record_count": 0}
@@ -248,7 +250,7 @@ def _subscription_commission(dealer_id: str, mon_period: str) -> dict[str, Any]:
                "paid_ngn": summary.get("subscription_settled_ngn"),
                "outstanding_ngn": summary.get("subscription_outstanding_ngn")}
     if not summary.get("subscription_commission_complete") or any(v is None for v in amounts.values()):
-        return {"status": "unavailable", **unknown}
+        return {"status": "incomplete", **unknown}
     return {"status": "recorded", **{k: round(float(v), 2) for k, v in amounts.items()},
             "record_count": int(summary.get("subscription_commission_record_count") or 0)}
 

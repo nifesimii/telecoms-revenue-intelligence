@@ -72,3 +72,25 @@ def test_active_dealer_without_zero_commission_records_is_not_a_subject(name):
 @pytest.mark.parametrize("name", list(MODULES))
 def test_run_dealer_for_an_unknown_month_is_empty(name):
     assert MODULES[name].run_dealer("209912", DEALER, SOURCE) == []
+
+
+def test_unreadable_inventory_source_raises_for_one_dealer(monkeypatch):
+    def unreadable(name, params):
+        raise OSError("inventory source unreadable")
+    monkeypatch.setattr(inventory_mismatch_audit, "execute_query", unreadable)
+    with pytest.raises(OSError):
+        inventory_mismatch_audit.run_dealer(PERIOD, DEALER, SOURCE)
+    # The period run keeps its existing contract: no trails, no crash.
+    assert inventory_mismatch_audit.run_period(PERIOD, SOURCE) == []
+
+
+def test_unreadable_inventory_source_is_unavailable_not_no_subject(monkeypatch):
+    from backend.audit import verification_outcome as vo
+
+    def unreadable(name, params):
+        raise OSError("inventory source unreadable")
+    monkeypatch.setattr(inventory_mismatch_audit, "execute_query", unreadable)
+    monkeypatch.setattr(audit_store, "healthcheck", lambda: False)
+    modules = vo.verification_outcome_evidence(PERIOD, DEALER)["verification"]["modules"]
+    inventory = next(m for m in modules if m["module"] == "inventory_mismatch")
+    assert inventory["status"] == "unavailable"
