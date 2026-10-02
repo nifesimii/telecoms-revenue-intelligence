@@ -339,6 +339,9 @@ def _check_statement(period: dict) -> None:
     if orsc is not None and (not _is_count(orsc["device_count"]) or not _is_count(orsc["zero_amount_count"])
                              or not _is_amount(orsc["total_subscription_amount_ngn"])):
         raise ValueError("Statement subscription evidence is incomplete")
+    if statement["orsc_status"] not in _SUBSCRIPTION_STATES or (orsc is None) == (statement["orsc_status"] == "recorded"):
+        raise ValueError("Statement subscription revenue state is inconsistent")
+    _check_statement_subscription(statement)
     audit = statement["audit"]
     trails = audit["trails"]
     if not isinstance(audit["readable"], bool) or not isinstance(trails, list) or (trails and not audit["readable"]):
@@ -349,12 +352,61 @@ def _check_statement(period: dict) -> None:
             raise ValueError("Statement audit trails require text fields")
 
 
+_SUBSCRIPTION_STATES = {"recorded", "not_recorded", "unavailable"}
+_SUBSCRIPTION_AMOUNTS = ("owed_ngn", "paid_ngn", "outstanding_ngn")
+
+
+def _cents(value: object) -> Decimal:
+    return Decimal(str(value)).quantize(Decimal("0.01"))
+
+
+def _check_statement_subscription(statement: dict) -> None:
+    """Subscription commission is its own settlement; the combined total is a plain sum."""
+    subscription, combined = statement["subscription_commission"], statement["combined"]
+    status = subscription["status"]
+    if status not in _SUBSCRIPTION_STATES or not _is_count(subscription["record_count"]):
+        raise ValueError("Unsupported subscription commission state")
+    amounts = [subscription[key] for key in _SUBSCRIPTION_AMOUNTS]
+    recorded = status == "recorded"
+    if recorded and not all(_is_amount(value) for value in amounts):
+        raise ValueError("Recorded subscription commission requires amounts")
+    if not recorded and any(value is not None for value in amounts):
+        raise ValueError("Missing subscription commission cannot carry amounts")
+    if combined["includes_subscription"] is not recorded:
+        raise ValueError("Combined total must include subscription commission only when recorded")
+    position, found = statement["position"], statement["payment"]["payment_found"]
+    expected = {"owed_ngn": position["expected_ngn"], "paid_ngn": position["paid_ngn"],
+                "outstanding_ngn": position["outstanding_ngn"]}
+    for key, activation in expected.items():
+        value = combined[key]
+        if key != "owed_ngn" and not found:
+            if value is not None:
+                raise ValueError("Combined paid and outstanding need the activation payment record")
+            continue
+        total = _cents(activation) + (_cents(subscription[key]) if recorded else 0)
+        if not _is_amount(value) or _cents(value) != total:
+            raise ValueError("Combined statement total is not the sum of its commission types")
+
+
 def _linked_conclusion(conclusion: str | None) -> str:
     if conclusion is None:
         return "no conclusion recorded"
     if conclusion == _INSUFFICIENT:
         return f"{_text(conclusion)} (unverified — not a pass)"
     return _text(conclusion)
+
+
+def _outstanding(value: object, share: str = "") -> str:
+    """Outstanding amounts never render negative: an overpayment is stated as such."""
+    amount = Decimal(str(value))
+    if amount < 0:
+        return f"none — overpaid by {_number(-amount, 'ngn')}{share}"
+    return f"{_number(amount, 'ngn')}{share}"
+
+
+def _type_row(label: str, owed: object, paid: object | None, outstanding: str | None) -> str:
+    paid_text = "unavailable" if paid is None else _number(paid, "ngn")
+    return f"| {label} | {_number(owed, 'ngn')} | {paid_text} | {outstanding or 'unavailable'} |"
 
 
 def _render_statement(measure: dict, dealer_id: str | None) -> list[str]:
@@ -372,44 +424,61 @@ def _render_statement(measure: dict, dealer_id: str | None) -> list[str]:
             parts.append(f"Dealer {dealer} has no recorded activity in {month}; check the dealer code.")
             continue
         commission, position, payment = statement["commission"], statement["position"], statement["payment"]
+        subscription, combined = statement["subscription_commission"], statement["combined"]
+        recorded, found = combined["includes_subscription"], payment["payment_found"]
         parts.append(f"Dealer statement for {_text(statement['dealer_name'])} ({dealer}), {month}.")
-        parts.append(f"Amount owed: {_number(position['expected_ngn'], 'ngn')} (activation commission).")
-        if payment["payment_found"]:
-            outstanding, pct = Decimal(str(position["outstanding_ngn"])), position["variance_pct"]
-            overpaid = outstanding < 0
-            share = ("" if pct is None else
-                     f" ({'overpaid by ' if overpaid else ''}{_number(abs(Decimal(str(pct))), 'count')}% of amount owed)")
-            status = _text(payment["payment_status"] or "not recorded")
-            parts.append(f"Amount paid: {_number(position['paid_ngn'], 'ngn')}.")
-            if overpaid:
-                parts.append(f"Amount outstanding: none — overpaid by {_number(-outstanding, 'ngn')}{share}.")
-            else:
-                parts.append(f"Amount outstanding: {_number(outstanding, 'ngn')}{share}.")
-            parts.append(f"Payment status: {status}; statement position: "
-                         f"{_STATEMENT_POSITIONS[position['headline']]}.")
+        scope = "activation and subscription commission" if recorded else "activation commission only"
+        parts.append(f"Amount owed: {_number(combined['owed_ngn'], 'ngn')} ({scope}).")
+        if found:
+            parts.append(f"Amount paid: {_number(combined['paid_ngn'], 'ngn')}.")
+            parts.append(f"Amount outstanding: {_outstanding(combined['outstanding_ngn'])}.")
+            activation_status = (f"activation commission {_text(payment['payment_status'] or 'not recorded')} "
+                                 f"(statement position: {_STATEMENT_POSITIONS[position['headline']]})")
         else:
-            parts.append(f"Amount paid: unavailable — no payment record was found in "
+            parts.append(f"Amount paid: unavailable — no activation payment record was found in "
                          f"{_text(payment['source'])} for this dealer-month. Missing is not zero.")
-            parts.append("Amount outstanding: unavailable without a payment record.")
-            parts.append("Payment status: no payment record.")
+            parts.append("Amount outstanding: unavailable without an activation payment record.")
+            activation_status = "activation commission has no payment record"
+        subscription_status = "" if not recorded else (
+            f"; subscription commission {_number(subscription['paid_ngn'], 'ngn')} settled of "
+            f"{_number(subscription['owed_ngn'], 'ngn')} owed, as reported")
+        parts.append(f"Payment status: {activation_status}{subscription_status}.")
+        pct = position["variance_pct"]
+        share = "" if pct is None else (f" ({'overpaid by ' if Decimal(str(position['outstanding_ngn'])) < 0 else ''}"
+                                        f"{_number(abs(Decimal(str(pct))), 'count')}% of amount owed)")
+        lines = ["| Commission | Owed | Paid | Outstanding |", "| --- | --- | --- | --- |",
+                 _type_row("Activation commission", commission["expected_ngn"],
+                           position["paid_ngn"] if found else None,
+                           _outstanding(position["outstanding_ngn"], share) if found else None)]
+        if recorded:
+            lines.append(_type_row("Subscription commission", subscription["owed_ngn"], subscription["paid_ngn"],
+                                   _outstanding(subscription["outstanding_ngn"])))
+        lines.append(_type_row("Total" if recorded else "Total (activation only)", combined["owed_ngn"],
+                               combined["paid_ngn"],
+                               None if combined["outstanding_ngn"] is None else _outstanding(combined["outstanding_ngn"])))
+        parts.append("\n".join(lines))
+        if subscription["status"] == "not_recorded":
+            parts.append(f"Subscription commission: none recorded for this dealer in {month}.")
+        elif not recorded:
+            parts.append("Subscription commission: unavailable for this month — missing is not zero.")
         lines = ["| Component | Amount |", "| --- | --- |"]
         for denomination, amount in commission["by_denomination"].items():
             lines.append(f"| Activation commission · {_text(denomination)} | {_number(amount, 'ngn')} |")
         lines.append(f"| Activation commission (amount owed) | {_number(commission['expected_ngn'], 'ngn')} |")
-        orsc = statement["orsc"]
-        if orsc is not None:
-            lines.append("| Subscription amount (ORSC; not part of amount owed) | "
-                         f"{_number(orsc['total_subscription_amount_ngn'], 'ngn')} |")
         parts.append("\n".join(lines))
         parts.append(f"Activations: {commission['total_activations']:,} recorded, "
                      f"{commission['qualified_activation_count']:,} commission-bearing, "
                      f"{commission['zero_commission_count']:,} zero-commission.")
-        if orsc is None:
-            parts.append("Subscription (ORSC): unavailable — no subscription record was returned for this "
-                         "month (none recorded, or the subscription source could not be read). Not zero.")
+        revenue = statement["orsc"]
+        if revenue is not None:
+            devices = revenue["device_count"]
+            parts.append(f"Subscription revenue: {_number(revenue['total_subscription_amount_ngn'], 'ngn')} across "
+                         f"{devices:,} device{'' if devices == 1 else 's'} (not part of the amount owed); "
+                         f"{revenue['zero_amount_count']:,} zero-amount records.")
+        elif statement["orsc_status"] == "not_recorded":
+            parts.append(f"Subscription revenue: none recorded for this dealer in {month}.")
         else:
-            parts.append(f"Subscription (ORSC): {orsc['device_count']:,} devices, "
-                         f"{orsc['zero_amount_count']:,} zero-amount records.")
+            parts.append("Subscription revenue: unavailable for this month — missing is not zero.")
         audit = statement["audit"]
         # The composer reads only some modules and skips per-module read failures:
         # state what was returned, never "none recorded".
@@ -424,8 +493,8 @@ def _render_statement(measure: dict, dealer_id: str | None) -> list[str]:
         parts.append("Ask for the verification outcome for full audit results.")
         if period.get("note"):
             parts.append(_text(period["note"]))
-        parts.append(f"Sources: activation commission and subscription records; {_text(payment['source'])}; "
-                     "verification audit trails.")
+        parts.append(f"Sources: activation commission, subscription commission and subscription revenue records; "
+                     f"{_text(payment['source'])}; verification audit trails.")
     return parts
 
 

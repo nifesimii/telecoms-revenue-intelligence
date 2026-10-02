@@ -8,9 +8,14 @@ Sits on top of the existing query + audit layers — this is a formatter,
 not a new data source. Reads:
 
   * ``get_dealer_summary`` — activation-side entitlement (commission owed)
-  * ``get_orsc_summary`` — ORSC-side revenue base
-  * ``payment_data.payment_lookup`` — settlement-side (respects
+  * ``get_orsc_summary`` — subscription revenue (informational, never owed)
+  * ``subscription_evidence.summaries`` — subscription commission owed,
+    settled and outstanding, a settlement separate from activation
+  * ``payment_data.payment_lookup`` — activation settlement-side (respects
     ``PAYMENT_SOURCE=apdp|simulated``)
+
+``combined`` is a plain sum of the two commission types; it includes
+subscription commission only when that is recorded for the dealer-month.
   * ``audit_store`` — persisted verification trails for the same
     (dealer, period), so the statement links out to the audit evidence
     behind each number
@@ -82,25 +87,13 @@ def compose_dealer_statement(dealer_id: str, mon_period: str) -> dict[str, Any]:
     expected_commission = round(_safe_float(row.get("total_commission_ngn")), 2)
     commission_by_denom = dict(row.get("commission_by_denomination") or {})
 
-    # ── 2. ORSC side (informational — not part of the payment reconciliation) ─
-    try:
-        orsc_df = execute_query(
-            "get_orsc_summary",
-            {"mon_period": mon_period, "distributor_code": dealer_id},
-        )
-        if not orsc_df.empty:
-            orsc_row = orsc_df.iloc[0]
-            orsc_info: dict[str, Any] | None = {
-                "device_count": _safe_int(orsc_row.get("device_count")),
-                "total_subscription_amount_ngn": round(
-                    _safe_float(orsc_row.get("total_subscription_amount_ngn")), 2
-                ),
-                "zero_amount_count": _safe_int(orsc_row.get("zero_amount_count")),
-            }
-        else:
-            orsc_info = None
-    except Exception:
-        orsc_info = None
+    # ── 2. Subscription revenue (informational — not part of any amount owed) ─
+    # ``orsc`` keeps its historical shape (None when absent); ``orsc_status``
+    # says *why* it is absent so callers never read an unreadable source as "none".
+    orsc_info, orsc_status = _subscription_revenue(dealer_id, mon_period)
+
+    # ── 2b. Subscription commission (its own settlement, separate from activation) ─
+    subscription = _subscription_commission(dealer_id, mon_period)
 
     # ── 3. Payment record (settlement side) ───────────────────────────────
     source = config.PAYMENT_SOURCE
@@ -155,6 +148,22 @@ def compose_dealer_statement(dealer_id: str, mon_period: str) -> dict[str, Any]:
         "headline":          headline,
     }
 
+    # ── 4b. Combined — plain sums of activation and subscription commission ──
+    # Subscription is included only when recorded; paid/outstanding need the
+    # activation payment record, otherwise they are unknown (never zero).
+    includes_subscription = subscription["status"] == "recorded"
+
+    def _plus(activation: float, subscription_key: str) -> float:
+        extra = subscription[subscription_key] if includes_subscription else 0.0
+        return round(activation + extra, 2)
+
+    combined = {
+        "includes_subscription": includes_subscription,
+        "owed_ngn":        _plus(expected_commission, "owed_ngn"),
+        "paid_ngn":        _plus(paid, "paid_ngn") if found else None,
+        "outstanding_ngn": _plus(outstanding, "outstanding_ngn") if found else None,
+    }
+
     # ── 5. Linked audit trails (evidence pointers) ────────────────────────
     audit_trails = _load_audit_trails_for(dealer_id, mon_period)
 
@@ -173,13 +182,75 @@ def compose_dealer_statement(dealer_id: str, mon_period: str) -> dict[str, Any]:
             "by_denomination":            {k: round(_safe_float(v), 2) for k, v in commission_by_denom.items()},
         },
         "orsc":     orsc_info,
+        "orsc_status": orsc_status,
+        "subscription_commission": subscription,
         "payment":  payment_info,
         "position": position,
+        "combined": combined,
 
         # Per-dealer audit trails — thin refs, not full step chains.
         # UI can deep-link into /assurance/audit/trails/{partner_code} for details.
         "audit_trails": audit_trails,
     }
+
+
+_SUBSCRIPTION_COMMISSION_SOURCE = "subscription_commission_demo"
+_SUBSCRIPTION_REVENUE_SOURCE = "fbb_comm_orsc"
+
+
+def _orsc_rows(dealer_id: str, mon_period: str) -> pd.DataFrame:
+    return execute_query(
+        "get_orsc_summary",
+        {"mon_period": mon_period, "distributor_code": dealer_id},
+    )
+
+
+def _subscription_revenue(dealer_id: str, mon_period: str) -> tuple[dict[str, Any] | None, str]:
+    """Return ``(revenue, status)``; status is recorded | not_recorded | unavailable.
+
+    ``not_recorded`` only when the source verifiably covers the month; an
+    unreadable or uncovered source is ``unavailable``.
+    """
+    from backend.db import queries
+    try:
+        frame = _orsc_rows(dealer_id, mon_period)
+    except Exception:
+        return None, "unavailable"
+    if frame is not None and not frame.empty:
+        row = frame.iloc[0]
+        return {
+            "device_count": _safe_int(row.get("device_count")),
+            "total_subscription_amount_ngn": round(_safe_float(row.get("total_subscription_amount_ngn")), 2),
+            "zero_amount_count": _safe_int(row.get("zero_amount_count")),
+        }, "recorded"
+    covered = queries.has_source_period(_SUBSCRIPTION_REVENUE_SOURCE, mon_period)
+    return None, "not_recorded" if covered else "unavailable"
+
+
+def _subscription_commission(dealer_id: str, mon_period: str) -> dict[str, Any]:
+    """The dealer's subscription commission owed, settled and outstanding, as the source reports it.
+
+    ``unavailable`` when the source does not cover the month, cannot be read,
+    or the dealer's records are incomplete; ``not_recorded`` when the source
+    covers the month but holds nothing for this dealer. Never zero-filled.
+    """
+    from backend.db import queries, subscription_evidence
+    unknown = {"owed_ngn": None, "paid_ngn": None, "outstanding_ngn": None, "record_count": 0}
+    if not queries.has_source_period(_SUBSCRIPTION_COMMISSION_SOURCE, mon_period):
+        return {"status": "unavailable", **unknown}
+    try:
+        summary = subscription_evidence.summaries(mon_period).get(dealer_id)
+    except Exception:
+        return {"status": "unavailable", **unknown}
+    if summary is None:
+        return {"status": "not_recorded", **unknown}
+    amounts = {"owed_ngn": summary.get("subscription_commission_ngn"),
+               "paid_ngn": summary.get("subscription_settled_ngn"),
+               "outstanding_ngn": summary.get("subscription_outstanding_ngn")}
+    if not summary.get("subscription_commission_complete") or any(v is None for v in amounts.values()):
+        return {"status": "unavailable", **unknown}
+    return {"status": "recorded", **{k: round(float(v), 2) for k, v in amounts.items()},
+            "record_count": int(summary.get("subscription_commission_record_count") or 0)}
 
 
 def _load_audit_trails_for(dealer_id: str, mon_period: str) -> list[dict[str, Any]]:

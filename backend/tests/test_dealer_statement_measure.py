@@ -25,10 +25,18 @@ from backend.db.dealer_statement_evidence import (
 
 ORACLE_ANSWER = "\n\n".join([
     "Dealer statement for River Isle Ventures (296065), 202606.",
-    "Amount owed: NGN 991,086.80 (activation commission).",
-    "Amount paid: NGN 396,434.72.",
-    "Amount outstanding: NGN 594,652.08 (60% of amount owed).",
-    "Payment status: DISPUTED; statement position: underpaid.",
+    "Amount owed: NGN 994,136.80 (activation and subscription commission).",
+    "Amount paid: NGN 397,959.72.",
+    "Amount outstanding: NGN 596,177.08.",
+    "Payment status: activation commission DISPUTED (statement position: underpaid); "
+    "subscription commission NGN 1,525.00 settled of NGN 3,050.00 owed, as reported.",
+    "\n".join([
+        "| Commission | Owed | Paid | Outstanding |",
+        "| --- | --- | --- | --- |",
+        "| Activation commission | NGN 991,086.80 | NGN 396,434.72 | NGN 594,652.08 (60% of amount owed) |",
+        "| Subscription commission | NGN 3,050.00 | NGN 1,525.00 | NGN 1,525.00 |",
+        "| Total | NGN 994,136.80 | NGN 397,959.72 | NGN 596,177.08 |",
+    ]),
     "\n".join([
         "| Component | Amount |",
         "| --- | --- |",
@@ -37,13 +45,14 @@ ORACLE_ANSWER = "\n\n".join([
         "| Activation commission · MIFI | NGN 136,883.29 |",
         "| Activation commission · MIFI\\_1 | NGN 302,650.21 |",
         "| Activation commission (amount owed) | NGN 991,086.80 |",
-        "| Subscription amount (ORSC; not part of amount owed) | NGN 120,266.83 |",
     ]),
     "Activations: 495 recorded, 445 commission-bearing, 50 zero-commission.",
-    "Subscription (ORSC): 2 devices, 0 zero-amount records.",
+    "Subscription revenue: NGN 120,266.83 across 2 devices (not part of the amount owed); "
+    "0 zero-amount records.",
     "Linked audit conclusions: none returned.",
     "Ask for the verification outcome for full audit results.",
-    "Sources: activation commission and subscription records; Payment records; verification audit trails.",
+    "Sources: activation commission, subscription commission and subscription revenue records; "
+    "Payment records; verification audit trails.",
 ])
 
 
@@ -86,8 +95,21 @@ def test_statement_evidence_matches_the_composer_for_a_real_dealer_month():
                                     "amount_paid_ngn": 396434.72, "payment_status": "DISPUTED"}
     assert statement["position"]["expected_ngn"] == 991086.8
     assert statement["audit"] == {"readable": True, "trails": []}
+    assert statement["orsc_status"] == "recorded"
+    assert statement["subscription_commission"] == {
+        "status": "recorded", "owed_ngn": 3050.0, "paid_ngn": 1525.0, "outstanding_ngn": 1525.0,
+        "record_count": 2}
+    assert statement["combined"] == {"includes_subscription": True, "owed_ngn": 994136.8,
+                                     "paid_ngn": 397959.72, "outstanding_ngn": 596177.08}
     assert all(row["dealer_id"] == "296065" for row in evidence["rows"])
-    assert evidence["total_rows"] == len(evidence["rows"]) == 8
+    assert [row["dimension"] for row in evidence["rows"][4:]] == [
+        "Activation commission (amount owed)", "Activation commission paid",
+        "Activation commission outstanding", "Subscription commission (amount owed)",
+        "Subscription commission paid", "Subscription commission outstanding",
+        "Total amount owed", "Total amount paid", "Total amount outstanding",
+        "Subscription revenue (not part of amount owed)"]
+    assert evidence["rows"][-4]["value"] == "NGN 994,136.80"
+    assert evidence["total_rows"] == len(evidence["rows"]) == 14
 
 
 def test_oracle_answer_is_rendered_from_the_statement():
@@ -135,7 +157,7 @@ def test_audit_store_offline_is_stated_separately(monkeypatch):
     answer = render_measure_response(request(), envelope(evidence))
     assert "Linked audit trails: unavailable — the audit store could not be read." in answer
     assert "Ask for the verification outcome for full audit results." in answer
-    assert "Amount owed: NGN 991,086.80" in answer
+    assert "Amount owed: NGN 994,136.80" in answer
 
 
 def test_linked_audit_trails_show_module_and_conclusion_only(monkeypatch):
@@ -166,6 +188,11 @@ def paid_period(**changes):
             "commission": {"expected_ngn": 991086.8, "total_activations": 495, "qualified_activation_count": 445,
                            "zero_commission_count": 50, "by_denomination": {"MIFI": 991086.8}},
             "orsc": None,
+            "orsc_status": "unavailable",
+            "subscription_commission": {"status": "unavailable", "owed_ngn": None, "paid_ngn": None,
+                                        "outstanding_ngn": None, "record_count": 0},
+            "combined": {"includes_subscription": False, "owed_ngn": 991086.8, "paid_ngn": 396434.72,
+                         "outstanding_ngn": 594652.08},
             "payment": {"source": "Payment records", "payment_found": True, "amount_paid_ngn": 396434.72,
                         "payment_status": "DISPUTED"},
             "position": {"expected_ngn": 991086.8, "paid_ngn": 396434.72, "outstanding_ngn": 594652.08,
@@ -182,14 +209,17 @@ def test_paid_statement_leads_with_owed_paid_outstanding_and_status():
     answer = render_measure_response(request(), envelope(paid_period()))
     parts = answer.split("\n\n")
     assert parts[1:5] == [
-        "Amount owed: NGN 991,086.80 (activation commission).",
+        "Amount owed: NGN 991,086.80 (activation commission only).",
         "Amount paid: NGN 396,434.72.",
-        "Amount outstanding: NGN 594,652.08 (60% of amount owed).",
-        "Payment status: DISPUTED; statement position: underpaid.",
+        "Amount outstanding: NGN 594,652.08.",
+        "Payment status: activation commission DISPUTED (statement position: underpaid).",
     ]
+    assert ("| Activation commission | NGN 991,086.80 | NGN 396,434.72 | "
+            "NGN 594,652.08 (60% of amount owed) |") in answer
     # Missing subscription evidence is unavailable, never a zero line.
-    assert "Subscription (ORSC): unavailable" in answer and "Not zero." in answer
-    assert "| Subscription amount" not in answer
+    assert "Subscription commission: unavailable for this month — missing is not zero." in answer
+    assert "Subscription revenue: unavailable for this month — missing is not zero." in answer
+    assert "| Subscription" not in answer
 
 
 def test_linked_audit_conclusions_render_only_what_was_read():
@@ -213,10 +243,12 @@ def test_overpaid_statement_has_no_negative_amount_or_percentage():
     period["statement"]["payment"].update(amount_paid_ngn=991586.8, payment_status="PAID")
     period["statement"]["position"].update(paid_ngn=991586.8, outstanding_ngn=-500.0, variance_pct=-0.05,
                                            headline="OVERPAID")
+    period["statement"]["combined"].update(paid_ngn=991586.8, outstanding_ngn=-500.0)
     answer = render_measure_response(request(), envelope(period))
-    assert "Amount outstanding: none — overpaid by NGN 500.00 (overpaid by 0.05% of amount owed)." in answer
+    assert "Amount outstanding: none — overpaid by NGN 500.00." in answer
+    assert "| none — overpaid by NGN 500.00 (overpaid by 0.05% of amount owed) |" in answer
     assert not re.search(r"-\s?\d|NGN \\?-", answer)
-    assert "statement position: overpaid." in answer
+    assert "Payment status: activation commission PAID (statement position: overpaid)." in answer
 
 
 def test_statement_answers_carry_no_demo_wording():
@@ -237,6 +269,19 @@ def test_statement_answers_carry_no_demo_wording():
     lambda p: p["statement"]["audit"].update(readable=False, trails=[
         {"module": "m", "label": "M", "conclusion": "X"}]),
     lambda p: p["statement"].update(orsc={"device_count": 1}),
+    lambda p: p["statement"].update(orsc_status="maybe"),
+    lambda p: p["statement"].update(orsc_status="recorded"),
+    lambda p: p["statement"].pop("subscription_commission"),
+    lambda p: p["statement"]["subscription_commission"].update(status="guess"),
+    lambda p: p["statement"].update(**_recorded_subscription()) or
+    p["statement"]["subscription_commission"].update(owed_ngn="3050"),
+    lambda p: p["statement"].update(**_recorded_subscription()) or
+    p["statement"]["subscription_commission"].update(paid_ngn=None),
+    lambda p: p["statement"]["subscription_commission"].update(owed_ngn=10.0),
+    lambda p: p["statement"].pop("combined"),
+    lambda p: p["statement"]["combined"].update(owed_ngn=1.0),
+    lambda p: p["statement"]["combined"].update(includes_subscription=True),
+    lambda p: p["statement"]["combined"].update(paid_ngn=None),
     lambda p: p.update(status="unavailable"),
     lambda p: p.update(statement=None),
     lambda p: p.update(statement={"found": False}, rows=[{"dealer_id": "296065", "value": "x"}]),
@@ -286,3 +331,124 @@ def test_scope_contract_routes_statement_questions():
     from backend.agent.measure_scope import SCOPE_TOOL
     assert "['dealer_statement']" in SCOPE_TOOL["description"]
     assert "dealer_statement" in str(SCOPE_TOOL["input_schema"])
+
+
+# ── Subscription commission alongside activation ────────────────────────────
+
+def test_composer_adds_subscription_commission_and_plain_sum_totals():
+    from backend.db.dealer_statement import compose_dealer_statement
+    composed = compose_dealer_statement("296065", "202606")
+    assert composed["subscription_commission"] == {
+        "status": "recorded", "owed_ngn": 3050.0, "paid_ngn": 1525.0, "outstanding_ngn": 1525.0,
+        "record_count": 2}
+    assert composed["orsc_status"] == "recorded"
+    # Activation position is unchanged; the combined total is a plain sum of the two types.
+    assert composed["position"]["expected_ngn"] == 991086.8
+    assert composed["position"]["paid_ngn"] == 396434.72
+    assert composed["position"]["outstanding_ngn"] == 594652.08
+    assert composed["combined"] == {"includes_subscription": True, "owed_ngn": 994136.8,
+                                    "paid_ngn": 397959.72, "outstanding_ngn": 596177.08}
+    assert "DEMO" not in str(composed)
+
+
+def test_subscription_source_without_month_coverage_is_unavailable_not_zero(monkeypatch):
+    from backend.db import dealer_statement, queries
+    monkeypatch.setattr(queries, "has_source_period",
+                        lambda source, period: source not in {"subscription_commission_demo", "fbb_comm_orsc"})
+    monkeypatch.setattr(dealer_statement, "_orsc_rows", lambda *args: None)
+    evidence = dealer_statement_evidence("202606", "296065")
+    statement = evidence["statement"]
+    assert statement["subscription_commission"]["status"] == "unavailable"
+    assert statement["subscription_commission"]["owed_ngn"] is None
+    assert statement["orsc_status"] == "unavailable"
+    assert statement["combined"] == {"includes_subscription": False, "owed_ngn": 991086.8,
+                                     "paid_ngn": 396434.72, "outstanding_ngn": 594652.08}
+    answer = render_measure_response(request(), envelope(evidence))
+    assert "Subscription commission: unavailable for this month — missing is not zero." in answer
+    assert "| Total (activation only) | NGN 991,086.80 | NGN 396,434.72 | NGN 594,652.08 |" in answer
+    assert "Subscription revenue: unavailable for this month — missing is not zero." in answer
+    assert "| Subscription commission |" not in answer
+
+
+def test_covered_month_without_dealer_subscription_record_says_none_recorded(monkeypatch):
+    from backend.db import dealer_statement, subscription_evidence
+    monkeypatch.setattr(subscription_evidence, "summaries", lambda period: {})
+    monkeypatch.setattr(dealer_statement, "_orsc_rows", lambda *args: None)
+    evidence = dealer_statement_evidence("202606", "296065")
+    statement = evidence["statement"]
+    assert statement["subscription_commission"]["status"] == "not_recorded"
+    assert statement["orsc_status"] == "not_recorded"
+    assert statement["combined"]["includes_subscription"] is False
+    answer = render_measure_response(request(), envelope(evidence))
+    assert "Subscription commission: none recorded for this dealer in 202606." in answer
+    assert "Subscription revenue: none recorded for this dealer in 202606." in answer
+    assert "| Total (activation only) |" in answer
+    assert "unavailable for this month" not in answer
+
+
+def test_unreadable_subscription_source_is_unavailable_not_none(monkeypatch):
+    from backend.db import dealer_statement, subscription_evidence
+
+    def broken(*_args):
+        raise OSError("unreadable")
+    monkeypatch.setattr(subscription_evidence, "summaries", broken)
+    monkeypatch.setattr(dealer_statement, "_orsc_rows", broken)
+    evidence = dealer_statement_evidence("202606", "296065")
+    statement = evidence["statement"]
+    assert statement["subscription_commission"]["status"] == "unavailable"
+    assert statement["orsc_status"] == "unavailable" and statement["orsc"] is None
+    answer = render_measure_response(request(), envelope(evidence))
+    assert "Subscription commission: unavailable for this month — missing is not zero." in answer
+    assert "Subscription revenue: unavailable for this month — missing is not zero." in answer
+    assert "none recorded" not in answer
+
+
+def test_incomplete_dealer_subscription_records_are_unavailable(monkeypatch):
+    from backend.db import subscription_evidence
+    monkeypatch.setattr(subscription_evidence, "summaries", lambda period: {"296065": {
+        "subscription_commission_ngn": None, "subscription_settled_ngn": None,
+        "subscription_outstanding_ngn": None, "subscription_commission_record_count": 1,
+        "subscription_commission_complete": False}})
+    statement = dealer_statement_evidence("202606", "296065")["statement"]
+    assert statement["subscription_commission"]["status"] == "unavailable"
+    assert statement["combined"]["includes_subscription"] is False
+
+
+def _recorded_subscription():
+    return {"subscription_commission": {"status": "recorded", "owed_ngn": 3050.0, "paid_ngn": 1525.0,
+                                        "outstanding_ngn": 1525.0, "record_count": 2},
+            "combined": {"includes_subscription": True, "owed_ngn": 994136.8, "paid_ngn": 397959.72,
+                         "outstanding_ngn": 596177.08}}
+
+
+def test_statement_answers_never_name_orsc_or_references():
+    evidence = dealer_statement_evidence("202606", "296065")
+    answers = [render_measure_response(request(), envelope(evidence)),
+               render_measure_response(request(), envelope(paid_period())),
+               render_measure_response(request(), envelope(paid_period(**_recorded_subscription())))]
+    for text in answers + [str(evidence["rows"])]:
+        assert "orsc" not in text.lower() and "orc " not in text.lower()
+        assert "DEMO-" not in text and "reference" not in text.lower()
+        for word in ("synthetic", "simulated", "sample", "demo"):
+            assert word not in text.lower()
+
+
+def test_recorded_subscription_renders_per_type_rows_and_combined_total():
+    answer = render_measure_response(request(), envelope(paid_period(**_recorded_subscription())))
+    assert ("| Commission | Owed | Paid | Outstanding |\n| --- | --- | --- | --- |\n"
+            "| Activation commission | NGN 991,086.80 | NGN 396,434.72 | NGN 594,652.08 (60% of amount owed) |\n"
+            "| Subscription commission | NGN 3,050.00 | NGN 1,525.00 | NGN 1,525.00 |\n"
+            "| Total | NGN 994,136.80 | NGN 397,959.72 | NGN 596,177.08 |") in answer
+    assert "Amount owed: NGN 994,136.80 (activation and subscription commission)." in answer
+    assert ("Payment status: activation commission DISPUTED (statement position: underpaid); "
+            "subscription commission NGN 1,525.00 settled of NGN 3,050.00 owed, as reported.") in answer
+
+
+def test_missing_activation_payment_leaves_combined_paid_unavailable():
+    period = paid_period(**_recorded_subscription())
+    period["statement"]["payment"].update(payment_found=False, amount_paid_ngn=0.0, payment_status=None)
+    period["statement"]["combined"].update(paid_ngn=None, outstanding_ngn=None)
+    answer = render_measure_response(request(), envelope(period))
+    assert "| Activation commission | NGN 991,086.80 | unavailable | unavailable |" in answer
+    assert "| Total | NGN 994,136.80 | unavailable | unavailable |" in answer
+    assert "Missing is not zero." in answer
