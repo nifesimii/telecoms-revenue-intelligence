@@ -87,13 +87,16 @@ GET_ZERO_COMMISSION_RECORDS: dict[str, Any] = {
         "  * 'List the leakage candidates for Dealer Z in [month]'\n\n"
         "Each row contains: imei, product_name, product_code, invoice_date, "
         "first_activation_date, unit_selling_price, commission_rate.\n\n"
-        "After calling this tool you MUST classify each returned record using "
-        "exactly one of the four KB root causes:\n"
+        "After calling this tool, classify a returned record only if the "
+        "available evidence supports one of the four KB root causes:\n"
         "  1. USP snapshot miss\n"
         "  2. Outside 6-month eligibility window\n"
         "  3. NULL account_profile_class\n"
         "  4. Known denomination split (Hynex / Hynex_1)\n"
-        "Do not invent any other root cause. Both inputs are required."
+        "A zero rate alone does not distinguish these causes. If evidence is "
+        "insufficient, state that the cause is unverified and identify the "
+        "missing evidence; do not force a classification or invent another "
+        "cause. Both inputs are required."
     ),
     "input_schema": {
         "type": "object",

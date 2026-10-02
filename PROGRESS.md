@@ -3,6 +3,27 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-10-02 (Atlas sales-question grounding)
+
+- Added KB boundaries separating retail sales, dealer purchases, activations,
+  subscription revenue and commission. Ambiguous sales questions now instruct
+  Atlas to clarify the measure and date scope and avoid unrelated investigations.
+- Removed instructions that forced headline numbers or unsupported zero-rate
+  classifications. Activation interpretation rules now require supporting
+  evidence rather than treating aggregate patterns as verified causes.
+- Added an opt-in model-quality regression for the reported sales follow-up.
+  After explicit user approval, the single billed model check passed in 8.93s:
+  response retained account 296065, asked a question mentioning sales and
+  activations, stayed within 180 words, and made no data-tool calls. This is
+  one successful run, not a reliability estimate or a complete semantic review.
+  Local backend reloaded after the final KB edit; its new worker serves /periods
+  successfully. No additional billed model calls were made during finalization.
+- Offline backend suite: 393 passed, 29 skipped (including the new live check).
+  Python compilation and diff whitespace checks passed. No deployment.
+- Standards review found no blocking issues. Spec review identified conflicting
+  payment guidance; revised simulated-status and coverage explanations to avoid
+  unsupported causation. Spec re-review has no remaining blocking findings.
+
 ---
 
 ## Session — 2026-10-01 (Shared dealer Financial Health and Atlas)

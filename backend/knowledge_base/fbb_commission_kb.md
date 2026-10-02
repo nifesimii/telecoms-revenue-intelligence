@@ -27,6 +27,47 @@ figures only when returned explicitly by a tool. Never derive them from revenue
 or reuse the activation commission rate. Missing commission evidence is unknown,
 not zero.
 
+### Sales questions and evidence boundaries
+
+- **Sales is an ambiguous measure.** Dealer purchases from MTN, retail sales to
+  end customers, device activations, subscription revenue and commission are
+  distinct measures. For an unqualified question such as "what sales did this
+  dealer make this year", first ask whether the user means devices sold or
+  sales value, and explain briefly that recorded activations are available but
+  do not establish retail sales. Do not query commission or exceptions merely
+  to fill the answer. If the user explicitly asks for activations, answer that
+  measure directly without asking them to clarify "sales" again.
+- **Respect the evidence's direction and meaning.** IFS inventory quantities
+  describe purchases by the dealer, not onward sales to customers. USP reference
+  prices and commission amounts do not establish actual retail selling prices
+  or sales revenue. Retail sales require dealer sales transactions with dates,
+  products, quantities and actual amounts, including returns where relevant.
+  Synthetic Financial Health revenue is not a substitute for actual sales.
+- **State the time range and coverage.** Do not silently equate "this year"
+  with January through the selected reporting month. Clarify whether the user
+  wants the selected reporting year's activity through that month or another
+  range when ambiguous. Label partial results with the months actually checked;
+  never present January–June as a complete calendar-year total. Missing months
+  are unavailable, not zero. State sample or synthetic provenance when supplied.
+- **Recorded commission is not verified eligibility.** A positive commission
+  rate supports a recorded commission-bearing activation; a 100% qualification
+  rate does not prove there were no USP, eligibility or classification errors.
+  A zero rate alone does not identify its cause. Apply the four documented
+  causes only when the relevant record and source evidence support attribution;
+  otherwise label the cause unverified and name the missing evidence.
+- **Flags and co-occurrence are not causes.** An inventory mismatch establishes
+  a discrepancy in the compared records, not a sourcing problem or the cause of
+  zero commission or withheld payment. A new product in the returned period is
+  not proof of first-ever sales or a USP miss. Only make cross-product or
+  cross-period claims after checking the corresponding evidence. Distinguish
+  observations, supported interpretations and unknowns; do not turn a plausible
+  explanation into a verified finding. These evidence requirements apply to
+  the interpretation rules elsewhere in this KB as well.
+- **Keep the response proportional.** A sales or activity total does not call
+  for an unrelated dispute narrative. Include a concise total or clarification,
+  the requested breakdown, and material coverage limits. Expand into exception
+  investigation only when asked or necessary to explain the requested measure.
+
 ### Business owners
 
 
@@ -150,7 +191,7 @@ Phase 2 of the platform. Where Phase 1 (Sections 1–10) explains **why commissi
 
 **activation_count** — Total number of device activations recorded for a dealer in a reporting month. Includes both qualified and non-qualified activations.
 
-**qualified_activation_count** — Activations where `commission_rate > 0`. These are activations where the device `product_name` matched a USP dimension entry for that month and the `first_activation_date` fell within the 6-month eligibility window.
+**qualified_activation_count** — Activations where `commission_rate > 0`. This is a recorded positive-commission classification, not independent verification of the USP match or eligibility window.
 
 **non_qualified_activation_count** — Activations where `commission_rate = 0`. Root causes are the four documented in Section 6 of this KB: USP snapshot miss, outside eligibility window, NULL `account_profile_class`, or known denomination split issue (Hynex / Hynex_1).
 
@@ -160,13 +201,13 @@ Phase 2 of the platform. Where Phase 1 (Sections 1–10) explains **why commissi
 
 ### Activation explanation rules
 
-**Rule 1 — Volume and commission move together.** If `activation_count` increases and `activation_commission_amount` increases proportionally, the explanation is higher activation volume driving higher commission. No anomaly.
+**Rule 1 — Volume and commission move together.** If `activation_count` and `activation_commission_amount` increase proportionally, report the observed changes as consistent with a volume-driven increase. Proportional totals alone do not verify eligibility or establish the absence of anomalies.
 
-**Rule 2 — Volume up, commission flat or down.** If `activation_count` increases but `activation_commission_amount` does not increase proportionally, the explanation is a worsening qualification rate. More activations are not earning commission. Investigate `non_qualified_activation_count` using `get_zero_commission_records`.
+**Rule 2 — Volume up, commission flat or down.** Compare qualification rates and denomination-level counts and commission before explaining the difference. A worsening qualification rate is one possible explanation, not a conclusion from the two totals alone. Investigate zero-commission records before attributing a cause.
 
-**Rule 3 — Volume flat, commission down.** If `activation_count` is stable but commission drops, the explanation is likely a product mix shift — the dealer is activating lower-priced device tiers. Check `product_denomination` breakdown.
+**Rule 3 — Volume flat, commission down.** A product mix shift is a possible explanation. Check denomination counts and recorded commission in both periods before stating that it occurred; totals alone do not establish a shift toward lower-value tiers.
 
-**Rule 4 — ALL_UNQUALIFIED exception.** A dealer with activations but zero commission has 100% non-qualified activations. Most likely cause is **USP snapshot miss** — none of this dealer's products matched the USP dimension for this period. Recommend Finance verify the dealer's product codes against the USP dimension for the affected month.
+**Rule 4 — ALL_UNQUALIFIED exception.** A dealer with activations but zero commission has 100% non-qualified activations. The flag alone does not identify which of the four documented causes applies. A **USP snapshot miss** requires evidence from the affected month's USP match; until checked, describe it as a candidate explanation, not a confirmed cause.
 
 **Rule 5 — UNUSUAL_VOLUME exception.** A dealer with statistically high activation volume (mean + 2 standard deviations above peer dealers) may reflect legitimate business growth, bulk activation events, or data anomalies. **This is a flag for investigation, not a finding of wrongdoing.** The agent must present this as requiring investigation, not as confirmed fraud.
 
@@ -302,18 +343,18 @@ Payment data in Phase 4 is **SIMULATED**. It is synthetically generated from rea
 
 ### Payment explanation rules
 
-**Rule 1 — DISPUTED status.** A DISPUTED commission is directly linked to a Phase 2 `ALL_UNQUALIFIED` flag or a Phase 3 `CONFIRMED_MISMATCH` flag. The agent must surface the underlying exception when explaining a dispute. Example: "Dealer X's commission is disputed because all 18 of their activations earned zero commission — a USP snapshot miss means MTN cannot confirm the device eligibility."
+**Rule 1 — DISPUTED status.** In the simulated settlement model, DISPUTED is linked to an `ALL_UNQUALIFIED` or `CONFIRMED_MISMATCH` flag. When explaining a dispute, report the linked exception actually returned and distinguish this simulation linkage from a verified operational cause. Example: "The simulated payment record is marked disputed and linked to 18 zero-commission activations. The reason those activations earned zero commission remains unverified."
 
-**Rule 2 — PARTIALLY_PAID status.** A PARTIALLY_PAID commission reflects a `HIGH_UNQUALIFIED_RATE` exception. The dealer has some legitimate qualified activations but a significant proportion are unqualified. Settlement covers the qualified portion.
+**Rule 2 — PARTIALLY_PAID status.** In the simulated settlement model, PARTIALLY_PAID is linked to a `HIGH_UNQUALIFIED_RATE` exception. Report the returned paid and outstanding amounts and qualification counts separately. Recorded positive commission does not independently verify eligibility; the flag does not establish which individual activations were settled or why an operational payment was withheld.
 
 **Rule 3 — Payment coverage interpretation.**
-- Coverage above **85%** is **healthy**.
-- Coverage between **60-85%** indicates active disputes or qualification issues **requiring investigation**.
-- Coverage below **60%** indicates **systemic problems** with dealer activation quality.
+- Coverage above **85%** is the model's high-coverage band, not a verification of activation quality.
+- Coverage between **60-85%** warrants review of outstanding amounts and linked evidence; it does not establish an active dispute or qualification issue.
+- Coverage below **60%** is the model's low-coverage band and warrants investigation. It does not establish systemic activation-quality problems.
 
 **Rule 4 — Data source transparency.** The agent must always state that payment data is simulated when presenting Phase 4 findings. Suggested language: *"Based on simulated payment data derived from real commission and exception records — live Oracle AP integration will replace this in production."*
 
-**Rule 5 — Cross-phase reasoning.** Payment disputes are traceable to their root cause:
+**Rule 5 — Cross-phase reasoning.** These checks locate supporting evidence; a payment status alone does not establish a root cause:
 - `DISPUTED` → check Phase 2 activation exceptions or Phase 3 inventory mismatches for that dealer.
 - `PARTIALLY_PAID` → check Phase 2 qualification rate.
 - `PENDING` → check Phase 1 commission summary for the expected amount.
