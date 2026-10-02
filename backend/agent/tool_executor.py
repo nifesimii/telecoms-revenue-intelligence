@@ -50,6 +50,8 @@ _INTERNAL_QUERY_NAMES = {"get_subscription_demo_records"}
 _DEALER_MONTH_EVIDENCE = {
     "investigation_priority": ("Investigation priority", "backend.assurance.overview",
                                "investigation_priority_evidence"),
+    "verification_outcome": ("Verification outcome", "backend.audit.verification_outcome",
+                             "verification_outcome_evidence"),
 }
 
 
