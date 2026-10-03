@@ -288,3 +288,62 @@ def test_standalone_measures_are_registered_at_every_seam():
     assert set(measure_response._STANDALONE) == STANDALONE_MEASURES
     payloads = [payload for payload, _, _ in measure_response._STANDALONE.values()]
     assert len(payloads) == len(set(payloads))
+
+
+def test_affiliation_scope_accepts_one_anchor_and_one_month():
+    from backend.agent.measure_scope import MeasureScope
+    by_code = MeasureScope.model_validate(
+        {'kind': 'affiliation', 'dealer_id': '74050', 'periods': ['202606']})
+    assert by_code.kind == 'affiliation' and by_code.dealer_id == '74050'
+    by_name = MeasureScope.model_validate(
+        {'kind': 'affiliation', 'dealer_name': 'Topaz Bridge Trading', 'periods': ['202606']})
+    assert by_name.dealer_name == 'Topaz Bridge Trading' and by_name.dealer_id is None
+
+
+@pytest.mark.parametrize('changes', [
+    {},  # no anchor
+    {'dealer_id': '74050', 'dealer_name': 'Topaz Bridge Trading'},  # both anchors
+    {'dealer_id': '74050', 'periods': ['202605', '202606']},  # two months
+    {'dealer_id': '74050', 'periods': []},  # no month
+    {'dealer_id': '74050', 'measures': ['activation_commission']},  # measures forbidden
+    {'dealer_id': '74050', 'clarification': 'dealer'},  # clarification forbidden
+    {'dealer_id': '74050', 'operation': 'breakdown'},  # must be total
+    {'dealer_id': '74050', 'filter': 'unpaid'},  # must be all
+    {'dealer_id': '74050', 'limit': 5},  # limit forbidden
+    {'dealer_id': '74050', 'knowledge_quote': 'x'},  # knowledge forbidden
+])
+def test_affiliation_scope_rejects_invalid_shapes(changes):
+    from backend.agent.measure_scope import MeasureScope
+    with pytest.raises(ValueError):
+        MeasureScope.model_validate({'kind': 'affiliation', 'periods': ['202606'], **changes})
+
+
+def test_affiliation_code_anchor_runs_end_to_end_without_leaking_draft(monkeypatch):
+    # Anchor on an active code; the collector groups sibling codes by recorded name.
+    install_plan(monkeypatch, {'kind': 'affiliation', 'dealer_id': '19580', 'periods': ['202606']})
+    result = asyncio.run(agent.run_agent('How many other dealer codes are under this dealer, '
+                                         'and what is their total commission?'))
+    response = result['response']
+    assert 'Topaz Bridge Trading' in response
+    assert '9 other dealer codes' in response and '202606' in response
+    assert 'NGN 790,062.67' in response and 'indicative' in response.lower()
+    # The anchor code appears once (headline), never re-listed as its own sibling.
+    assert response.count('19580') == 1
+    assert '19577' in response  # a sibling code is listed
+    assert result['tools_called'] == ['get_dealer_codes', 'get_dealer_summary']
+    assert '999,999,999' not in response  # model draft must not leak
+    assert 'sample' not in response.lower()
+    assert result['raw_data']['affiliation']['anchor_type'] == 'code'
+
+
+def test_affiliation_name_anchor_counts_every_code(monkeypatch):
+    install_plan(monkeypatch, {'kind': 'affiliation', 'dealer_name': 'Topaz Bridge Trading',
+                               'periods': ['202606']})
+    result = asyncio.run(agent.run_agent('How many dealer codes are addressed to Topaz Bridge '
+                                         'Trading and what do they earn together?'))
+    response = result['response']
+    assert '"Topaz Bridge Trading"' in response
+    assert '10 dealer codes' in response
+    assert 'NGN 938,254.18' in response and 'indicative' in response.lower()
+    assert '999,999,999' not in response
+    assert result['raw_data']['affiliation']['anchor_type'] == 'name'

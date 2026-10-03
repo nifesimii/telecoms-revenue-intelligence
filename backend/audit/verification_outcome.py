@@ -202,8 +202,10 @@ def _unavailable(period: str, note: str) -> dict:
             "note": note, "rows": [], "verification": None}
 
 
-def verification_outcome_evidence(period: str, dealer_id: str | None) -> dict:
+def verification_outcome_evidence(period: str, dealer_id: str | None, *, focus: str | None = None) -> dict:
     """Every registered audit module's verdict for one dealer-month (read-only)."""
+    if focus not in (None, "eligibility_window"):
+        raise ValueError("Unsupported verification focus")
     if dealer_id is None:
         return _unavailable(period, "Verification needs a dealer account; select or name one.")
     from backend.db import queries
@@ -231,6 +233,8 @@ def verification_outcome_evidence(period: str, dealer_id: str | None) -> dict:
     store_ok = audit_store.healthcheck()
     rank = {name: i for i, name in enumerate(_ORDER)}
     modules = sorted(list_modules(), key=lambda m: (rank.get(m.name, len(rank)), m.name))
+    if focus:
+        modules = [module for module in modules if module.name == focus]
     results = [_module_evidence(module, period, dealer, store_ok) for module in modules]
     if all(m["status"] == "unavailable" for m in results):
         return _unavailable(period, f"Audit verification is unavailable for {period}: "

@@ -60,15 +60,15 @@ try {
   await atlas.getByText('I will check the records.', { exact: true }).waitFor();
   assert.match(await atlas.getByRole('status').innerText(), /Draft in progress.*not a completed evidence answer/);
   write({ type: 'status', phase: 'tool_start', tool: 'get_dealer_summary', reset: true });
-  await atlas.getByText('Checking evidence with get_dealer_summary…', { exact: true }).waitFor();
+  await atlas.getByText('Checking evidence…', { exact: true }).waitFor();
   assert.equal(await atlas.getByText('I will check the records.', { exact: true }).count(), 0);
   write({ type: 'status', phase: 'tool_complete', tool: 'get_dealer_summary', reset: true,
     tools_called: ['get_dealer_summary'], raw_data: evidence });
   write({ type: 'text', text: finalText });
   await atlas.getByText(finalText, { exact: true }).waitFor();
-  await atlas.getByText('get_dealer_summary', { exact: true }).waitFor();
+  assert.equal(await atlas.getByText('get_dealer_summary', { exact: true }).count(), 0);
   assert.equal(await atlas.getByRole('button', { name: 'Stop', exact: true }).count(), 1);
-  // Completion is withheld: text + provenance are visible while explicitly provisional.
+  // Completion is withheld: answer text is visible while explicitly provisional.
   await page.waitForTimeout(250);
   complete();
   await page.waitForFunction(() => performance.getEntriesByType('measure').some((e) => e.name.endsWith(':rendered-complete')));

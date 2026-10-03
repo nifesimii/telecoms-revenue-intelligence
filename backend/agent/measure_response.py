@@ -148,6 +148,10 @@ def render_measure_response(request: dict, evidence: dict) -> str:
     _validate(request, evidence)
     parts = []
     for measure in evidence["measures"]:
+        if measure["measure"] == "verification_outcome":
+            parts.extend(_render_verification(measure, evidence.get("dealer_id"),
+                                              request.get("verification_focus")))
+            continue
         if measure["measure"] in _STANDALONE:
             parts.extend(_STANDALONE[measure["measure"]][2](measure, evidence.get("dealer_id")))
             continue
@@ -160,7 +164,22 @@ def render_measure_response(request: dict, evidence: dict) -> str:
         covered = [p["period"] for p in available]
         missing = [p for p in request["periods"] if p not in covered]
         comparing = request.get("operation") in {"compare", "explain"} and len(request["periods"]) > 1
-        if row_only:
+        ranking = (measure["measure"] == "activation_commission" and request.get("limit") is not None
+                   and request.get("operation") == "breakdown" and request.get("breakdown") == "dealer")
+        ranked_rows = []
+        if ranking and available:
+            ranked_rows = sorted(available[0]["rows"],
+                                 key=lambda row: (-Decimal(str(row["value"])), str(row["dealer_id"])))[:request["limit"]]
+        if ranking and ranked_rows:
+            selected_total = sum(Decimal(str(row["value"])) for row in ranked_rows)
+            if request["limit"] == 1:
+                row = ranked_rows[0]
+                parts.append(f"Highest activation commission: {_number(selected_total, measure['unit'])} — "
+                             f"{_text(row.get('dealer_name') or row['dealer_id'])} ({_text(row['dealer_id'])}).")
+            else:
+                parts.append(f"Top {len(ranked_rows)} dealers by activation commission: "
+                             f"{_number(selected_total, measure['unit'])} combined.")
+        elif row_only:
             parts.append(f"{_text(measure['label'])}{':' if available else ': unavailable.'}")
         elif comparing or (aggregation == "snapshot" and available):
             parts.append(f"{_text(measure['label'])}:")
@@ -191,7 +210,8 @@ def render_measure_response(request: dict, evidence: dict) -> str:
         elif row_only or request.get("operation") == "breakdown" or (
             request.get("operation") in {"compare", "explain"} and request.get("breakdown") == "product"
         ):
-            rows = [(period["period"], row) for period in available for row in period["rows"]]
+            rows = ([(available[0]["period"], row) for row in ranked_rows] if ranking else
+                    [(period["period"], row) for period in available for row in period["rows"]])
             if rows:
                 lines = ["| Period | Dealer | Detail | Value |", "| --- | --- | --- | --- |"]
                 for period, row in rows[:_MAX_RENDERED_ROWS]:
@@ -202,7 +222,11 @@ def render_measure_response(request: dict, evidence: dict) -> str:
                     dimension = row.get("dimension") or "—"
                     lines.append(f"| {_text(period)} | {dealer} | {_text(dimension)} | {rendered_value} |")
                 parts.append("\n".join(lines))
-                if len(rows) > _MAX_RENDERED_ROWS or any(p.get("truncated") for p in available):
+                if ranking:
+                    parts.append(f"Showing {len(rows)} of {available[0].get('total_rows', len(available[0]['rows'])):,} dealers, "
+                                 "ranked by commission descending; ties use dealer account code. "
+                                 "The headline amount covers only the displayed dealers.")
+                elif len(rows) > _MAX_RENDERED_ROWS or any(p.get("truncated") for p in available):
                     parts.append("Breakdown truncated; displayed rows are not the complete set. Totals use the available aggregate evidence.")
             elif request.get("operation") == "breakdown":
                 parts.append("Requested breakdown unavailable: no detailed evidence rows were supplied.")
@@ -214,7 +238,11 @@ def render_measure_response(request: dict, evidence: dict) -> str:
             parts.append(_text(measure["note"]))
         provenance = {}
         for period in periods:
-            key = (period["source"], period.get("note", ""))
+            note = period.get("note", "")
+            if ranking:
+                note = note.replace(
+                    " Showing the first 100 evidence rows; any total includes all matching records.", "")
+            key = (period["source"], note)
             provenance.setdefault(key, []).append(period["period"])
         for (source, note), source_periods in provenance.items():
             details = f"Periods: {', '.join(map(_text, source_periods))}. Source: {_text(source)}."
@@ -241,7 +269,9 @@ def render_measure_response(request: dict, evidence: dict) -> str:
             parts.append("The underlying cause is unverified. Explaining why requires supporting source records "
                          "for the requested measure and periods, including eligibility evidence where applicable. "
                          "Recorded amounts and changes alone do not establish a cause.")
-    return "\n\n".join(parts)
+    # Measures sharing a dealer, period or source repeat the same context and
+    # provenance verbatim; state each such fact once, keeping its first position.
+    return "\n\n".join(dict.fromkeys(parts))
 
 
 def _render_priority(measure: dict, dealer_id: str | None) -> list[str]:
@@ -538,6 +568,60 @@ def render_dealer_codes(evidence: dict) -> str:
     return '\n\n'.join(parts)
 
 
+def _affiliation_headline(evidence: dict, period: str) -> str:
+    """Lead with how many OTHER codes share the anchor's recorded name."""
+    count = evidence['other_count']
+    plural = '' if count == 1 else 's'
+    if evidence['anchor_type'] == 'code':
+        anchor = f"{_text(evidence['anchor_name'])} ({_text(evidence['anchor_id'])})"
+        if count:
+            return f"{anchor} shares its recorded dealer name with {count:,} other dealer code{plural} in {period}."
+        return f"No other dealer codes are recorded under {anchor} in {period}."
+    anchor = f'"{_text(evidence["anchor_query"])}"'
+    if count:
+        return f"{count:,} dealer code{plural} are recorded under {anchor} in {period}."
+    return f"No dealer codes are recorded under {anchor} in {period}."
+
+
+def render_affiliation(evidence: dict) -> str:
+    """Render the sibling account codes recorded under one dealer, with month commission.
+
+    Codes grouped by recorded name are an unverified association, never a confirmed
+    legal entity; a code without an activation record that month is unavailable, not zero.
+    """
+    if evidence['status'] == 'unavailable' or not evidence['found']:
+        return _text(evidence['note'])
+    period = _text(evidence['period'])
+    parts = [_affiliation_headline(evidence, period)]
+    with_commission = evidence['others_with_commission']
+    if with_commission:
+        total = _number(evidence['indicative_total_ngn'], 'ngn')
+        parts.append(f"Combined recorded activation commission across {with_commission:,} of those codes: "
+                     f"{total} (indicative total of recorded activation commission for {period}).")
+    # A code anchor names itself in the headline; the table lists only the OTHER codes.
+    display_rows = [row for row in evidence['rows'] if not row['is_anchor']]
+    if display_rows:
+        lines = ['| Dealer code | Recorded names | Recorded activation commission |',
+                 '| --- | --- | --- |']
+        for row in display_rows:
+            names = ', '.join(_text(name) for name in row['recorded_names'])
+            commission = (_number(row['commission_ngn'], 'ngn') if row['commission_status'] == 'available'
+                          else 'Unavailable')
+            lines.append(f"| {_text(row['dealer_id'])} | {names} | {commission} |")
+        parts.append('\n'.join(lines))
+    unavailable = evidence['others_unavailable']
+    if unavailable:
+        plural = '' if unavailable == 1 else 's'
+        parts.append(f"{unavailable:,} of those code{plural} have no recorded activation commission in "
+                     f"{period}; missing records are not zero and are excluded from the total.")
+    if evidence['truncated']:
+        parts.append(f"Partial list: showing {len(display_rows):,} of {evidence['total_codes']:,} recorded "
+                     "codes; this is not the complete list.")
+    parts.append(_text(evidence['note']))
+    parts.append(f"Source: {_text(evidence['source'])}. Coverage is limited to supplied records.")
+    return '\n\n'.join(dict.fromkeys(parts))
+
+
 _VERIFIED_STATUSES = ("verified", "no_subject", "unavailable")
 _VERIFICATION_BASES = {"saved", "on_request"}
 _LIMITED_TRAIL = ("This product's comparison evidence is not authentic invoice or stock data; "
@@ -684,7 +768,7 @@ def _render_audit_module(module: dict, dealer: str) -> str:
     return "\n".join([f"{label}: {_text(header)}", *(f"- {_text(bullet)}" for bullet in bullets)])
 
 
-def _render_verification(measure: dict, dealer_id: str | None) -> list[str]:
+def _render_verification(measure: dict, dealer_id: str | None, focus: str | None = None) -> list[str]:
     """Each audit module's verdict; unavailable and no-subject are never a pass."""
     parts, dealer = [], dealer_id or "—"
     for period in measure["periods"]:
@@ -698,12 +782,23 @@ def _render_verification(measure: dict, dealer_id: str | None) -> list[str]:
             parts.append(f"Dealer {_text(dealer)} has no recorded activity in {month}; check the dealer code.")
             continue
         modules = period["verification"]["modules"]
+        if focus:
+            modules = [module for module in modules if module["module"] == focus]
+            if not modules:
+                raise ValueError("Verification evidence does not include the requested focus")
         tally = {status: sum(m["status"] == status for m in modules) for status in _VERIFIED_STATUSES}
         noun = "module" if len(modules) == 1 else "modules"
         parts.append(f"Verification outcome for dealer {_text(dealer)}, {month}: " + _text(
             f"{len(modules)} audit {noun} — {tally['verified']} with a verdict, "
             f"{tally['no_subject']} with no subject, {tally['unavailable']} unavailable."))
-        parts.extend(_render_audit_module(module, dealer) for module in modules)
+        for module in modules:
+            if module["module"] == "eligibility_window" and module["status"] == "verified":
+                from backend.agent.knowledge_response import eligibility_limitation
+                from backend.agent.prompts import KB_CONTENT
+                parts.append(_text(eligibility_limitation(KB_CONTENT)))
+                parts.append("The following is a recorded audit result; its confidence describes the "
+                             "recorded check, not confirmation that the disputed eligibility rule is correct.")
+            parts.append(_render_audit_module(module, dealer))
         if period.get("note"):
             parts.append(_text(period["note"]))
     if any(period["status"] == "unavailable" or period["verification"].get("found", True)

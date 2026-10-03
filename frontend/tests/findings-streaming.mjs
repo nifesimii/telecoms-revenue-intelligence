@@ -97,12 +97,15 @@ try {
   await page.getByLabel('Fixture scope').selectOption('base');
   await open();
   await assistant.getByText('Original thread completed while away.', { exact: true }).waitFor();
-  await assistant.getByText('get_dealer_full_context', { exact: true }).waitFor();
+  assert.equal(await assistant.getByText('get_dealer_full_context', { exact: true }).count(), 0);
   await input.fill('What evidence is missing?');
   await send();
   await assistant.getByText('General fixture answer.', { exact: true }).waitFor();
-  assert.match(chats.at(-1).message, /Exact dealer account code 001/);
-  assert.match(chats.at(-1).message, /module inventory, type INVENTORY_MISMATCH.*Exact product code P1/);
+  assert.equal(chats.at(-1).message, 'What evidence is missing?');
+  assert.match(chats.at(-1).investigation_context, /Exact dealer account code 001/);
+  assert.match(chats.at(-1).investigation_context, /Exact product code P1/);
+  assert.match(chats.at(-1).conversation_history[0].content, /Exact dealer account code 001/);
+  assert.match(chats.at(-1).conversation_history[0].content, /module inventory, type INVENTORY_MISMATCH.*Exact product code P1/);
   assert.equal(chats.at(-1).mon_period, '202606');
   assert.equal(chats.at(-1).conversation_history.at(-1).content, 'Original thread completed while away.');
   const stored = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith('fbb.chat.thread.findings.')).map((key) => JSON.parse(localStorage.getItem(key))));

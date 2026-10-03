@@ -4,7 +4,6 @@
 // Assistant    → left-aligned, white background, subtle border
 //                Markdown rendered (bold, lists, line breaks, tables) via
 //                react-markdown + remark-gfm. NGN amounts get a darker weight.
-//                Tools_called rendered as small grey pills below the body.
 //                If get_dealer_summary or get_orsc_summary was called, a
 //                compact "top 10 by commission" mini-table renders below.
 // Loading      → an isolated assistant-styled bubble with three bouncing dots.
@@ -183,29 +182,6 @@ function pickDealerMiniTable(tools_called, raw_data, period) {
 }
 
 // ---------------------------------------------------------------------------
-// Tool pills
-// ---------------------------------------------------------------------------
-
-function ToolPills({ tools_called, period }) {
-  if (!tools_called || tools_called.length === 0) return null;
-  return (
-    <div className="mb-2 flex flex-wrap items-center gap-1.5">
-      {tools_called.map((name, i) => (
-        <span
-          key={`${name}-${i}`}
-          className="inline-block bg-gray-100 text-gray-600 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-gray-200"
-        >
-          {name === 'get_orsc_summary' ? 'Subscription commission summary' : name}
-        </span>
-      ))}
-      {period && (
-        <span className="text-[10px] text-gray-500">· {formatPeriod(period)}</span>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Loading dots — for the placeholder bubble while isLoading
 // ---------------------------------------------------------------------------
 
@@ -256,7 +232,6 @@ export default function MessageBubble({ message }) {
     <div className="flex justify-start mb-3">
       <div className="max-w-[90%] bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm text-sm text-gray-800 leading-relaxed">
         {message.incomplete && <p className="text-xs text-amber-800 mb-2">{message.status === 'streaming' ? 'Writing explanation…' : message.status === 'stopped' ? 'Stopped · incomplete answer' : 'Interrupted · incomplete answer'}</p>}
-        <ToolPills tools_called={message.tools_called} period={message.mon_period} />
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
           {message.content || ''}
         </ReactMarkdown>

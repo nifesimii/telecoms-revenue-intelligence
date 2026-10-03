@@ -458,10 +458,17 @@ the validated interpretation: the model cannot choose arbitrary data tools,
 invent answer values, relabel activations as sales, or append draft commentary.
 The latest question, reporting month and workspace context are distinct inputs;
 existing scoped conversation history supplies user-agreed definitions and accepted
-alternatives. Unknown requests clarify. General policy answers must be exact core
-KB excerpts; dealer name/code lookups remain bounded and non-financial. A measure
+alternatives. Ambiguous requests clarify; clear unsupported requests select a
+KB-owned capability boundary without requesting unrelated evidence. General policy
+answers use exact core KB excerpts, retain their paragraph context and applicable
+eligibility limitation, and suppress internal query expressions. Dealer name/code
+lookups remain bounded and non-financial. A measure
 may name its dealer instead of giving a code; the model copies the name and the
 application resolves it via `get_dealer_codes` (the answer opens with the match line).
+
+The common zero-commission-causes and activation-eligibility policy questions use
+named KB topic selectors, avoiding model transcription of the source paragraph.
+Other policy questions retain the validated exact-excerpt path.
 
 `raw_data.measure_evidence` preserves each requested measure and month rather than
 overwriting repeated tool calls. Source gaps remain unavailable, not zero. Figures
@@ -470,6 +477,9 @@ Financial selectors restrict individual KPIs/statements/lines. Inventory snapsho
 and financial statement lines are not added into misleading totals. Requested why
 answers may include bounded zero-record observations; conflicting eligibility
 definitions and missing historical source matches prevent unsupported causal claims.
+Eligibility-specific verification loads only that audit module and explains the
+policy conflict before presenting recorded audit confidence. Single-month
+activation commission rankings accept a bounded top-N limit (maximum 100).
 Existing standalone tools and scoped finding explanations keep their contracts;
 ordinary chat no longer performs an unrestricted model-selected tool loop.
 See `docs/ATLAS_MEASURE_SCOPE.md` for capabilities and verification limits.

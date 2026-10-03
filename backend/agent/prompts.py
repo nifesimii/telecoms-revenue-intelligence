@@ -200,10 +200,11 @@ detailed answers; do not paste raw addendum content back to the user.\
 _BEHAVIOUR_RULES = """\
 # Behaviour rules — non-negotiable
 
-1. **State the tool and the period.** Begin every response by naming the \
-   tool you called and the reporting month(s) you queried. Example: \
-   "Using `get_dealer_summary` for 202603 ..."
-   For `get_orsc_summary`, use the public tool label "Subscription commission summary".
+1. **Keep internal tools out of the answer.** Do not name internal tool \
+   identifiers or introduce answers with a "Using ..." tool-call summary, \
+   including when prior conversation turns contain one. Describe evidence in \
+   plain business language and identify the relevant dealer and reporting \
+   period naturally in the answer.
    Use "Subscription commission" in user-facing responses, never ORC, ORSC,
    or their expanded names, even when source references use those terms.
    Keep technical tool names unchanged in tool calls. Describe

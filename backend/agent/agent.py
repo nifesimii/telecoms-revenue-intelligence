@@ -16,9 +16,9 @@ from typing import Any
 from backend import config
 from backend.agent import prompts, tool_executor
 from backend.agent.measure_scope import (
-    MeasureScope, SCOPE_TOOL, clarification_response, knowledge_response,
+    MeasureScope, SCOPE_TOOL, clarification_response, knowledge_response, unsupported_response,
 )
-from backend.agent.measure_response import render_measure_response, render_dealer_codes
+from backend.agent.measure_response import render_measure_response, render_dealer_codes, render_affiliation
 from backend.agent.dealer_resolution import resolve_dealer_name
 from backend.agent.inference import InferenceRun, cached_system, new_client
 
@@ -155,6 +155,8 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
     tools_called, raw_data = [], {}
     if scope.kind == 'clarification':
         answer = clarification_response(scope)
+    elif scope.kind == 'unsupported':
+        answer = unsupported_response(scope, prompts.KB_CONTENT)
     elif scope.kind == 'knowledge':
         answer = knowledge_response(scope, prompts.KB_CONTENT)
     elif scope.kind == 'identity':
@@ -163,6 +165,14 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
         answer = render_dealer_codes(evidence)
         tools_called = ['get_dealer_codes']
         raw_data = {'get_dealer_codes': evidence}
+    elif scope.kind == 'affiliation':
+        # Group the sibling account codes recorded under one dealer for a single month; the
+        # collector discovers codes by recorded name, so no prior name-to-code resolution is needed.
+        evidence = await asyncio.to_thread(tool_executor.execute_affiliation, scope.model_dump())
+        run.remaining()
+        answer = render_affiliation(evidence)
+        tools_called = list(evidence['tools'])  # only the reads that actually ran
+        raw_data = {'affiliation': evidence}
     else:
         request = scope.model_dump()
         if emit is not None:

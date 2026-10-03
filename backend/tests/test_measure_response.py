@@ -249,6 +249,26 @@ def test_repeated_provenance_is_consolidated_and_tool_names_stay_internal():
     assert 'Periods: 202603, 202604' in answer
 
 
+def test_measures_sharing_scope_state_context_and_provenance_once():
+    """Two measures for one dealer-month-source must not repeat shared context."""
+    request, evidence = activation_fixture()
+    request["measures"].append("activation_commission")
+    evidence["measures"].append({
+        "measure": "activation_commission", "label": "Activation commission", "unit": "ngn",
+        "periods": [{"period": "202603", "status": "available", "source": "SAMPLE",
+                     "rows": [{"dealer_id": "D1", "dealer_name": "First Dealer", "dimension": None, "value": 500}],
+                     "total": 500, "note": "", "tool": "get_dealer_summary"}],
+    })
+    answer = render_measure_response(request, evidence)
+    # Both requested figures still appear.
+    assert "Recorded activations: 12" in answer
+    assert "Activation commission: NGN 500.00" in answer
+    # Shared dealer, covered period and provenance are stated once, not per measure.
+    assert answer.count("Dealer: D1.") == 1
+    assert answer.count("Covered periods: 202603.") == 1
+    assert answer.count("Periods: 202603. Source: SAMPLE.") == 1
+
+
 def test_periodless_unavailable_measure_retains_missing_evidence_explanation():
     request = {'measures': ['retail_sales_value'], 'periods': [], 'dealer_id': None}
     evidence = {'requested_periods': [], 'dealer_id': None, 'measures': [{
@@ -457,3 +477,143 @@ def test_markdown_in_priority_values_is_escaped():
                                      "description": "| [link](http://x) `code`"}], finding_count=1)
     answer = render_measure_response(*priority_fixture(period))
     assert "\\| \\[link\\]\\(http://x\\) \\`code\\`" in answer
+
+
+def affiliation_envelope(**overrides):
+    """A code-anchor affiliation envelope matching the pinned collect_affiliation contract."""
+    envelope = {
+        "anchor_type": "code", "anchor_id": "74050", "anchor_query": None,
+        "anchor_name": "Topaz Bridge Trading", "period": "202606",
+        "status": "available", "found": True,
+        "resolved_names": ["Topaz Bridge Trading"],
+        "rows": [
+            {"dealer_id": "74050", "recorded_names": ["Topaz Bridge Trading"], "is_anchor": True,
+             "commission_ngn": 500000.0, "commission_status": "available"},
+            {"dealer_id": "81002", "recorded_names": ["Topaz Bridge Trading"], "is_anchor": False,
+             "commission_ngn": 1200000.5, "commission_status": "available"},
+            {"dealer_id": "95037", "recorded_names": ["Topaz Bridge Trading"], "is_anchor": False,
+             "commission_ngn": None, "commission_status": "unavailable"},
+        ],
+        "total_codes": 3, "other_count": 2, "indicative_total_ngn": 1200000.5,
+        "others_with_commission": 1, "others_unavailable": 1, "truncated": False,
+        "source": "Recorded dealer records",
+        "tools": ["get_dealer_codes", "get_dealer_summary"],
+        "note": ("Codes are grouped by recorded dealer name only; this is not a verified branch or "
+                 "legal-entity link. Commission is recorded activation commission for 202606; a code "
+                 "without an activation record that month has unavailable commission, not zero."),
+    }
+    envelope.update(overrides)
+    return envelope
+
+
+def test_render_affiliation_code_anchor_leads_with_other_count_and_indicative_total():
+    from backend.agent.measure_response import render_affiliation
+    answer = render_affiliation(affiliation_envelope())
+    # Headline names the anchor and leads with how many OTHER codes share its name.
+    assert "Topaz Bridge Trading" in answer and "(74050)" in answer
+    assert "2 other dealer codes" in answer and "202606" in answer
+    # Indicative combined commission over the AVAILABLE others only, marked indicative.
+    assert "NGN 1,200,000.50" in answer
+    assert "indicative" in answer.lower()
+    # Sibling codes listed; the anchor's own code is not re-listed as a sibling row.
+    assert "81002" in answer and "95037" in answer
+    assert answer.count("74050") == 1
+    # The unavailable sibling is honestly flagged, never counted as zero.
+    assert "Unavailable" in answer
+    assert "not zero" in answer.lower()
+    # Provenance, no truncation line.
+    assert "Recorded dealer records" in answer
+    assert "Partial list" not in answer
+
+
+def test_render_affiliation_name_anchor_counts_all_rows_as_others():
+    from backend.agent.measure_response import render_affiliation
+    envelope = affiliation_envelope(
+        anchor_type="name", anchor_id=None, anchor_query="Topaz Bridge Trading",
+        rows=[
+            {"dealer_id": "74050", "recorded_names": ["Topaz Bridge Trading"], "is_anchor": False,
+             "commission_ngn": 500000.0, "commission_status": "available"},
+            {"dealer_id": "81002", "recorded_names": ["Topaz Bridge Trading"], "is_anchor": False,
+             "commission_ngn": 1200000.5, "commission_status": "available"},
+        ],
+        total_codes=2, other_count=2, indicative_total_ngn=1700000.5,
+        others_with_commission=2, others_unavailable=0,
+    )
+    answer = render_affiliation(envelope)
+    assert '"Topaz Bridge Trading"' in answer
+    assert "2 dealer codes" in answer
+    assert "NGN 1,700,000.50" in answer
+    assert "this dealer" not in answer.lower()  # no anchor row for a name anchor
+    assert "74050" in answer and "81002" in answer
+
+
+def test_render_affiliation_unique_code_anchor_states_no_others():
+    from backend.agent.measure_response import render_affiliation
+    envelope = affiliation_envelope(
+        rows=[{"dealer_id": "74050", "recorded_names": ["Lone Star Trading"], "is_anchor": True,
+               "commission_ngn": 500000.0, "commission_status": "available"}],
+        anchor_name="Lone Star Trading", resolved_names=["Lone Star Trading"],
+        total_codes=1, other_count=0, indicative_total_ngn=0.0,
+        others_with_commission=0, others_unavailable=0,
+    )
+    answer = render_affiliation(envelope)
+    assert "No other dealer codes" in answer and "(74050)" in answer
+    assert "indicative" not in answer.lower()  # no total when there are no others
+
+
+def test_render_affiliation_truncates_large_sets():
+    from backend.agent.measure_response import render_affiliation
+    rows = [{"dealer_id": "74050", "recorded_names": ["Big Group"], "is_anchor": True,
+             "commission_ngn": 1.0, "commission_status": "available"}]
+    rows += [{"dealer_id": f"{80000 + i}", "recorded_names": ["Big Group"], "is_anchor": False,
+              "commission_ngn": float(i), "commission_status": "available"} for i in range(99)]
+    envelope = affiliation_envelope(
+        anchor_name="Big Group", resolved_names=["Big Group"], rows=rows,
+        total_codes=150, other_count=149, indicative_total_ngn=4851.0,
+        others_with_commission=149, others_unavailable=0, truncated=True,
+    )
+    answer = render_affiliation(envelope)
+    assert "Partial list" in answer and "150" in answer
+
+
+def test_render_affiliation_unresolved_code_anchor_states_note_only():
+    from backend.agent.measure_response import render_affiliation
+    note = ("Account 00000000 has no recorded activation in 202606, so related codes cannot be "
+            "identified for this month. Missing records are not zero.")
+    envelope = affiliation_envelope(
+        anchor_id="00000000", anchor_name=None, found=False, resolved_names=[], rows=[],
+        total_codes=0, other_count=0, indicative_total_ngn=0.0, others_with_commission=0,
+        others_unavailable=0, note=note,
+    )
+    answer = render_affiliation(envelope)
+    assert "00000000" in answer and "not zero" in answer.lower()
+    assert "| Dealer code |" not in answer  # no table when the anchor is unresolved
+
+
+def test_render_affiliation_unavailable_reads_are_stated_honestly():
+    from backend.agent.measure_response import render_affiliation
+    note = "Dealer records for 202606 could not be read; related codes and commission are unavailable."
+    envelope = affiliation_envelope(status="unavailable", found=False, rows=[], resolved_names=[],
+                                    total_codes=0, other_count=0, indicative_total_ngn=0.0,
+                                    others_with_commission=0, others_unavailable=0, note=note)
+    answer = render_affiliation(envelope)
+    assert "could not be read" in answer
+    assert "| Dealer code |" not in answer
+
+
+def test_render_affiliation_escapes_markdown_in_names():
+    from backend.agent.measure_response import render_affiliation
+    envelope = affiliation_envelope(
+        anchor_name="A*B_[x]", resolved_names=["A*B_[x]"],
+        rows=[
+            {"dealer_id": "74050", "recorded_names": ["A*B_[x]"], "is_anchor": True,
+             "commission_ngn": 1.0, "commission_status": "available"},
+            {"dealer_id": "81002", "recorded_names": ["C|D`e`"], "is_anchor": False,
+             "commission_ngn": 2.0, "commission_status": "available"},
+        ],
+        total_codes=2, other_count=1, indicative_total_ngn=2.0,
+        others_with_commission=1, others_unavailable=0,
+    )
+    answer = render_affiliation(envelope)
+    assert "A\\*B\\_\\[x\\]" in answer
+    assert "C\\|D\\`e\\`" in answer

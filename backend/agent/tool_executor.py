@@ -71,6 +71,8 @@ _STANDALONE_EVIDENCE = {
 
 def _reader_options(measure: str, request: dict[str, Any]) -> dict[str, Any]:
     """Validated scope filters a reader takes besides month and dealer."""
+    if measure == 'verification_outcome' and request.get('verification_focus'):
+        return {'focus': request['verification_focus']}
     if measure != "investigation_queue":
         return {}
     options = {"severity": request.get("queue_severity"),
@@ -109,6 +111,13 @@ def execute_dealer_lookup(request: dict[str, Any]) -> dict[str, Any]:
     from backend.db.measure_evidence import collect_dealer_codes
 
     return collect_dealer_codes(request)
+
+
+def execute_affiliation(request: dict[str, Any]) -> dict[str, Any]:
+    """Collect the sibling account codes recorded under one dealer, with month commission."""
+    from backend.db.affiliation_evidence import collect_affiliation
+
+    return collect_affiliation(request)
 
 
 def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:

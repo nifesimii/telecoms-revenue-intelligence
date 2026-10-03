@@ -36,9 +36,9 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
   }, [prompt, onPromptConsumed]);
   useEffect(() => {
     if (!composerRequest) return;
-    // Each opener activation is a new request, including while already mounted.
-    // Preserve a question the user has started editing.
-    setInput((draft) => draft || composerRequest.prompt);
+    // Only seed new conversations; reopening a thread leaves follow-ups blank
+    // and preserves any question the user has started editing.
+    if (!messages.length) setInput((draft) => draft || composerRequest.prompt);
     composerRef.current?.scrollIntoView({ block: 'center', behavior: 'instant' });
     const focusTarget = inputRef.current?.disabled ? composerRef.current : inputRef.current;
     focusTarget?.focus({ preventScroll: true });
@@ -89,8 +89,8 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
     </div>
     {isLoading && <p className="mx-4 mb-3 text-sm text-gray-600" role="status">
       {messages.at(-1)?.content ? 'Draft in progress · not a completed evidence answer. More checks may follow.'
-        : messages.at(-1)?.phase === 'tool_start' ? `Checking evidence with ${messages.at(-1).tool}…`
-        : messages.at(-1)?.phase === 'tool_complete' ? `Evidence returned by ${messages.at(-1).tool}. Preparing the answer…`
+        : messages.at(-1)?.phase === 'tool_start' ? 'Checking evidence…'
+        : messages.at(-1)?.phase === 'tool_complete' ? 'Evidence received. Preparing the answer…'
         : 'Atlas is preparing an evidence-based answer…'}
     </p>}
     {error && <p className="mx-4 mb-3 text-sm text-red-800" role="alert">The explanation could not be completed. Your figures remain available. {error}</p>}

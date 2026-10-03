@@ -3,6 +3,34 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-10-03 (Atlas demo rehearsal and live checks)
+
+- Repaired the live evaluation runner's period argument and dictionary-response
+  handling; added history/context, full-answer retention, universal error-fallback
+  failure, and a resolved sample/simulated-data guard. Refreshed 28 golden cases.
+- Live rehearsal exposed unnecessary sales clarification, invalid top-dealer
+  rankings, zero-record/product-comparison routing errors, unsupported-request
+  clarification loops, and policy answers omitting eligibility uncertainty.
+  Fixed these with bounded rankings, explicit scope guidance, KB-owned capability
+  responses, context-preserving policy excerpts and named common-policy topics.
+- Eligibility verification now reads only the requested module and distinguishes
+  recorded audit confidence from authoritative policy. Finance still must resolve
+  reporting-month versus invoice-to-activation eligibility definitions. Stored
+  audit algorithms/results are unchanged.
+- Final verification: 28/28 live golden cases passed; the eight-turn live rehearsal
+  retained dealer/month context, clarified sales, declined unsupported retail
+  evidence and focused eligibility. A live streamed dealer-switch check returned
+  account 296065's 495 June activations, then 472 for the May follow-up.
+- Final offline backend suite: 904 passed, 34 skipped. All 11 frontend transport
+  tests, Python compilation and diff checks passed. Independent reviews corrected
+  unrelated eligibility caveats and ranking-total wording. Earlier intermittent
+  policy-answer fallbacks were observed; their precise cause was not established,
+  and named topics avoid requiring model transcription for those two questions.
+- Rehearsal script and expected figures: `docs/ATLAS_DEMO_REHEARSAL.md`.
+  Live provider calls used fictional sample data. No deployment or production
+  writes; pre-existing working-tree edits were preserved. Passing representative
+  checks is not a guarantee for every natural-language phrasing.
+
 ## Session — 2026-10-02 (Atlas requested-measure enforcement)
 
 - Confirmed conversation-scoped sales definitions and evidence-bound rendering.
@@ -55,6 +83,14 @@ end of each work session. Newest session on top.
   payment guidance; revised simulated-status and coverage explanations to avoid
   unsupported causation. Spec re-review has no remaining blocking findings.
 
+## Session — 2026-10-02 (Atlas follow-up composer)
+
+- Payment opener seeds the suggested question only for a new conversation.
+  Existing threads keep an empty composer or the user's draft, including after
+  navigation and reload.
+- Reproduced the repeated prompt in the browser before the fix. Payment browser
+  regression and frontend production build pass; mocked replies only.
+
 ---
 
 ## Session — 2026-10-01 (Shared dealer Financial Health and Atlas)
@@ -75,6 +111,73 @@ end of each work session. Newest session on top.
   was not evaluated; tools and context were verified without provider calls.
 - No new dependencies or SQL; synthetic reports remain independent of live
   Presto/APDP data. Existing unrelated working-tree edits are preserved.
+
+## Session — 2026-10-01 (Explicit Atlas context on every turn)
+
+- User reported Atlas asking which dealer was selected on the third question.
+  The previous fix relied on the model recovering scope from earlier history;
+  it did not independently supply the active selection on follow-ups.
+- Added optional bounded `investigation_context` to ordinary chat requests.
+  Both chat routes attach that context to the current model input and explain
+  how to resolve “this dealer” and “this month”. Visible follow-up questions
+  stay natural; the opening scope introduction and saved history are preserved.
+- Reproduced the missing current-turn context at the provider boundary using
+  the reported product question with two prior turns. Regression now passes,
+  including when the prior turns omit the dealer. This verifies context
+  delivery, not the exact behavior of a live model for the reported session.
+- Payments, Findings and shared chat browser regressions passed with mocked
+  answers, including reload, retry and dealer switching. Frontend build and
+  all 11 transport tests passed. Full backend suite: 357 passed, 28 skipped.
+  No deployment or live model calls.
+
+---
+
+## Session — 2026-10-01 (Natural Atlas follow-ups)
+
+- Atlas adds investigation context to the opening question only, then sends
+  follow-up questions as typed. Completed conversation history retains the
+  exact account, periods and evidence constraints across navigation and reload.
+  Clearing a thread starts with context again; failed opening turns cannot
+  suppress context because they are excluded from model history.
+- Payment browser regression reproduced the repeated prefix before the fix
+  and passes afterward, including reload, clear-thread and failed-opening
+  recovery. Shared chat and Findings browser regressions and the frontend
+  production build passed. Existing saved messages remain unchanged.
+
+---
+
+## Session — 2026-10-01 (Atlas answer presentation)
+
+- User requested hiding internal tool names: removed tool/period pills from
+  shared message bubbles and technical names from evidence-loading statuses.
+  Updated the system prompt to lead with the financial headline and omit the
+  "Using ..." tool summary, superseding the earlier tool-name presentation rule.
+  Tool metadata remains in responses/history for evidence handling. Existing
+  saved answer prose is not rewritten; the prompt applies to new answers.
+- Validation: 20 targeted backend tests passed / 1 existing skip; frontend
+  production build, 11 transport tests, and ordinary-chat plus Findings browser
+  regressions passed, including hidden badges and retained evidence metadata.
+
+---
+
+## Session — 2026-10-01 (Atlas streamed tool-result fix)
+
+- Reproduced Payments account 98052 / June 2026 failing after its data tools.
+  Captured Anthropic HTTP 400: streamed text blocks leaked SDK-only
+  `parsed_output` into the next request's assistant history.
+- Strip that metadata in the shared content-block serializer while preserving
+  text, tool inputs and other response fields. Added a two-round regression
+  using the real SDK stream parser and a mock HTTP provider; confirmed it failed
+  before the fix and passed afterward.
+- Backend suite: 355 passed, 28 existing skips. Diff whitespace check passed.
+  Approved live diagnostic completed, and the original question subsequently
+  completed through localhost `/chat/stream` in 66.65 seconds with both
+  `get_dealer_full_context` and `get_payment_variance` retained. One earlier
+  post-edit HTTP replay still returned the generic error; its underlying
+  exception was not captured, so these successful runs do not establish a
+  reliability rate. No deployment or model/budget changes.
+
+---
 
 ## Session — 2026-09-30 (Preview responsiveness)
 

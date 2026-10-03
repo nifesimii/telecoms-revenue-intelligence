@@ -79,6 +79,15 @@ ORACLE_ANSWER = (
     "- Caveat: 3 zero-commission product(s) absent from the USP rate card — 'USP snapshot miss' root cause.\n"
     "- Caveat: Possible payment under a different period/reference, or a partial settlement. Manual review before finalising 'not paid'.\n"
     '\n'
+    'The eligibility definition is unresolved: the source documentation describes a window relative to the reporting month, '
+    'while the audit model uses an invoice-to-activation 180-day window. Finance must confirm the authoritative date anchor, '
+    'calendar-month versus day interpretation, and inclusive boundaries before Atlas can establish whether an activation '
+    'is outside the eligibility window. Recorded dates and audit labels describe the implemented checks; '
+    'they do not resolve this policy conflict or independently prove entitlement.\n'
+    '\n'
+    'The following is a recorded audit result; its confidence describes the recorded check, '
+    'not confirmation that the disputed eligibility rule is correct.\n'
+    '\n'
     '**Eligibility Window**: MIXED_ATTRIBUTION (confidence HIGH). Checked on request with the current audit code; nothing was saved.\n'
     '- Step 1, zero commission records present: 50 zero-commission record(s) found.\n'
     '- Step 4, classify against window: 2 outside window (zero-commission CORRECT), 48 inside window (other eligibility checks required), 0 future-dated (data quality issue).\n'
