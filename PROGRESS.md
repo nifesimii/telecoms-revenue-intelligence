@@ -3,6 +3,41 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-10-04 (Claude-composed answers — live acceptance pending)
+
+- Added a shared final Claude composition call after validated scope/evidence,
+  including clarification, policy, identity, affiliation and dealer-resolution
+  branches. Existing builders retain evidence checks, derived figures, requested
+  tables and audit disclosures; raw evidence/tool traces keep their public shape.
+- Final prose uses application-owned fact references. Known-invalid claims are
+  withheld, with one repair inside the existing request budget. Provider failures
+  retain retrieved evidence; streamed composition failures remain retryable and
+  excluded from successful conversation history. Logs exclude payloads.
+- Independent Spec and Herdr Standards review drove regressions for scope offsets
+  reused as counts, unavailable evidence called zero, payment field relabelling,
+  source-text injection and honest uncertainty. These are concrete guards, not a
+  proof of natural-language entailment. The existing full KB remains in the prompt.
+- Full offline backend run: 990 passed, 37 skipped, 10 failed. Follow-up focused
+  runs addressed legacy single-call provider fixtures and grounding regressions;
+  final targeted run across all failed files and conversation/review regressions:
+  **311 passed, 35 skipped**. Frontend transport: 11 passed;
+  production build and Python compilation passed. No standalone typecheck exists.
+- Existing browser chat and Payment suites passed Stop/disconnect, exact Retry,
+  context/history isolation, keyboard opening and responsive widths. A mocked
+  conversational answer/table passed collapsed evidence, Enter/Space expansion,
+  1440/320px layout and runtime-error checks. This is UI evidence, not model quality.
+- **Not complete:** the first real-Claude rehearsal retrieved the expected sample
+  evidence but returned composition failures on its first three turns; stopped
+  before continuing. Automatic approval review then rejected the diagnostic API
+  call as requiring additional export authorization. User approval for diagnostic
+  calls/reruns was requested and remains pending. No successful live naturalness
+  or latency result is claimed for this new stage. Resume with the seven-turn
+  walkthrough and reject both retrieval and composition fallbacks in evaluation.
+- Preserved pre-existing presentation and PaymentDetail edits. No push, deployment,
+  production query or write-back. Temporary local artifacts include
+  `/tmp/atlas-conversation-backend-tests.log`, `/tmp/atlas_narrative_probe.py`,
+  and `/tmp/atlas-narrative-{desktop,narrow}.png`.
+
 ## Session — 2026-10-04 (Evidence-based Atlas investigations)
 
 - Added persisted calculation and settlement-workflow evidence for January–June;

@@ -1,8 +1,8 @@
 """One scoped Atlas turn, with provider I/O shared by buffered and streamed chat.
 
-The model resolves intent. The tool layer retrieves bounded, measure-specific
-records; the response layer renders their values. Provider prose never becomes
-financial evidence or provisional user-visible text.
+The model resolves intent, then composes an answer from validated, bounded
+evidence. Calculations and provenance stay application-owned. Candidate prose
+never becomes financial evidence or provisional user-visible text.
 """
 from __future__ import annotations
 
@@ -21,6 +21,7 @@ from backend.agent.measure_scope import (
 from backend.agent.measure_response import render_measure_response, render_dealer_codes, render_affiliation
 from backend.agent.dealer_resolution import resolve_dealer_name
 from backend.agent.inference import InferenceRun, cached_system, new_client
+from backend.agent.narrative import compose_answer, NarrativeGroundingError, NARRATIVE_FALLBACK
 
 # --- Model config ---
 MODEL_NAME = "claude-sonnet-4-5"
@@ -45,7 +46,7 @@ async def run_agent(user_message: str, conversation_history: list | None = None,
             result = await _run_turn(client, run, user_message, conversation_history or [],
                                      reporting_period=reporting_period,
                                      investigation_context=investigation_context)
-            status = "complete" if result["response"].strip() and result["response"] != FALLBACK_RESPONSE else "failed"
+            status = "complete" if result["response"].strip() and result["response"] not in (FALLBACK_RESPONSE, NARRATIVE_FALLBACK) else "failed"
             if status == "complete":
                 run.log("inference_answer_ready", duration_seconds=round(time.monotonic() - run.started, 4))
             return result
@@ -91,6 +92,15 @@ async def run_agent_stream(user_message: str, conversation_history: list | None 
                                          emit=events.put)
                 if not result["response"].strip():
                     raise RuntimeError("Empty answer")
+                if result["response"] == NARRATIVE_FALLBACK:
+                    # Preserve evidence but keep the turn retryable and out of
+                    # successful conversation history in the existing browser.
+                    await events.put({'type': 'status', 'phase': 'tool_complete',
+                                      'tool': MEASURE_STATUS_TOOL, 'reset': True,
+                                      'tools_called': result['tools_called'], 'raw_data': result['raw_data']})
+                    await events.put({'type': 'error', 'error': 'composition_failed',
+                                      'message': NARRATIVE_FALLBACK})
+                    return
                 status = "complete"
                 await events.put({"type": "complete", **result, "error": None})
         except asyncio.CancelledError:
@@ -152,7 +162,31 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
     if response.stop_reason != 'tool_use' or len(blocks) != 1 or blocks[0].name != SCOPE_TOOL['name']:
         raise ValueError('Provider did not return one complete scope contract')
     scope = MeasureScope.model_validate(blocks[0].input)
+    request = scope.model_dump()
     tools_called, raw_data = [], {}
+
+    async def finish_answer(validated_context):
+        # Existing response builders validate evidence and compute derived values.
+        # Their prose is supplemental context, never the sole generation input.
+        try:
+            answer = await compose_answer(
+                client, run, question=user_message, history=conversation_history,
+                scope=request, evidence=raw_data, tools_called=tools_called,
+                validated_context=validated_context, sample_mode=config.USE_SAMPLE_DATA,
+                model=MODEL_NAME,
+            )
+        except NarrativeGroundingError:
+            run.log('inference_narrative_rejected')
+            answer = NARRATIVE_FALLBACK
+        except Exception as exc:
+            # Retrieval succeeded. Preserve its provenance if only composition
+            # fails, without publishing a partial or unvalidated candidate.
+            run.log('inference_narrative_failure', error_type=type(exc).__name__)
+            answer = NARRATIVE_FALLBACK
+        if emit is not None and answer != NARRATIVE_FALLBACK:
+            await emit({'type': 'text', 'text': answer})
+        return {'response': answer, 'tools_called': tools_called, 'raw_data': raw_data}
+
     if scope.kind == 'clarification':
         answer = clarification_response(scope)
     elif scope.kind == 'unsupported':
@@ -174,7 +208,6 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
         tools_called = list(evidence['tools'])  # only the reads that actually ran
         raw_data = {'affiliation': evidence}
     else:
-        request = scope.model_dump()
         if emit is not None:
             await emit({'type': 'status', 'phase': 'tool_start', 'reset': True,
                         'tool': MEASURE_STATUS_TOOL})
@@ -189,8 +222,7 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
                 if emit is not None:
                     await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
                                 'tool': MEASURE_STATUS_TOOL, 'tools_called': tools_called, 'raw_data': raw_data})
-                    await emit({'type': 'text', 'text': resolution.text})
-                return {'response': resolution.text, 'tools_called': tools_called, 'raw_data': raw_data}
+                return await finish_answer(resolution.text)
             request = {**request, 'dealer_id': resolution.dealer_id, 'dealer_name': None}
         evidence = await asyncio.to_thread(tool_executor.execute_measure_request, request)
         run.remaining()
@@ -214,9 +246,7 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
         if emit is not None:
             await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
                         'tool': MEASURE_STATUS_TOOL, 'tools_called': tools_called, 'raw_data': raw_data})
-    if emit is not None:
-        await emit({'type': 'text', 'text': answer})
-    return {'response': answer, 'tools_called': tools_called, 'raw_data': raw_data}
+    return await finish_answer(answer)
 
 
 def _error_response() -> dict[str, Any]:

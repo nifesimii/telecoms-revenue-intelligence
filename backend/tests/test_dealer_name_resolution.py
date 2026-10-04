@@ -163,22 +163,22 @@ def install(monkeypatch, plan):
     return install_plan(monkeypatch, plan)
 
 
-def test_unique_partial_name_answers_the_statement_with_the_match_line_first(monkeypatch):
+def test_unique_partial_name_answers_the_statement_for_the_resolved_account(monkeypatch):
     install(monkeypatch, statement(dealer_name="Amber Arc"))
     result = asyncio.run(agent.run_agent("What do we owe Amber Arc in June?"))
-    first, rest = result["response"].split("\n\n", 1)
-    assert first == "Matched “Amber Arc” to Amber Arc Communications \\(130062\\)."
-    assert rest.startswith("Dealer statement for Amber Arc Communications (130062), 202606.")
+    assert "Amber Arc Communications" in result["response"]
+    assert "130062" in result["response"] and "202606" in result["response"]
     assert result["tools_called"] == ["get_dealer_codes", "dealer_statement"]
     assert result["raw_data"]["measure_evidence"]["dealer_id"] == "130062"
 
 
 def test_statement_by_name_matches_the_statement_by_code(monkeypatch):
     install(monkeypatch, statement(dealer_name="river isle trading"))
-    by_name = asyncio.run(agent.run_agent("Statement for river isle trading"))["response"]
+    by_name = asyncio.run(agent.run_agent("Statement for river isle trading"))
     install(monkeypatch, statement(dealer_id="19969"))
-    by_code = asyncio.run(agent.run_agent("Statement for 19969"))["response"]
-    assert by_name == "Matched “river isle trading” to River Isle Trading \\(19969\\).\n\n" + by_code
+    by_code = asyncio.run(agent.run_agent("Statement for 19969"))
+    assert "19969" in by_name["response"] and "19969" in by_code["response"]
+    assert by_name["raw_data"]["measure_evidence"] == by_code["raw_data"]["measure_evidence"]
 
 
 def test_river_isle_is_ambiguous_in_june_and_reads_no_evidence(monkeypatch):
@@ -187,7 +187,7 @@ def test_river_isle_is_ambiguous_in_june_and_reads_no_evidence(monkeypatch):
     monkeypatch.setattr(agent.tool_executor, "execute_measure_request", calls.append)
     result = asyncio.run(agent.run_agent("What do we owe River Isle in June?"))
     assert calls == []
-    assert result["response"] == "\n".join([
+    assert result["response"].split("\n\n### Verification evidence", 1)[0] == "\n".join([
         "Several recorded dealers match “River Isle” for 202606 (6 in total; showing 5).",
         "",
         "- River Isle Ventures \\(121038\\)",
@@ -205,7 +205,7 @@ def test_river_isle_is_ambiguous_in_june_and_reads_no_evidence(monkeypatch):
 def test_unknown_name_answers_with_a_clarification(monkeypatch):
     install(monkeypatch, statement(dealer_name="Nowhere Ltd"))
     result = asyncio.run(agent.run_agent("What do we owe Nowhere Ltd?"))
-    assert result["response"] == ("No dealer named “Nowhere Ltd” is recorded for 202606; "
+    assert result["response"].split("\n\n### Verification evidence", 1)[0] == ("No dealer named “Nowhere Ltd” is recorded for 202606; "
                                   "give the dealer code or the full recorded name.")
 
 

@@ -9,6 +9,7 @@ from anthropic.types import TextBlock, ToolUseBlock
 from fastapi.testclient import TestClient
 from backend.agent import agent, inference, prompts
 from backend.main import app
+from backend.tests.narrative_provider import final_response, is_final_call
 
 
 class Provider:
@@ -18,8 +19,16 @@ class Provider:
         self.messages = self
         self.close = AsyncMock()
 
+    async def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return final_response(kwargs)
+
     def stream(self, **kwargs):
         self.calls.append(kwargs)
+        if is_final_call(kwargs):
+            response = final_response(kwargs)
+            block = response.content[0]
+            return Stream('', tool=ToolUseBlock(type='tool_use', id='answer', name=block.name, input=block.input), stop='tool_use')
         return next(self.rounds)
 
 
@@ -128,7 +137,7 @@ def test_chat_stream_withholds_draft_until_provider_and_evidence_complete(monkey
         assert 'activation' in texts[0].lower()
         assert 'measure_evidence' in events[-1]['raw_data']
         assert events[-1]['tools_called'] == ['get_dealer_summary']
-        assert len(fake.calls) == 1
+        assert len(fake.calls) == 2
         assert fake.calls[0]['system'] == inference.cached_system(prompts.get_measure_system_prompt())
         assert fake.calls[0]['max_tokens'] == agent.MAX_TOKENS
         assert fake.calls[0]['model'] == agent.MODEL_NAME
@@ -223,7 +232,6 @@ def test_chat_stream_priority_question_streams_queue_rank(monkeypatch):
 def test_chat_stream_statement_question_streams_owed_paid_outstanding(monkeypatch):
     from backend import config
     from backend.db import audit_store
-    from backend.tests.test_dealer_statement_measure import ORACLE_ANSWER
     monkeypatch.setattr(config, 'PAYMENT_SOURCE', 'simulated')
     monkeypatch.setattr(audit_store, 'healthcheck', lambda: True)
     monkeypatch.setattr(audit_store, 'get_partner_trail', lambda *args: None)
@@ -234,7 +242,8 @@ def test_chat_stream_statement_question_streams_owed_paid_outstanding(monkeypatc
     assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
     assert all(e['tool'] == 'measure_evidence' for e in phases)
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text == ORACLE_ANSWER and 'Draft' not in text
+    assert 'NGN 596,177.08' in text and 'NGN 994,136.80' in text and 'NGN 397,959.72' in text
+    assert 'Draft' not in text
     assert events[-1]['type'] == 'complete'
     assert events[-1]['tools_called'] == ['dealer_statement']
 
@@ -249,36 +258,36 @@ def test_chat_stream_verification_question_streams_audit_verdicts(monkeypatch):
     assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
     assert all(e['tool'] == 'measure_evidence' for e in phases)
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert 'Verification outcome for dealer 296065, 202606' in text and 'Draft' not in text
-    assert 'UNDERPAID' in text
+    assert 'below the recorded amount owed' in text and '296065' in text and '202606' in text
+    assert 'UNDERPAID' not in text and 'Draft' not in text
+    assert 'UNDERPAID' in json.dumps(events[-1]['raw_data'])
     assert calls == [('202606', '296065')]
     assert events[-1]['type'] == 'complete'
 
 
 def test_chat_stream_variance_question_streams_change_by_product(monkeypatch):
-    from backend.tests.test_commission_variance_measure import ORACLE_ANSWER
     provider(monkeypatch, Stream('Draft: commission fell.', stop='tool_use', tool=scope_tool(
         measures=['commission_variance'], periods=['202605', '202606'], dealer_id='296065',
         operation='explain')))
     events = collect()
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text == ORACLE_ANSWER and 'Draft' not in text
+    assert 'NGN 39,873.42' in text and 'Draft' not in text
     assert events[-1]['type'] == 'complete'
     assert events[-1]['tools_called'] == ['get_month_on_month_variance']
 
 
 def test_chat_stream_coverage_question_streams_named_gaps(monkeypatch):
-    from backend.tests.test_data_coverage_measure import DEALER_ANSWER
     provider(monkeypatch, Stream('Draft: data is fine.', stop='tool_use', tool=scope_tool(
         measures=['data_coverage'], periods=['202606'], dealer_id='296065')))
     events = collect()
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text == DEALER_ANSWER and 'Draft' not in text
+    assert 'unavailable' in text and '296065' in text and 'Draft' not in text
+    assert events[-1]['raw_data']['measure_evidence']['measures'][0]['measure'] == 'data_coverage'
     assert events[-1]['type'] == 'complete'
     assert events[-1]['tools_called'] == ['data_coverage']
 
 
-def test_chat_stream_sales_clarification_is_deterministic_and_has_no_evidence(monkeypatch):
+def test_chat_stream_sales_clarification_has_no_evidence_or_invented_figures(monkeypatch):
     tool = ToolUseBlock(type='tool_use', id='scope_1', name='resolve_measure_request',
         input={'kind': 'clarification', 'clarification': 'sales_meaning'})
     provider(monkeypatch, Stream('Assume sales mean commissions NGN 100.00', tool=tool, stop='tool_use'))
@@ -356,6 +365,11 @@ def test_real_sdk_chat_stream_confirms_terminal_scope_before_rendering(monkeypat
     calls = []
     def respond(request):
         calls.append(json.loads(request.content))
+        if is_final_call(calls[-1]):
+            block = final_response(calls[-1]).content[0]
+            return httpx.Response(200, json={'id': 'msg_answer', 'type': 'message', 'role': 'assistant',
+                'model': agent.MODEL_NAME, 'content': [{'type': 'tool_use', 'id': 'answer', 'name': block.name, 'input': block.input}],
+                'stop_reason': 'tool_use', 'stop_sequence': None, 'usage': {'input_tokens': 1, 'output_tokens': 20}})
         return httpx.Response(200, headers={'content-type': 'text/event-stream'}, text=body)
     async def exercise():
         client = anthropic.AsyncAnthropic(api_key='test', max_retries=0,
@@ -367,7 +381,7 @@ def test_real_sdk_chat_stream_confirms_terminal_scope_before_rendering(monkeypat
         texts = [event['text'] for event in received if event['type'] == 'text']
         assert texts == ([received[-1]['response']] if success else [])
     asyncio.run(exercise())
-    assert len(calls) == 1
+    assert len(calls) == (2 if success else 1)
     assert calls[0]['stream'] is True
     assert calls[0]['system'] == inference.cached_system(prompts.get_measure_system_prompt())
 
@@ -381,7 +395,7 @@ def test_chat_stream_retries_connection_failure_before_draft_once(monkeypatch):
     monkeypatch.setattr(inference.asyncio, 'sleep', sleep)
     events = collect()
     assert events[-1]['type'] == 'complete'
-    assert len(fake.calls) == 2
+    assert len(fake.calls) == 3
     sleep.assert_awaited_once()
 
 
@@ -396,25 +410,25 @@ def test_chat_stream_evidence_failure_withholds_provider_figures(monkeypatch):
 
 
 def test_chat_stream_activation_exceptions_question_streams_the_findings(monkeypatch):
-    from backend.tests.test_exception_measures import ACTIVATION_DEALER_ANSWER
     provider(monkeypatch, Stream('Draft: no exceptions.', stop='tool_use', tool=scope_tool(
         measures=['activation_exceptions'], periods=['202606'], dealer_id='296065')))
     events = collect()
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text == ACTIVATION_DEALER_ANSWER and 'Draft' not in text
+    assert 'activation exceptions' in text and '296065' in text and 'Draft' not in text
+    assert events[-1]['raw_data']['measure_evidence']['measures'][0]['measure'] == 'activation_exceptions'
     assert events[-1]['type'] == 'complete'
     assert events[-1]['tools_called'] == ['activation_exceptions']
 
 
 def test_chat_stream_payment_exceptions_question_streams_the_exceptions(monkeypatch):
     from backend import config
-    from backend.tests.test_exception_measures import PAYMENT_DEALER_ANSWER
     monkeypatch.setattr(config, 'PAYMENT_SOURCE', 'simulated')
     provider(monkeypatch, Stream('Draft: all paid.', stop='tool_use', tool=scope_tool(
         measures=['payment_exceptions'], periods=['202606'], dealer_id='296065')))
     events = collect()
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text == PAYMENT_DEALER_ANSWER and 'Draft' not in text
+    assert 'payment exceptions' in text and '296065' in text and 'Draft' not in text
+    assert events[-1]['raw_data']['measure_evidence']['measures'][0]['measure'] == 'payment_exceptions'
     assert events[-1]['type'] == 'complete'
     assert events[-1]['tools_called'] == ['payment_exceptions']
 
@@ -426,8 +440,8 @@ def test_chat_stream_payment_exceptions_by_dealer_name_resolves_to_the_code(monk
         measures=['payment_exceptions'], periods=['202606'], dealer_id=None, dealer_name='Amber Arc')))
     events = collect()
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text.startswith('Matched “Amber Arc” to Amber Arc Communications \\(130062\\).\n\n')
-    assert '130062' in text.split('\n\n')[1] and 'Draft' not in text
+    assert '130062' in text and 'payment exceptions' in text and 'Draft' not in text
+    assert events[-1]['raw_data']['measure_evidence']['dealer_id'] == '130062'
     assert events[-1]['tools_called'] == ['get_dealer_codes', 'payment_exceptions']
 
 
@@ -444,8 +458,8 @@ def test_chat_stream_named_dealer_resolves_before_evidence(monkeypatch):
     assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
     assert all(e['tool'] == 'measure_evidence' for e in phases)
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text.startswith('Matched “Amber Arc” to Amber Arc Communications \\(130062\\).\n\n'
-                           'Dealer statement for Amber Arc Communications (130062), 202606.')
+    assert 'Amber Arc Communications' in text and '130062' in text and '202606' in text
+    assert events[-1]['raw_data']['measure_evidence']['dealer_id'] == '130062'
     assert 'Draft' not in text
     assert events[-1]['type'] == 'complete'
     assert events[-1]['tools_called'] == ['get_dealer_codes', 'dealer_statement']
@@ -462,13 +476,12 @@ def test_chat_stream_ambiguous_dealer_name_asks_and_reads_no_evidence(monkeypatc
     assert phases == ['tool_start', 'tool_complete']
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
     assert text.startswith('Several recorded dealers match “River Isle” for 202606')
-    assert text.endswith('Which dealer do you mean? Give the dealer code.')
+    assert 'Which dealer do you mean? Give the dealer code.' in text
     assert events[-1]['tools_called'] == ['get_dealer_codes']
 
 
 def test_chat_stream_investigation_queue_question_streams_the_bounded_queue(monkeypatch):
     from backend import config
-    from backend.tests.test_investigation_queue import HIGH_ANSWER_HEAD
     monkeypatch.setattr(config, 'PAYMENT_SOURCE', 'simulated')
     provider(monkeypatch, Stream('Draft: nobody to investigate.', stop='tool_use', tool=scope_tool(
         measures=['investigation_queue'], periods=['202606'], dealer_id=None, queue_severity='HIGH')))
@@ -476,8 +489,8 @@ def test_chat_stream_investigation_queue_question_streams_the_bounded_queue(monk
     phases = [e for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
     assert [e['phase'] for e in phases] == ['tool_start', 'tool_complete']
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text.startswith(HIGH_ANSWER_HEAD + '\n\n| Rank | Dealer |')
-    assert 'Showing 10 of 61 matching dealers.' in text and 'Draft' not in text
+    assert 'ranked investigation queue' in text
+    assert 'Showing 10 of 61 matching dealers' in text and 'Draft' not in text
     assert events[-1]['type'] == 'complete'
     assert events[-1]['tools_called'] == ['investigation_queue']
 
@@ -490,3 +503,73 @@ def test_chat_stream_investigation_queue_for_one_dealer_reads_no_evidence(monkey
     events = collect()
     assert not any(event['type'] in ('text', 'complete') for event in events)
     assert events[-1]['type'] == 'error'
+
+
+def test_final_generation_is_buffered_until_validated_and_preserves_evidence(monkeypatch):
+    async def exercise():
+        entered, gate = asyncio.Event(), asyncio.Event()
+        class FinalGateProvider(Provider):
+            async def create(self, **kwargs):
+                self.calls.append(kwargs)
+                entered.set()
+                await gate.wait()
+                return final_response(kwargs, text='I counted 806 activations for dealer 74050 in 202603.')
+        fake = FinalGateProvider([Stream('Private interpretation.', tool=scope_tool(), stop='tool_use')])
+        monkeypatch.setattr(agent, 'new_client', lambda key: fake)
+        events = []
+        async def consume():
+            async for event in agent.run_agent_stream('How many activations?'):
+                events.append(event)
+        task = asyncio.create_task(consume())
+        await asyncio.wait_for(entered.wait(), 3)
+        assert any(e['type'] == 'status' and e['phase'] == 'tool_complete' for e in events)
+        assert not any(e['type'] == 'text' for e in events)
+        gate.set()
+        await asyncio.wait_for(task, 3)
+        assert [e['text'] for e in events if e['type'] == 'text'] == [
+            events[-1]['response']]
+        assert events[-1]['response'].split('\n\n')[0] == 'I counted 806 activations for dealer 74050 in 202603.'
+        assert events[-1]['raw_data']['measure_evidence']['measures'][0]['periods'][0]['total'] == 806
+        assert len(fake.calls) == 2
+    asyncio.run(exercise())
+
+
+def test_cancelling_final_generation_closes_client_without_publishing(monkeypatch):
+    async def exercise():
+        entered, cancelled = asyncio.Event(), asyncio.Event()
+        class WaitingFinalProvider(Provider):
+            async def create(self, **kwargs):
+                self.calls.append(kwargs)
+                entered.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+        fake = WaitingFinalProvider([Stream('Private draft', tool=scope_tool(), stop='tool_use')])
+        monkeypatch.setattr(agent, 'new_client', lambda key: fake)
+        events = []
+        async def consume():
+            async for event in agent.run_agent_stream('How many activations?'):
+                events.append(event)
+        task = asyncio.create_task(consume())
+        await asyncio.wait_for(entered.wait(), 3)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert cancelled.is_set()
+        assert not any(e['type'] in ('text', 'complete') for e in events)
+        fake.close.assert_awaited_once()
+    asyncio.run(exercise())
+
+
+def test_failed_final_composition_emits_retryable_error_with_evidence(monkeypatch):
+    fake = provider(monkeypatch, Stream('', tool=scope_tool(), stop='tool_use'))
+    fake.create = AsyncMock(side_effect=RuntimeError('private provider detail'))
+    events = collect()
+    assert events[-1]['type'] == 'error'
+    assert events[-1]['error'] == 'composition_failed'
+    assert not any(event['type'] in {'text', 'complete'} for event in events)
+    evidence = next(event['raw_data'] for event in events if event.get('raw_data'))
+    assert evidence['measure_evidence']['measures'][0]['periods'][0]['total'] == 806
+    assert 'private provider detail' not in str(events)
+    fake.close.assert_awaited_once()

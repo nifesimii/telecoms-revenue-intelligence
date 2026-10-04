@@ -45,6 +45,7 @@ os.environ.setdefault("USE_SAMPLE_DATA", "true")
 
 from backend import config  # noqa: E402
 from backend.agent.agent import FALLBACK_RESPONSE, run_agent  # noqa: E402
+from backend.agent.narrative import NARRATIVE_FALLBACK  # noqa: E402
 
 
 GOLDEN_PATH = Path(__file__).parent / "golden.jsonl"
@@ -82,6 +83,8 @@ def _check_invariants(case: dict[str, Any], response_text: str,
     lower = (response_text or "").lower()
     if response_text.strip() == FALLBACK_RESPONSE:
         errors.append("agent returned retrieval error fallback")
+    if response_text.strip() == NARRATIVE_FALLBACK:
+        errors.append("agent returned narrative error fallback")
 
     for required in case.get("must_call_tools", []):
         if required not in tools_called:

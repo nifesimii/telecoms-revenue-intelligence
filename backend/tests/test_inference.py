@@ -161,7 +161,7 @@ def test_real_sdk_requires_terminal_event_and_success_reason(stop_reason, messag
     assert len(attempts) == 1
 
 
-@pytest.mark.parametrize('outcome', ['success', 'provider_error', 'empty_answer'])
+@pytest.mark.parametrize('outcome', ['success', 'provider_error', 'empty_answer', 'narrative_error'])
 def test_buffered_chat_logs_answer_ready_only_for_success(monkeypatch, caplog, outcome):
     from types import SimpleNamespace
     from backend.agent import agent
@@ -169,12 +169,17 @@ def test_buffered_chat_logs_answer_ready_only_for_success(monkeypatch, caplog, o
     response = SimpleNamespace(
         content=[SimpleNamespace(type='tool_use', name='resolve_measure_request',
                                  input={'kind': 'clarification', 'clarification': 'sales_meaning'})]
-        if outcome == 'success' else [],
+        if outcome in {'success', 'narrative_error'} else [],
         stop_reason='tool_use', usage=None,
     )
-    create = AsyncMock(return_value=response)
-    if outcome == 'provider_error':
-        create.side_effect = RuntimeError('PRIVATE provider failure')
+    from backend.tests.narrative_provider import final_response, is_final_call
+
+    async def reply(**kwargs):
+        if outcome == 'provider_error' or (outcome == 'narrative_error' and is_final_call(kwargs)):
+            raise RuntimeError('PRIVATE provider failure')
+        return final_response(kwargs) if is_final_call(kwargs) else response
+
+    create = AsyncMock(side_effect=reply)
     client = SimpleNamespace(messages=SimpleNamespace(create=create), close=AsyncMock())
     monkeypatch.setattr(agent, 'new_client', lambda key: client)
     with caplog.at_level(logging.INFO, logger=inference.__name__):
@@ -192,7 +197,9 @@ def test_buffered_chat_logs_answer_ready_only_for_success(monkeypatch, caplog, o
         assert ready[0]['duration_seconds'] >= 0
         assert ready[0]['request_id'] == events[-1]['request_id']
     else:
-        assert result['response'] == agent.FALLBACK_RESPONSE
+        expected = agent.NARRATIVE_FALLBACK if outcome == 'narrative_error' else agent.FALLBACK_RESPONSE
+        assert result['response'] == expected
         assert ready == []
+        assert events[-1]['status'] == 'failed'
     assert 'PRIVATE' not in caplog.text
     client.close.assert_awaited_once()

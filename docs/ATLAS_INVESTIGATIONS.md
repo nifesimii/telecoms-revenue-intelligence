@@ -64,3 +64,33 @@ these investigation answers. No production data, payment action, or deployment w
 Saved audit outcomes are not rewritten. Their original input evidence and run time
 may differ from the current investigation support; do not treat an old saved verdict
 as verification of a newly generated fixture.
+
+## Conversational answer boundary
+
+Ordinary chat now sends the validated request and bounded structured evidence to
+a second Claude call through the existing Anthropic Python SDK. Claude chooses
+the wording. The application retains retrieval, calculations, classification,
+source status, tables and audit disclosure. The input also includes validated
+policy context and application-derived figures that still live in the existing
+response builders. This follows the SDK's separation between application-run
+tools and model composition ([official tool lifecycle](https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works)).
+
+The model returns an answer with references to supplied facts. Substitution owns
+numerical and identifier formatting. Known-invalid values, references, causal
+assertions and direct payment-label contradictions are rejected before any text
+event. One repair uses the same request deadline and retry allowance; failure
+returns a short message while preserving already retrieved evidence. The model
+sees at most twelve rows per narrative sample, with omissions identified; the
+requested evidence page remains application-owned, bounded at one hundred rows.
+
+These checks constrain known failure modes, not all meanings of natural language.
+A valid fact can still be described incorrectly. Do not treat reference checking,
+mocked-provider tests or an independent model review as proof of factual accuracy.
+Use the public conversation walkthrough to assess factual correctness and
+naturalness, including follow-ups, dates, unknown evidence and payment distinctions.
+
+Verification for this boundary is in progress. Initial real-provider walkthrough
+attempts retrieved the expected evidence but returned composition failures; that
+run is not a pass. Local regression and independent review fixes are recorded in
+PROGRESS.md. The previous successful seven-turn result above describes the prior
+deterministic response implementation, not this new composition stage.

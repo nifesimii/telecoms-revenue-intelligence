@@ -16,7 +16,10 @@ def install_plan(monkeypatch, plan, *, draft='Commission NGN 999,999,999.00; inv
             type='tool_use', id='scope', name='resolve_measure_request', input=plan)],
         stop_reason='tool_use', usage=None,
     )
-    create = AsyncMock(return_value=response)
+    from backend.tests.narrative_provider import final_response, is_final_call
+    async def reply(**kwargs):
+        return final_response(kwargs) if is_final_call(kwargs) else response
+    create = AsyncMock(side_effect=reply)
     client = SimpleNamespace(messages=SimpleNamespace(create=create), close=AsyncMock())
     monkeypatch.setattr(agent, 'new_client', lambda key: client)
     return create
@@ -63,7 +66,7 @@ def test_clarification_preserves_exact_context_and_withholds_all_figures(monkeyp
     assert 'sales' in result['response'] and '?' in result['response']
     assert 'NGN' not in result['response']
     assert result['tools_called'] == [] and result['raw_data'] == {}
-    message = json.loads(create.call_args.kwargs['messages'][-1]['content'])
+    message = json.loads(create.call_args_list[0].kwargs['messages'][-1]['content'])
     assert message == {'question': 'What sales did this dealer make?', 'reporting_period': '202606',
                        'investigation_context': 'Exact dealer account 00123. Payment workspace.'}
 
@@ -81,7 +84,7 @@ def test_established_meaning_and_acceptance_remain_in_active_conversation(monkey
         reporting_period='202603', investigation_context='Exact dealer account 74050.'))
     assert '806' in result['response'] and '74050' in result['response']
     assert '?' not in result['response']
-    assert create.call_args.kwargs['messages'][:-1] == history
+    assert create.call_args_list[0].kwargs['messages'][:-1] == history
     assert len(history) == 2
 
 
@@ -358,7 +361,7 @@ def test_explicit_partner_total_from_selected_account_includes_selected_code(mon
                'Broaden only on an explicit request; recorded-name associations are unverified.')
     result = asyncio.run(agent.run_agent(question, reporting_period='202606',
                                         investigation_context=context))
-    sent = create.call_args.kwargs
+    sent = create.call_args_list[0].kwargs
     assert json.loads(sent['messages'][-1]['content']) == {
         'question': question, 'reporting_period': '202606', 'investigation_context': context}
     # Inspect the public provider contract as well as the evidence-bound result:

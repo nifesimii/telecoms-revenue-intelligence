@@ -482,28 +482,38 @@ Browser (CommissionAssistant) → api/client.js POST /chat/stream
       → tool_executor → db/measure_evidence → named existing queries/services
         → queries.py owns CSV coverage and query reads
       ← bounded projections with complete aggregates and source-specific coverage
-    ← measure_response renders application-owned figures and evidence observations
+      → existing response builders validate evidence and compute derived figures
+      → narrative supplies structured evidence, scope, history and fact references
+    ← Claude composes prose; application checks references before publication
+      + application-owned tables, tool/period provenance and audit disclosures
   ← NDJSON status/text events, then {type: complete, response, tools_called, ...}
 ← progress events, then validated markdown and completion
 ```
 The buffered `POST /chat` API shares this path. Provider draft prose is withheld,
 including text emitted before the interpretation tool; only a validated scope
-and evidence result can produce user-visible figures. Cancellation, retry budgets
+and evidence result can supply user-visible figures. Cancellation, retry budgets
 and NDJSON status/text/complete/error transport remain intact. Time to first answer
-text now includes scope resolution and evidence retrieval.
+text includes scope resolution, evidence retrieval and final composition.
 
 Scope interpretation is still probabilistic. Deterministic enforcement begins at
-the validated interpretation: the model cannot choose arbitrary data tools,
-invent answer values, relabel activations as sales, or append draft commentary.
+the validated interpretation: the model cannot choose arbitrary data tools.
+The final composition stage uses application-owned fact references for values,
+accounts, periods and source identifiers. Unknown references and known invalid
+candidates are withheld; one repair shares the original deadline. Rejection or
+provider failure after retrieval returns a concise explanation failure with the
+retrieved evidence retained. Cancellation and the overall deadline retain their
+existing transport behavior. Reference checks constrain factual values but do
+not prove semantic correctness: a model can still misdescribe a supported fact.
+Public conversation tests and real-provider evaluations cover that residual risk.
 The latest question, reporting month and workspace context are distinct inputs;
 existing scoped conversation history supplies user-agreed definitions and accepted
 alternatives. Ambiguous requests clarify; clear unsupported requests select a
 KB-owned capability boundary without requesting unrelated evidence. General policy
-answers use exact core KB excerpts, retain their paragraph context and applicable
-eligibility limitation, and suppress internal query expressions. Dealer name/code
+answers compose from validated core KB excerpts with paragraph context and the
+applicable eligibility limitation, suppressing internal query expressions. Dealer name/code
 lookups remain bounded and non-financial. A measure
 may name its dealer instead of giving a code; the model copies the name and the
-application resolves it via `get_dealer_codes` (the answer opens with the match line).
+application resolves it via `get_dealer_codes` before the final answer is composed.
 
 The common zero-commission-causes and activation-eligibility policy questions use
 named KB topic selectors, avoiding model transcription of the source paragraph.
@@ -732,12 +742,16 @@ needed via the `get_kb_section` tool. *Why:* the full KB in every prompt burned
 too much of the per-minute token budget on cold runs; the split keeps prompts
 small while keeping the detail reachable.
 
-**The ordinary agent turn (`agent/agent.py`).** `run_agent()` makes one structured
-scope-resolution call, then delegates to deterministic evidence projection and
-rendering. The existing request deadline and single provider retry still apply.
-It returns the answer and evidence tool trace. Interpretation errors cannot fall
-back to unvalidated provider prose. Historical multi-iteration latency results
-describe the former protocol, not this path.
+**The ordinary agent turn (`agent/agent.py`).** `run_agent()` makes a structured
+scope-resolution call, retrieves and validates bounded evidence, then delegates
+final prose to `agent/narrative.py`. Claude receives structured facts and writes
+the answer; existing builders still own validation, derived arithmetic and tables.
+All ordinary branches share composition, including policy, clarifications and
+unresolved dealer names. A rejected candidate gets at most one repair. The same
+request deadline and single provider retry span all calls. No provisional model
+claims are published. Returned evidence and tool traces retain their public shape.
+Historical latency measurements describe their recorded protocol, not a guarantee
+for this additional generation step.
 
 **Tool executor's two routing paths (`agent/tool_executor.py`).** QUERY tools go
 through `execute_query`; DIRECT tools (`get_kb_section`, dealer dossier) call a

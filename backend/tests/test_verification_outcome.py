@@ -532,7 +532,9 @@ def test_agent_answers_verification_from_audit_evidence_not_model_prose(monkeypa
     result = asyncio.run(agent.run_agent("was this dealer paid correctly, can you prove it?"))
     response = plain(result["response"])
     assert calls == [("202606", "296065")]
-    assert response.startswith("Verification outcome for dealer 296065, 202606: 1 audit module")
-    assert "UNDERPAID (confidence HIGH)" in response
+    assert "below the recorded amount owed" in response
+    assert "296065" in response and "202606" in response
+    assert "UNDERPAID" in str(result["raw_data"])
+    assert "confidence HIGH" not in response
     assert "paid correctly" not in response
     assert result["tools_called"] == ["audit_trails"]

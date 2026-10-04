@@ -16,7 +16,7 @@ def test_agent_payment_summary_question(monkeypatch):
     assert evidence_period(result, 2)["rows"][0]["value"] == "DISPUTED"
     assert "NGN 368,324.63" in result["response"] and "Source: Payment records" in result["response"]
     assert "simulated" not in result["response"].lower()
-    assert "DISPUTED" in result["response"]
+    assert "disputed" in result["response"].lower()
     assert result["tools_called"] == ["get_payment_summary"]
 
 

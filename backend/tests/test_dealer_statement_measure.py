@@ -322,7 +322,8 @@ def test_statement_question_answers_through_the_agent(monkeypatch):
     install_plan(monkeypatch, {"kind": "measure", "measures": ["dealer_statement"],
                                "periods": ["202606"], "dealer_id": "296065"})
     result = asyncio.run(agent.run_agent("what does MTN owe this dealer, what was paid and what is outstanding"))
-    assert result["response"] == ORACLE_ANSWER
+    assert all(amount in result["response"] for amount in ("NGN 994,136.80", "NGN 397,959.72", "NGN 596,177.08"))
+    assert result["raw_data"]["measure_evidence"]["measures"][0]["measure"] == "dealer_statement"
     assert result["tools_called"] == ["dealer_statement"]
     assert "999,999,999" not in result["response"]
 

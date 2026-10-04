@@ -133,6 +133,20 @@ def test_runner_never_passes_agent_error_fallback(monkeypatch):
     assert "agent returned retrieval error fallback" in result.errors
 
 
+def test_runner_never_passes_rejected_narrative(monkeypatch):
+    from backend.agent.narrative import NARRATIVE_FALLBACK
+    from backend.tests.evals import runner
+
+    async def fake_agent(*args, **kwargs):
+        return {"response": NARRATIVE_FALLBACK, "tools_called": ["get_dealer_summary"],
+                "raw_data": {"measure_evidence": {}}}
+
+    monkeypatch.setattr(runner, "run_agent", fake_agent)
+    result = asyncio.run(runner._run_one({"id": "rejected-narrative", "question": "Explain"}))
+    assert not result.passed
+    assert "agent returned narrative error fallback" in result.errors
+
+
 @pytest.mark.parametrize('sample,payment_source', [(False, 'simulated'), (True, 'apdp')])
 def test_runner_rejects_live_data_configuration_before_model_call(monkeypatch, sample, payment_source):
     from backend import config
