@@ -90,12 +90,12 @@ function InventoryWorkspace({ period, navigation, onAsk }) {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">Finance & revenue assurance</p>
           <h1 className="text-2xl font-semibold tracking-tight mt-1">Inventory Intelligence</h1>
-          <p className="text-sm text-gray-600 mt-2">Compare reported activations with recorded IFS purchases by dealer and product.</p>
+          <p className="text-sm text-gray-600 mt-2">Compare reported activations with recorded purchases by dealer and product.</p>
         </div>
         {!selected && <button className="overview-button" onClick={() => query.refetch()} disabled={busy}>Refresh</button>}
       </header>
       <aside className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700" aria-label="Invoice coverage limitation">
-        <p>Purchases come from available IFS invoices, which may not cover this reporting period.</p>
+        <p>Purchases come from available invoices, which may not cover this reporting period.</p>
         <details className="mt-1"><summary className="cursor-pointer font-medium">What this means</summary>
           <p className="mt-2">Activations come from the selected reporting period. Purchases come from whatever invoice data is available and are not matched to the same window, so some purchases may be missing. Treat excess units as something to investigate, not a confirmed shortfall.</p>
           {data?.source_note && <p className="mt-2">{data.source_note}</p>}

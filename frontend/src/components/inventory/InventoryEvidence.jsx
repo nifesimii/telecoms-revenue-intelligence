@@ -38,7 +38,7 @@ export default function InventoryEvidence({ subject, period }) {
     {data && !query.isError && !matches && <p role="alert" className="mt-4 text-sm text-red-800">The saved evidence does not match this dealer-product and period. Refresh evidence to retry.</p>}
     {matches && !query.isError && <>
       <p className="mt-5 text-lg font-semibold">{CONCLUSIONS[data.conclusion] || 'Saved conclusion unavailable'}</p>
-      <p className="text-sm text-gray-600 mt-2">Recorded confidence: {data.confidence || 'Unavailable'} · {data.payment_source === 'ifs' ? 'IFS invoice evidence' : 'Source not established'}{data.generated_at ? ` · Saved ${new Date(data.generated_at).toLocaleString()}` : ' · Save time unavailable'}</p>
+      <p className="text-sm text-gray-600 mt-2">Recorded confidence: {data.confidence || 'Unavailable'} · {data.payment_source === 'ifs' ? 'Invoice evidence' : 'Source not established'}{data.generated_at ? ` · Saved ${new Date(data.generated_at).toLocaleString()}` : ' · Save time unavailable'}</p>
       <p className="text-sm text-gray-600 mt-2">This saved assessment may precede the current comparison. It does not establish commission on excess units.</p>
       <ol className="mt-5 space-y-5">{(data.steps || []).map((step) => <li key={step.step} className="border-l-2 border-gray-200 pl-4">
         <h4 className="text-sm font-semibold">{step.step}. {STEPS[step.name] || step.name?.replaceAll('_', ' ')}</h4>
