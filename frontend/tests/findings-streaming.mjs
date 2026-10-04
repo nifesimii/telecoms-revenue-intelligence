@@ -104,8 +104,8 @@ try {
   assert.equal(chats.at(-1).message, 'What evidence is missing?');
   assert.match(chats.at(-1).investigation_context, /Exact dealer account code 001/);
   assert.match(chats.at(-1).investigation_context, /Exact product code P1/);
-  assert.match(chats.at(-1).conversation_history[0].content, /Exact dealer account code 001/);
-  assert.match(chats.at(-1).conversation_history[0].content, /module inventory, type INVENTORY_MISMATCH.*Exact product code P1/);
+  assert.equal(chats.at(-1).conversation_history[0].content, prefill, 'History retains the readable opening question');
+  assert.match(chats.at(-1).investigation_context, /module inventory, type INVENTORY_MISMATCH.*Exact product code P1/);
   assert.equal(chats.at(-1).mon_period, '202606');
   assert.equal(chats.at(-1).conversation_history.at(-1).content, 'Original thread completed while away.');
   const stored = await page.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith('fbb.chat.thread.findings.')).map((key) => JSON.parse(localStorage.getItem(key))));
@@ -166,7 +166,8 @@ try {
   await inventory.getByRole('button', { name: 'Send question' }).click();
   await inventory.getByText('General fixture answer.', { exact: true }).waitFor();
   assert.equal(requests.length, 7);
-  assert.match(chats.at(-1).message, /Inventory investigation.*exact dealer 001.*product P1/);
+  assert.equal(chats.at(-1).message, 'Investigate this Inventory comparison.');
+  assert.match(chats.at(-1).investigation_context, /Inventory investigation.*exact dealer 001.*product P1/);
   assert.deepEqual(errors, []);
   console.log('PASS reload interruption/retry, narrow composer, Inventory behavior and no browser runtime errors');
 } finally {

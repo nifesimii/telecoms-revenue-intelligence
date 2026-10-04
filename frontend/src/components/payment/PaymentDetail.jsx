@@ -11,6 +11,15 @@ export default function PaymentDetail({ dealerId, period, comparison, onBack, on
   const disputeButton = useRef(null);
   const [showTrail, setShowTrail] = useState(false);
   const [composerRequest, setComposerRequest] = useState(null);
+  const [assistantScope, setAssistantScope] = useState(null);
+  const scope = JSON.stringify([dealerId, period, comparison || null]);
+  function openAssistant() {
+    setAssistantScope(scope);
+    setComposerRequest({ scope, autoSubmit: true, prompt: 'Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.' });
+  }
+  function consumeComposerRequest(request) {
+    setComposerRequest((current) => current === request ? null : current);
+  }
   const [dispute, setDispute] = useState(false);
   const query = useQuery({ queryKey: ['payment-account', period, dealerId], queryFn: ({ signal }) => getPaymentAccount(dealerId, period, signal) });
   const evidence = useQuery({ queryKey: ['dealer-verification', period, dealerId], queryFn: () => getDealerVerification(dealerId, period), retry: false });
@@ -32,7 +41,7 @@ export default function PaymentDetail({ dealerId, period, comparison, onBack, on
         <p className="text-xs text-gray-500 mt-4">{query.data.data_source} · Retrieved {new Date(query.data.generated_at).toLocaleString()}. Retrieval time does not establish source freshness.</p>
         <div className="flex flex-wrap gap-3 mt-5">
           <button className="overview-button" onClick={() => navigate('commission')}>View commission</button><button className="overview-button" onClick={() => navigate('activation')}>View activations</button>
-          <button className="overview-button" aria-expanded={Boolean(composerRequest)} onClick={() => setComposerRequest({ prompt: 'Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.' })}>Ask Atlas about this payment</button>
+          <button className="overview-button" aria-expanded={assistantScope === scope} onClick={openAssistant}>Ask Atlas about this payment</button>
           <button ref={disputeButton} className="overview-button overview-primary" onClick={() => setDispute(true)}>Prepare dispute response</button>
         </div>
       </section>
@@ -47,7 +56,7 @@ export default function PaymentDetail({ dealerId, period, comparison, onBack, on
         <button className="overview-button mt-4" aria-expanded={showTrail} onClick={() => setShowTrail(!showTrail)}>{showTrail ? 'Hide saved trail' : 'Load saved trail'}</button>
         {showTrail && <SavedTrail dealerId={dealerId} period={period} />}
       </section>
-      {composerRequest && <CommissionAssistant account={account} period={period} comparison={comparison} stream="payment" composerRequest={composerRequest} />}
+      {assistantScope === scope && <CommissionAssistant key={scope} account={account} period={period} comparison={comparison} stream="payment" composerRequest={composerRequest?.scope === scope ? composerRequest : null} onComposerRequestConsumed={consumeComposerRequest} />}
       <DisputeDraftModal open={dispute} row={account} period={period} onClose={() => { setDispute(false); disputeButton.current?.focus(); }} />
     </>}
   </div>;

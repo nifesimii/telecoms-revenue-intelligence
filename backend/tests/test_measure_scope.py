@@ -347,3 +347,26 @@ def test_affiliation_name_anchor_counts_every_code(monkeypatch):
     assert 'NGN 938,254.18' in response and 'indicative' in response.lower()
     assert '999,999,999' not in response
     assert result['raw_data']['affiliation']['anchor_type'] == 'name'
+
+
+def test_explicit_partner_total_from_selected_account_includes_selected_code(monkeypatch):
+    create = install_plan(monkeypatch, {'kind': 'affiliation', 'dealer_name': 'Topaz Bridge Trading',
+                                       'periods': ['202606']})
+    question = 'Give the partner total activation commission across all associated codes, including this account.'
+    context = ('Reporting period 202606. Comparison period 202605. '
+               'Selected account 19580 (Topaz Bridge Trading) is the default scope. '
+               'Broaden only on an explicit request; recorded-name associations are unverified.')
+    result = asyncio.run(agent.run_agent(question, reporting_period='202606',
+                                        investigation_context=context))
+    sent = create.call_args.kwargs
+    assert json.loads(sent['messages'][-1]['content']) == {
+        'question': question, 'reporting_period': '202606', 'investigation_context': context}
+    # Inspect the public provider contract as well as the evidence-bound result:
+    # a mocked interpretation alone cannot prove the provider received the rule.
+    assert 'including the selected account' in sent['tools'][0]['description']
+    assert 'dealer_name from the active context' in sent['tools'][0]['description']
+    response = result['response']
+    assert 'NGN 938,254.18' in response and '| 19580 |' in response
+    assert '10 dealer codes' in response
+    assert 'not a verified' in response
+    assert result['tools_called'] == ['get_dealer_codes', 'get_dealer_summary']

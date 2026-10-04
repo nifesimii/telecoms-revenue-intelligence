@@ -50,8 +50,24 @@ Every ordinary Atlas request carries the active workspace scope in the optional
 `investigation_context` field, separately from the displayed question. Both chat
 routes attach it to the model's current turn, so references such as “this dealer”
 resolve to the selected exact account without depending on earlier chat text.
-Commission openings still record the scope; Financial Health questions and all
-follow-ups display only the user's question. Account/period conversation isolation remains in the shared chat store.
+Openings, follow-ups and retries carry only the readable question in the user
+message; generated scope instructions are never concatenated into it. A compact
+header shows the dealer name, exact account, reporting/comparison periods and
+workspace. Account/period conversation isolation remains in the shared chat store.
+The Payment “Ask Atlas” action submits its opening question once for an empty
+thread. Reopening pending, completed or failed threads preserves the conversation
+and drafts; clearing a thread requires a new explicit opener click to submit again.
+Stored v1 threads retain their conversations while exact historical generated
+prefixes matching the stored scope are removed from display, history and retry
+text. Unknown or edited formats remain unchanged. New writes use v2 so newly
+typed literal text is never interpreted as a legacy prefix on reload.
+
+The selected account is the default commission/payment scope. Explicit broader
+commission requests reuse recorded-name affiliation: code anchors total other
+codes, while an all-code partner total uses the exact recorded name and includes
+the selected account. Answers enumerate contributing codes and label name-only
+association as unverified. This does not establish broader payment or financial
+evidence, or loosen Findings/product and Financial Health boundaries.
 
 **APDP — African Payment Data Platform** (`apdp/`) is the payment-data
 pipeline. The full production path is Kafka → Flink → Postgres, but

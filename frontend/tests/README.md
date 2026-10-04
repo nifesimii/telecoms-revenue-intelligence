@@ -13,6 +13,7 @@ With sample-mode servers on localhost:5173 and localhost:8000:
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/findings-streaming.mjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/payment-explanation.mjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/chat-streaming.mjs
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/legacy-chat-normalization.mjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.js node frontend/tests/workspace-navigation.cjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.js node frontend/tests/workspace-scope-regressions.cjs
 ```
@@ -52,3 +53,10 @@ The ordinary-chat streaming test uses a temporary loopback NDJSON server rather
 than a model provider. It checks visible waiting/provisional text before terminal
 completion, tool-planning reset and provenance, cancellation/disconnect, exact
 retry, exclusion of incomplete history and account/period isolation.
+
+The payment test checks immediate, one-time submission from the explicit opener,
+clean questions with separate context on every turn, drafts/retry/clear/reload,
+account/period isolation, keyboard opening and 320–1440px layouts. The legacy-chat
+test needs only Vite and mocks chat transport. It restores v1 threads at the public
+hook boundary and checks display/history/retry normalization, unchanged evidence,
+scope mismatch preservation and literal user prose across v2 reloads.

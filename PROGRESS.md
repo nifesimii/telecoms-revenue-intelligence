@@ -3,6 +3,35 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-10-04 (Atlas opening context)
+
+- Payment's explicit Ask Atlas action immediately submits the readable opening
+  question once for an empty scoped thread. Reopens retain pending/completed/failed
+  turns and current drafts; clearing alone does not send another request.
+- All shared Atlas user messages stay readable. Account, period/comparison and
+  evidence constraints travel separately on every request, including retries.
+  The context line now includes dealer name alongside the exact code and periods.
+- Selected accounts remain the default. Explicit all-code partner commission
+  totals reuse name-anchored affiliation so the selected code is included;
+  other-code requests retain code-anchored behavior. Name-only associations remain
+  unverified; this does not supply broader payment or financial evidence.
+- Stored v1 conversations are preserved and recognized generated prefixes are
+  normalized in display/history/retry. Scope-mismatched, unknown or edited formats
+  remain untouched. New writes use v2 to preserve newly typed literal prose.
+  A v1 user message copied verbatim from a generated prefix is indistinguishable
+  from that prefix; no broad prose stripping or conversation deletion is used.
+- Verification: focused backend scope/stream/affiliation checks, 11 transport
+  tests, 18 legacy browser scenarios, payment, shared streaming, Findings/Inventory
+  and Financial Health browser checks passed, as did workspace navigation and scope
+  regression suites. Keyboard and 320–1440px layouts,
+  Python compilation and production build passed. No standalone typecheck exists.
+  Standards and Spec review found no functional issues; this note resolves the
+  requested completion documentation. Final sample-mode backend suite:
+  946 passed, 34 skipped. All frontend regression suites passed.
+- No paid model calls, deployment or production writes. Existing user changes
+  are preserved separately. This change does not diagnose or claim to repair
+  previously observed interrupted provider answers.
+
 ## Session — 2026-10-03 (Atlas demo rehearsal and live checks)
 
 - Repaired the live evaluation runner's period argument and dictionary-response

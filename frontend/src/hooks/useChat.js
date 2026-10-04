@@ -1,20 +1,22 @@
 // Conversations outlive their presentation. Navigation during a request must
 // not discard the answer or mix it into another account's thread.
 import { useSyncExternalStore } from 'react';
+import { normalizeLegacyMessages } from '../lib/legacyChat.js';
 import { streamMessage, explainFinding } from '../api/client.js';
 import { startExplanationTiming, measureExplanationTiming } from '../lib/explanationTiming.js';
 
 const STORAGE_KEY = 'fbb.chat.thread';
-const STORAGE_VERSION = 1;
+const STORAGE_VERSION = 2;
 const conversations = new Map();
 
-function conversationFor(key) {
+function conversationFor(key, scope) {
   if (conversations.has(key)) return conversations.get(key);
   let messages = [];
   try {
     const stored = JSON.parse(localStorage.getItem(key) || 'null');
-    if (stored?.version === STORAGE_VERSION && Array.isArray(stored.messages)) {
-      messages = stored.messages.map((message) => message.status === 'streaming'
+    if ([1, STORAGE_VERSION].includes(stored?.version) && Array.isArray(stored.messages)) {
+      const restored = stored.version === 1 ? normalizeLegacyMessages(stored.messages, scope) : stored.messages;
+      messages = restored.map((message) => message.status === 'streaming'
         ? { ...message, status: 'interrupted', incomplete: true } : message);
     }
   } catch { /* A blocked or malformed store does not prevent investigation. */ }
@@ -37,7 +39,7 @@ function conversationFor(key) {
 }
 
 export default function useChat({ scope, investigationContext } = {}) {
-  const conversation = conversationFor(scope ? `${STORAGE_KEY}.${scope}` : STORAGE_KEY);
+  const conversation = conversationFor(scope ? `${STORAGE_KEY}.${scope}` : STORAGE_KEY, scope);
   const state = useSyncExternalStore(conversation.subscribe, conversation.snapshot);
 
   async function sendMessage(text, monPeriod = null, explanation = null, retry = false) {
