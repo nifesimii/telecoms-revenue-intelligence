@@ -258,20 +258,21 @@ def test_selectors_cannot_be_silently_ignored_for_other_measures(selectors):
         request(['activation_count'], **selectors)
 
 
-def test_explanation_reads_only_bounded_scoped_zero_record_observations():
+def test_explanation_classifies_population_with_bounded_record_evidence():
     result = request(['activation_commission'], dealer_id='296065', operation='explain')
     observation, = result['explanations']
     assert observation['dealer_id'] == '296065'
     assert observation['tool'] == 'get_zero_commission_records'
     assert observation['records_checked'] <= 100
     assert observation['records_with_dates'] <= observation['records_checked']
-    assert 'authoritative' in observation['note']
+    assert len(observation['investigation']['records']) <= 100
+    assert observation['investigation']['unresolved_count'] == 0
     assert not {'imei', 'unit_selling_price', 'commission_rate'} & observation.keys()
     assert not request(['subscription_revenue'], operation='explain')['explanations']
     assert not request(['activation_commission'], dealer_id=None, operation='explain')['explanations']
 
 
-def test_explanation_date_coverage_is_bounded_and_does_not_classify_a_cause(tmp_path, monkeypatch):
+def test_explanation_counts_complete_population_without_inventing_missing_causes(tmp_path, monkeypatch):
     path = tmp_path / 'zeros.csv'
     fields = ['mon_period', 'distributor_code', 'distributor_name', 'account_profile_class',
               'commission_rate', 'product_denomination', 'imei', 'product_name', 'product_code',
@@ -288,11 +289,12 @@ def test_explanation_date_coverage_is_bounded_and_does_not_classify_a_cause(tmp_
     queries._clear_csv_cache()
     try:
         observation, = request(['zero_commission_count'], dealer_id='123', operation='explain')['explanations']
-        assert observation['records_checked'] == 100
-        assert observation['records_with_dates'] == 100
+        assert observation['records_checked'] == 101
+        assert observation['records_with_dates'] == 101
         assert observation['total_records'] == 101
         assert observation['bounded'] is True
-        assert 'authoritative eligibility rule' in observation['note']
+        assert observation['investigation']['unresolved_count'] == 101
+        assert len(observation['investigation']['records']) == 100
     finally:
         queries._clear_csv_cache()
 

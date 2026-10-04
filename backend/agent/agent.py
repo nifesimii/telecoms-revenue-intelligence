@@ -202,6 +202,9 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
             if item.get('tool')
         ]
         evidence_tools.extend(item['tool'] for item in evidence.get('explanations', []) if item.get('tool'))
+        evidence_tools.extend(evidence.get('investigation', {}).get('tools', []))
+        for item in evidence.get('explanations', []):
+            evidence_tools.extend(item.get('investigation', {}).get('tools', []))
         tools_called = list(dict.fromkeys(evidence_tools))
         raw_data = {'measure_evidence': evidence}
         if resolution is not None:

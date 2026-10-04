@@ -139,12 +139,20 @@ def _validate(request: dict, evidence: dict) -> None:
         if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in counts):
             raise ValueError("Explanation counts must be nonnegative integers")
         checked, dated, total = counts
-        if not 0 <= dated <= checked <= total or checked > 100:
+        if not 0 <= dated <= checked <= total:
             raise ValueError("Explanation counts violate bounded evidence coverage")
 
 
 def render_measure_response(request: dict, evidence: dict) -> str:
     """Produce a concise answer using only the supplied scoped evidence."""
+    if request['measures'] == ['dealer_investigation']:
+        from backend.agent.investigation_response import render_investigation
+        investigation = evidence['investigation']
+        if (investigation['dealer_id'] != request['dealer_id']
+                or investigation['periods'] != sorted(request['periods'])
+                or investigation['family'] != request['investigation_family']):
+            raise ValueError('Investigation scope mismatch')
+        return render_investigation(investigation, request.get('presentation', 'explanation'))
     _validate(request, evidence)
     parts = []
     for measure in evidence["measures"]:
@@ -254,6 +262,10 @@ def render_measure_response(request: dict, evidence: dict) -> str:
         explanations = evidence.get("explanations", [])
         if explanations:
             for observation in explanations:
+                if 'investigation' in observation:
+                    from backend.agent.investigation_response import render_investigation
+                    parts.append(render_investigation(observation['investigation']))
+                    continue
                 details = f"{_text(observation['period'])}, dealer {_text(observation['dealer_id'])}: "
                 if observation["status"] == "available":
                     details += (f"checked {observation['records_checked']:,} of {observation['total_records']:,} "
@@ -264,7 +276,8 @@ def render_measure_response(request: dict, evidence: dict) -> str:
                 if observation.get("note"):
                     details += " " + _text(observation["note"])
                 parts.append(details)
-            parts.append("The underlying cause remains unverified; these observations alone do not establish a cause.")
+            if any("investigation" not in observation for observation in explanations):
+                parts.append("The underlying cause remains unverified; these observations alone do not establish a cause.")
         else:
             parts.append("The underlying cause is unverified. Explaining why requires supporting source records "
                          "for the requested measure and periods, including eligibility evidence where applicable. "

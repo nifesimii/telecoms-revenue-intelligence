@@ -20,7 +20,7 @@ Measure = Literal[
     'inventory_recorded_purchases', 'financial_revenue', 'financial_net_profit',
     'financial_statements', 'financial_kpis', 'investigation_priority',
     'dealer_statement', 'verification_outcome', 'commission_variance', 'data_coverage',
-    'activation_exceptions', 'payment_exceptions', 'investigation_queue',
+    'activation_exceptions', 'payment_exceptions', 'investigation_queue', 'dealer_investigation',
 ]
 # Each answers from one dealer-month evidence read: alone, one dealer, one month.
 DEALER_MONTH_MEASURES = frozenset({'investigation_priority', 'dealer_statement', 'verification_outcome'})
@@ -74,6 +74,10 @@ class MeasureScope(BaseModel):
         'payment_reference', 'momo', 'personal_data', 'capability',
     ] | None = None
     verification_focus: Literal['eligibility_window'] | None = None
+    investigation_family: Literal['zero_commission', 'commission_variance', 'payment'] | None = Field(
+        default=None, description="Only with measures=['dealer_investigation']. Never set alongside the commission_variance measure.")
+    presentation: Literal['explanation', 'records', 'actions', 'dealer_draft'] = 'explanation'
+    record_offset: int = Field(default=0, ge=0)
 
     @model_validator(mode='after')
     def validate_scope(self):
@@ -90,6 +94,15 @@ class MeasureScope(BaseModel):
                 self.dealer_id is not None or not self.dealer_name.strip()):
             raise ValueError('A measure dealer is a code or a recorded name, not both')
         dealer = self.dealer_id or self.dealer_name
+        investigation = self.measures == ['dealer_investigation']
+        if 'dealer_investigation' in self.measures and not investigation:
+            raise ValueError('Investigations stand alone')
+        if investigation and (self.kind != 'measure' or not dealer or not self.investigation_family
+                or len(self.periods) != (2 if self.investigation_family == 'commission_variance' else 1)
+                or self.filter != 'all'):
+            raise ValueError('Investigations require a family, exact dealer and scoped periods')
+        if not investigation and (self.investigation_family or self.presentation != 'explanation' or self.record_offset):
+            raise ValueError('Investigation options require an investigation')
         if self.unsupported_reason and self.kind != 'unsupported':
             raise ValueError('Unsupported reasons cannot authorize other response kinds')
         if self.knowledge_topic and self.kind != 'knowledge':
@@ -102,7 +115,7 @@ class MeasureScope(BaseModel):
         commission_ranking = (self.kind == 'measure' and self.measures == ['activation_commission']
             and len(self.periods) == 1 and not dealer and self.operation == 'breakdown'
             and self.breakdown == 'dealer' and self.filter == 'all')
-        if self.limit is not None and self.measures != ['investigation_queue'] and not commission_ranking:
+        if self.limit is not None and self.measures != ['investigation_queue'] and not commission_ranking and not investigation:
             raise ValueError('Limit requires an investigation queue or single-month activation commission ranking')
         if len(set(self.queue_modules)) != len(self.queue_modules):
             raise ValueError('Duplicate queue modules')
@@ -215,17 +228,19 @@ SCOPE_TOOL = {
         "measures ['verification_outcome'] alone, the same way (one dealer, one month, total). "
         'For a question specifically about the eligibility window, set verification_focus '
         'to eligibility_window so unrelated payment or inventory audits are not included. '
-        'For why a dealer has zero commission or whether its cause is verified, use '
-        'zero_commission_count with operation explain, NOT verification_outcome. '
-        'This supplies the count plus bounded record observations and unverified-cause limits. '
+        'For why a dealer has zero commission, a cause breakdown, or whether its cause is verified, '
+        "select measures ['dealer_investigation'], investigation_family zero_commission, one dealer and one month. "
         'verification_outcome ALWAYS requires operation total, even when the question says why. '
-        "Why a dealer's commission changed between two months, or how the change splits by "
+        "How a dealer's commission change splits by "
         "product or denomination, selects measures ['commission_variance'] alone for the active "
         'dealer and exactly two months (the reporting month and the month before it unless both '
-        'are named), operation explain for why or compare otherwise. If no dealer is active or '
+        'are named), operation compare. Do not set investigation_family for this numerical comparison. If no dealer is active or '
         'named, clarify dealer. '
         'Comparing activation commission BY PRODUCT across two months also selects '
         'commission_variance alone, operation compare; it supplies per-product changes. '
+        "For WHY commission changed, instead select measures ['dealer_investigation'] and "
+        'investigation_family commission_variance. Never combine the commission_variance measure '
+        'with investigation_family: they are different contracts. '
         'Whether the data for a month can be trusted, which dealers have missing source data, '
         'missing invoice (IFS) records or a missing account profile class, select measures '
         "['data_coverage'] alone for one month, operation total, with dealer_id only when one "
@@ -268,11 +283,29 @@ SCOPE_TOOL = {
         'When a measure question names a dealer instead of giving its code, set dealer_name '
         'to the name exactly as the user wrote it and omit dealer_id; never guess a code, and '
         'never send both. A named dealer counts as named wherever a dealer is required. '
+        'Investigation requests use dealer_investigation alone with investigation_family: '
+        'zero_commission for explaining zero commissions; commission_variance for WHY activation '
+        'commission changed (exactly two months); payment for explaining earned-versus-paid '
+        'differences, shortfalls, payment delays or why recorded owed has not been paid. '
+        'Use the active dealer and reporting month; variance uses the comparison month or previous '
+        'month. Do not route ordinary why questions to saved verification audits. Explicit requests '
+        'for a saved audit still use verification_outcome. '
+        'Investigation follow-ups such as show affected records, what should Finance do next, '
+        'or draft the dealer explanation retain the family and periods from conversation history '
+        'unless the user changes them. Set presentation to records, actions, or dealer_draft '
+        'respectively; default explanation. These are read-only drafts, never sending or approval. '
+        'For next-page record requests retain the family and increment record_offset by the previous '
+        'page limit (default 20). Limit is at most 100. A naked amount/count question keeps the '
+        'ordinary measure. A general dealer dispute draft with no narrower preceding investigation '
+        'uses payment; a zero-commission dispute draft uses zero_commission. '
         'Contract examples (substitute the actual active dealer and months): '
         '"I need customer sales value, not activations" => kind measure, measures '
         '[retail_sales_value], no clarification. Evidence unavailable does NOT mean unclear intent. '
-        '"Why zero commission?" => kind measure, measures [zero_commission_count], '
-        'operation explain, dealer_id and one period. '
+        '"Why zero commission?" => kind measure, measures [dealer_investigation], '
+        'investigation_family zero_commission, dealer_id and one period. '
+        '"Why did their commission change compared with May?" => kind measure, measures '
+        '[dealer_investigation], investigation_family commission_variance, presentation explanation, '
+        'dealer_id and periods [202605,202606]. '
         '"Compare May and June commission by product" => kind measure, measures '
         '[commission_variance], operation compare, dealer_id and periods [202605,202606]. '
         'For kind clarification, measures MUST be empty. Do not set contradictory kind, '

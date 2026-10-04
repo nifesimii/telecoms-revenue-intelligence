@@ -226,23 +226,15 @@ def collect_measure_evidence(request: dict) -> dict:
 
 
 def _zero_record_observation(period: str, dealer_id: str) -> dict:
-    observation = dict(period=period, dealer_id=dealer_id, records_checked=0, records_with_dates=0,
-                       total_records=0, bounded=False, source='Zero-commission activation records',
-                       tool='get_zero_commission_records', status='unavailable', note='')
-    try:
-        frame = execute_query('get_zero_commission_records', {'mon_period': period, 'distributor_code': dealer_id})
-        checked = frame.head(100)
-        dates = []
-        for column in ('invoice_date', 'first_activation_date'):
-            dates.append(pd.to_datetime(checked[column].astype(str), errors='coerce', format='mixed').notna())
-        observation.update(records_checked=len(checked), records_with_dates=int((dates[0] & dates[1]).sum()),
-                           total_records=len(frame), bounded=len(frame) > 100, status='available',
-                           note='Historical USP, account-profile and denomination evidence is required to verify a cause. '
-                           'The KB describes both a reporting-month lookback and an invoice-to-activation 180-day window; '
-                           'an authoritative eligibility rule is needed before attributing a cause. Date availability alone verifies no cause.')
-    except (ValueError, KeyError, OSError, NotImplementedError):
-        observation['note'] = 'Scoped zero-commission evidence could not be read; causes remain unverified.'
-    return observation
+    from backend.db.investigation_evidence import investigate
+
+    result = investigate(dealer_id, [period], limit=100)
+    counts = result['eligibility']
+    return dict(period=period, dealer_id=dealer_id, records_checked=result['total_records'],
+                records_with_dates=counts['inside'] + counts['outside'], total_records=result['total_records'],
+                bounded=result['pagination']['has_more'], source='Zero-commission investigation',
+                tool='get_zero_commission_records', status=result['status'], note=result.get('note', ''),
+                investigation=result)
 
 
 def collect_dealer_codes(request: dict) -> dict:

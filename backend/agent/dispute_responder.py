@@ -33,71 +33,6 @@ from backend.db.commission_workspace import provenance
 from backend.db.connection import execute_query
 
 
-# Six-month window in days. Matches the KB definition (1) of an activation
-# being outside the eligibility window from its invoice date.
-_WINDOW_DAYS = 180
-
-
-def _parse_date(v: Any) -> datetime | None:
-    """Best-effort date parse. Returns None for NaN / unparseable values.
-
-    The raw data ships dates in two shapes:
-      ``2025-08-30``          (invoice_date)
-      ``20260210 10:42:02``   (first_activation_date)
-    """
-    if v is None or (isinstance(v, float) and pd.isna(v)) or v == "":
-        return None
-    s = str(v).strip()
-    for fmt in ("%Y-%m-%d", "%Y%m%d %H:%M:%S", "%Y%m%d", "%Y-%m-%d %H:%M:%S"):
-        try:
-            return datetime.strptime(s, fmt)
-        except ValueError:
-            continue
-    return None
-
-
-def _classify_zero_record(row: dict[str, Any]) -> str:
-    """Map one zero-commission record to one of the four KB root causes."""
-    profile = row.get("account_profile_class")
-    if profile is None or (isinstance(profile, float) and pd.isna(profile)) or profile == "":
-        return "NULL_PROFILE_CLASS"
-
-    denom = str(row.get("product_denomination") or "").lower()
-    if "hynex" in denom:
-        return "HYNEX_DENOMINATION_SPLIT"
-
-    inv = _parse_date(row.get("invoice_date"))
-    act = _parse_date(row.get("first_activation_date"))
-    if inv and act and (act - inv).days > _WINDOW_DAYS:
-        return "OUTSIDE_6_MONTH_WINDOW"
-
-    # Everything else falls under the "USP snapshot miss" bucket — the
-    # dealer's profile was present at audit time but missing when the
-    # commission engine looked it up.
-    return "USP_SNAPSHOT_MISS"
-
-
-# Human-friendly labels + KB rule citations used in the letter.
-_CAUSE_LABELS = {
-    "USP_SNAPSHOT_MISS": (
-        "USP snapshot miss",
-        "Possible snapshot miss: confirm whether the profile was present when commission was calculated; current profile evidence alone cannot establish this.",
-    ),
-    "OUTSIDE_6_MONTH_WINDOW": (
-        "Outside the 6-month eligibility window",
-        "More than 180 days elapsed between invoice date and first activation date — beyond the standing FBB eligibility window.",
-    ),
-    "NULL_PROFILE_CLASS": (
-        "Missing account profile class",
-        "The returned record has no profile class; confirm the profile used during calculation before attributing zero commission to this condition.",
-    ),
-    "HYNEX_DENOMINATION_SPLIT": (
-        "Hynex denomination edge case",
-        "The denomination matches the known Hynex / Hynex_1 naming pattern; confirm the applicable split before attributing a cause.",
-    ),
-}
-
-
 def _format_ngn(v: float | int | None) -> str:
     n = float(v or 0)
     return f"NGN {n:,.2f}"
@@ -225,16 +160,13 @@ def compose_dispute_response(
                 "An arithmetic balance does not resolve this source finding."
             )
 
-    # 2. Zero-commission records, classified.
-    classifications: dict[str, int] = {}
-    if zero_count > 0:
-        zero_df = execute_query(
-            "get_zero_commission_records",
-            {"mon_period": period, "distributor_code": dealer},
-        )
-        for _, row in zero_df.iterrows():
-            cause = _classify_zero_record(row.to_dict())
-            classifications[cause] = classifications.get(cause, 0) + 1
+    # The same current source evidence used by conversational investigations.
+    from backend.db.investigation_evidence import investigate
+    from backend.agent.investigation_response import render_investigation
+    investigation = investigate(dealer, [period])
+    classifications = {c['cause']: c['count'] for c in investigation['causes']}
+    if investigation['unresolved_count']:
+        classifications['UNRESOLVED'] = investigation['unresolved_count']
 
     # 3. Recommended position.
     if apdp and (not statement_present or (
@@ -305,22 +237,9 @@ def compose_dispute_response(
     lines.append("Activation commission is a separate comparison, not a substitute for payment-source owed. Differences do not establish a cause or entitlement.")
     lines.append("")
     if zero_count > 0:
-        lines.append("## 3. Candidate KB explanations — require verification")
+        lines.append("## 3. Zero-commission investigation")
         lines.append("")
-        lines.append(
-            f"For the {zero_count:,} zero-commission records, the template groups "
-            "candidate explanations using the FBB Commission KB. These are not verified root causes:"
-        )
-        lines.append("")
-        for cause, n in sorted(classifications.items(), key=lambda kv: -kv[1]):
-            label, explainer = _CAUSE_LABELS.get(cause, (cause, ""))
-            lines.append(f"- **{n:,} records — {label}.** {explainer}")
-        lines.append("")
-        lines.append(
-            "USP snapshot miss is a fallback candidate, not proof that a profile was absent. "
-            "Hynex naming alone does not confirm a split caused zero commission. "
-            "Confirm snapshot, profile and invoice/activation evidence before attributing a cause."
-        )
+        lines.append(render_investigation(investigation))
         lines.append("")
     lines.append("## 4. Conditional Finance observation")
     lines.append("")

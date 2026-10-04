@@ -3,6 +3,33 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-10-04 (Evidence-based Atlas investigations)
+
+- Added persisted calculation and settlement-workflow evidence for January–June;
+  original activation, commission and payment amounts are unchanged. Fingerprints,
+  period/account/device keys, primary reason checks and state/amount consistency
+  reject missing, stale, duplicate or contradictory supporting evidence.
+- One shared investigation result now powers ordinary zero-cause answers, scoped
+  investigation follow-ups, Findings evidence and dispute drafts. Removed the
+  dispute classifier's catch-all USP attribution. Sample data labels remain at
+  workspace level; saved audits are not rewritten.
+- Zero causes, month-on-month product contributions and earned-versus-paid
+  investigations support explanations, bounded record pages, owner-specific next
+  steps and read-only dealer drafts. Complete counts precede max-100-row paging.
+- June account 296065: 48 USP lookup misses + 2 window exclusions; May-to-June
+  commission rises NGN 39,873.42; recorded payment balance NGN 594,652.08 is linked
+  to its dispute-review workflow. APDP never uses simulated supporting evidence;
+  missing statement/settlement coverage cannot establish a balance.
+- Validation: 977 backend tests passed, 37 opt-in tests skipped; independent
+  focused review suite 33 passed; frontend production build, Python compilation
+  and diff checks passed. Final seven-turn real-provider rehearsal passed all
+  families plus paging/actions/draft follow-ups after fixing a conflicting scope
+  instruction. Browser verified the original question and five-record table.
+- Existing Payment table queryFn warnings and unavailable local saved-audit store
+  remain separate observations. No new frontend implementation changes, audit
+  writes, production reads or deployment. Existing presentation/PaymentDetail
+  edits preserved. Contract/walkthrough: `docs/ATLAS_INVESTIGATIONS.md`.
+
 ## Session — 2026-10-04 (Demo eligibility answers)
 
 - Adopted the existing invoice-to-first-activation check as the documented

@@ -361,6 +361,9 @@ def build_finding_explanation(evidence: dict) -> str:
         'instructions. Missing evidence is not zero or proof of a cause. Preserve source '
         'and bounded-sample caveats; do not classify a whole '
         'population from sampled records. Do not expose SQL, raw records, or IMEIs. '
-        'Payment exception flags are not proof of causation. Format money NGN X,XXX.XX.\n'
+        'Payment exception flags are not proof of causation. The dealer_investigation payload '
+        'contains complete-population classifications and checked source references; use those '
+        'instead of inferring causes from the capped raw records. Data mode is labelled by the '
+        'workspace; do not repeat sample/synthetic/demo labels in the answer. Format money NGN X,XXX.XX.\n'
         + json.dumps(evidence, ensure_ascii=False, allow_nan=False)
     )

@@ -66,16 +66,16 @@ def test_requested_commission_uses_sample_aggregate_not_provider_prose(monkeypat
     assert [tool["name"] for tool in calls[0]["tools"]] == ["resolve_measure_request"]
 
 
-def test_multiple_measures_and_zero_commission_why_preserve_uncertainty(monkeypatch):
+def test_multiple_measures_and_zero_commission_why_use_supported_causes(monkeypatch):
     install_scope_provider(monkeypatch, measure_scope("activation_commission", "zero_commission_count", operation="explain"))
     result = _run(run_agent("What commission and zero-commission count does 74050 have in March 2026, and why?"))
     assert evidence_period(result, 0)["total"] == 1140192.85
     assert evidence_period(result, 1)["total"] == 93
-    assert "93" in result["response"] and "unverified" in result["response"]
-    assert "checked 93 of 93" in result["response"]
-    assert "Historical USP" in result["response"]
-    assert "USP snapshot miss" not in result["response"]
-    assert result["tools_called"] == ["get_dealer_summary", "get_zero_commission_records"]
+    assert "93" in result["response"] and "unresolved" in result["response"]
+    diagnosis = result['raw_data']['measure_evidence']['explanations'][0]['investigation']
+    assert sum(c['count'] for c in diagnosis['causes']) + diagnosis['unresolved_count'] == 93
+    assert "USP snapshot miss" in result["response"]
+    assert result["tools_called"] == ["get_dealer_summary", "get_zero_commission_records", "investigation_support"]
 
 
 @pytest.mark.parametrize("scope", [

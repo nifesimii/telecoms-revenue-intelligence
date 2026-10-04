@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 os.environ["USE_SAMPLE_DATA"] = "true"
 
 from backend.agent.dispute_responder import (  # noqa: E402
-    _classify_zero_record,
     compose_dispute_response,
 )
 from backend.main import app  # noqa: E402
@@ -23,44 +22,20 @@ from backend.main import app  # noqa: E402
 # Classifier
 # ---------------------------------------------------------------------------
 
-def test_classifier_null_profile_class_wins():
-    row = {
-        "account_profile_class": None,
-        "product_denomination": "FBB_DEVICE",
-        "invoice_date": "2025-01-01",
-        "first_activation_date": "2025-01-15",
-    }
-    assert _classify_zero_record(row) == "NULL_PROFILE_CLASS"
+def test_dispute_uses_the_same_verified_causes_as_chat():
+    from backend.db.investigation_evidence import investigate
+    result = investigate('296065', ['202606'])
+    letter = compose_dispute_response(distributor_code='296065', mon_period='202606')
+    assert letter['summary']['root_cause_classifications'] == {c['cause']: c['count'] for c in result['causes']}
+    assert 'fallback candidate' not in letter['markdown']
 
 
-def test_classifier_hynex_split():
-    row = {
-        "account_profile_class": "FIXED BROADBAND",
-        "product_denomination": "Hynex_1",
-        "invoice_date": "2025-01-01",
-        "first_activation_date": "2025-01-15",
-    }
-    assert _classify_zero_record(row) == "HYNEX_DENOMINATION_SPLIT"
-
-
-def test_classifier_outside_window():
-    row = {
-        "account_profile_class": "FIXED BROADBAND",
-        "product_denomination": "FBB_DEVICE",
-        "invoice_date": "2025-01-01",
-        "first_activation_date": "20260201 10:00:00",   # > 180 days later
-    }
-    assert _classify_zero_record(row) == "OUTSIDE_6_MONTH_WINDOW"
-
-
-def test_classifier_within_window_defaults_to_usp_miss():
-    row = {
-        "account_profile_class": "FIXED BROADBAND",
-        "product_denomination": "FBB_DEVICE",
-        "invoice_date": "2025-08-30",
-        "first_activation_date": "20260210 10:00:00",   # < 180 days
-    }
-    assert _classify_zero_record(row) == "USP_SNAPSHOT_MISS"
+def test_dispute_keeps_missing_support_unresolved(monkeypatch):
+    from backend.db import queries
+    original = queries.investigation_support
+    monkeypatch.setattr(queries, 'investigation_support', lambda *a, **kw: original(*a, **kw).iloc[:0])
+    letter = compose_dispute_response(distributor_code='296065', mon_period='202606')
+    assert letter['summary']['root_cause_classifications'] == {'OUTSIDE_6_MONTH_WINDOW': 2, 'UNRESOLVED': 48}
 
 
 # ---------------------------------------------------------------------------

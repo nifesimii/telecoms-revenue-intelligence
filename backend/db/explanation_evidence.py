@@ -149,6 +149,13 @@ def assemble_finding_evidence(
                 if zero.get('truncated'):
                     caveats.append(zero.get('truncation_note', 'Zero-record evidence is truncated.'))
 
+    if module in {'activation', 'commission', 'payment'}:
+        from backend.db.investigation_evidence import investigate
+        family = 'payment' if module == 'payment' else 'zero_commission'
+        investigation = timed('dealer_investigation', lambda: investigate(dealer_id, [period], family))
+        raw_data['dealer_investigation'] = investigation
+        tools_called.extend(name for name in investigation['tools'] if name not in tools_called)
+
     activation_tools = ('get_dealer_summary', 'get_zero_commission_records',
                         'get_activation_exceptions')
     activation_evidence = [raw_data[name] for name in activation_tools if name in raw_data]
@@ -156,6 +163,8 @@ def assemble_finding_evidence(
         activation_source = provenance(period, 'activation')
         for envelope in activation_evidence:
             envelope['provenance'] = activation_source
+        if module != 'payment' and 'dealer_investigation' in raw_data:
+            raw_data['dealer_investigation']['provenance'] = activation_source
 
     raw_data['explanation_scope'] = {'dealer_id': dealer_id, 'mon_period': period,
                                      'finding': scope, 'verified_finding': finding,

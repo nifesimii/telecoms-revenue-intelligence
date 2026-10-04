@@ -87,6 +87,12 @@ def execute_measure_request(request: dict[str, Any]) -> dict[str, Any]:
     from backend.db.measure_evidence import collect_measure_evidence
 
     measures = request.get("measures") or []
+    if measures == ['dealer_investigation']:
+        from backend.db.investigation_evidence import investigate
+        result = investigate(request['dealer_id'], request['periods'], request['investigation_family'],
+                             offset=request.get('record_offset', 0), limit=request.get('limit') or 20)
+        return {'requested_periods': request['periods'], 'dealer_id': request['dealer_id'],
+                'measures': [], 'explanations': [], 'investigation': result}
     if len(measures) != 1 or measures[0] not in _STANDALONE_EVIDENCE:
         return collect_measure_evidence(request)
     # Standalone evidence reuses an existing computation unchanged; the

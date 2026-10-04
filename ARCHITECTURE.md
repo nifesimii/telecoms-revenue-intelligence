@@ -104,6 +104,29 @@ Payment tab rather than a 500).
 
 ---
 
+## Atlas investigations
+
+Ordinary chat can resolve a `dealer_investigation` request for zero commissions,
+activation commission variance, or payment reconciliation. `investigation_family`
+selects the reader; `presentation` selects explanation, records, actions or a dealer
+letter draft. Exact dealer/month scope and record paging are validated before reads.
+The model resolves intent; it does not create financial figures or rejection reasons.
+
+`backend/db/investigation_evidence.py` owns the shared result. It reads the existing
+queries plus persisted calculation/workflow fixtures through `db/queries.py`.
+`backend/agent/investigation_response.py` renders business conclusions and next steps.
+The generic zero-commission explanation, Findings evidence and dispute-letter endpoint
+reuse this result. Full-population classification precedes a maximum 100-record page.
+Historical saved audit trails remain historical observations; this change does not
+rewrite them or execute audit-store writes. Live Presto remains unimplemented.
+
+Calculation support must match period, account, device, input fingerprint and policy
+version. A recorded primary reason needs the corresponding lookup/mapping/date evidence.
+Payment process evidence must match owed, paid, status and balance direction; incomplete
+APDP coverage never establishes a balance and cannot use simulated supporting evidence.
+Data mode stays in workspace provenance rather than repeated answer disclaimers.
+See `docs/ATLAS_INVESTIGATIONS.md` and `data/samples/README.md` for scenario generation.
+
 ## 2. Tech Stack
 
 ### FBB backend (Python)
