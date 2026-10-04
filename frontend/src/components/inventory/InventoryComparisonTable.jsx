@@ -11,8 +11,7 @@ function cell(id, row, { busy, onSelect, rowRefs }) {
   switch (id) {
     case 'subject': return <th key={id} scope="row" className="text-left min-w-56 w-72 max-w-xs">
       <p className="break-words"><span className="font-semibold">{row.dealer_name || 'Dealer name unavailable'}</span> <span className="text-xs text-gray-500 tabular-nums">{row.dealer_id}</span></p>
-      <p className="mt-1 break-words"><span className="text-sm text-gray-700">{row.product_name || 'Product name unavailable'}</span> <span className="text-xs text-gray-500">{row.product_code}</span>
-        {row.scenario_id && <> <span className="inline-block rounded border border-gray-300 px-1.5 text-xs text-gray-700 bg-gray-50">{row.scenario_label}</span></>}</p>
+      <p className="mt-1 break-words"><span className="text-sm text-gray-700">{row.product_name || 'Product name unavailable'}</span> <span className="text-xs text-gray-500">{row.product_code}</span></p>
     </th>;
     case 'purchases': return <td key={id} className="text-right tabular-nums">{units(row.total_units_purchased)}{row.total_units_purchased == null && <span className="block text-xs text-gray-500 mt-1">Not recorded</span>}</td>;
     case 'activations': return <td key={id} className="text-right tabular-nums">{units(row.activation_count)}</td>;

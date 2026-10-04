@@ -94,13 +94,6 @@ function InventoryWorkspace({ period, navigation, onAsk }) {
         </div>
         {!selected && <button className="overview-button" onClick={() => query.refetch()} disabled={busy}>Refresh</button>}
       </header>
-      <aside className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700" aria-label="Invoice coverage limitation">
-        <p>Purchases come from available invoices, which may not cover this reporting period.</p>
-        <details className="mt-1"><summary className="cursor-pointer font-medium">What this means</summary>
-          <p className="mt-2">Activations come from the selected reporting period. Purchases come from whatever invoice data is available and are not matched to the same window, so some purchases may be missing. Treat excess units as something to investigate, not a confirmed shortfall.</p>
-          {data?.source_note && <p className="mt-2">{data.source_note}</p>}
-        </details>
-      </aside>
       {selected ? selectedRow ? <InventoryDetail row={selectedRow} period={period} retrievedAt={selected.period === period ? selected.retrievedAt : selectionQuery.dataUpdatedAt} onAsk={onAsk}
         onTicket={() => setTicketOpen(true)} onBack={() => { returnFocus.current = subjectFor(selected.row); setSelected(null); }} /> : <section className="overview-surface p-5 space-y-4">
         <button className="overview-button" onClick={() => setSelected(null)}>← Back to comparison</button>
