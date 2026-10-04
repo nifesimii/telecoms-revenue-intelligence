@@ -31,9 +31,7 @@ export default function InventoryDetail({ row, period, retrievedAt, onBack, onAs
         : 'Purchases and excess are unknown because no matching invoice was found in the available data. Missing invoice evidence does not mean zero purchased units.'}</p>
       {hasInvoice && row.total_units_purchased === 0 && <p className="mt-2 text-sm text-amber-900">The recorded purchase quantity is zero; a percentage cannot be calculated.</p>}
       <p className="mt-4 text-sm"><strong>{units(row.qualified_count)}</strong> qualified activation records for this product. Qualification is context only; it does not identify whether excess units earned commission.</p>
-      <p className="mt-4 text-xs text-gray-500">Comparison retrieved {new Date(retrievedAt).toLocaleString()}. {row.scenario_id
-        ? 'This scenario uses fictional shared purchase evidence or a deliberately retained missing quantity. It does not supply source invoice lines.'
-        : 'Invoice quantities are derived from deduplicated records in the available dataset; invoice lines and source freshness are not provided here.'}</p>
+      <p className="mt-4 text-xs text-gray-500">Comparison retrieved {new Date(retrievedAt).toLocaleString()}.{row.scenario_id ? ' This scenario uses fictional shared purchase evidence or a deliberately retained missing quantity. It does not supply source invoice lines.' : ''}</p>
     </section>
     {row.scenario_id ? <section className="overview-surface p-5"><h3 className="font-semibold">Synthetic scenario evidence</h3><p className="mt-2 text-sm text-gray-600">This comparison demonstrates fictional purchase evidence. Existing saved trails are not shown as verification of these quantities. The scenario does not establish actual stock, carryover, product-code aliases or commission exposure.</p></section>
       : row.finding_type !== 'WITHIN_ALLOCATION' ? <InventoryEvidence subject={subjectFor(row)} period={period} />

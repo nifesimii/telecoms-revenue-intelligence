@@ -8,7 +8,7 @@ import { formatPeriod } from '../../lib/format.js';
 import useDebouncedValue from '../../hooks/useDebouncedValue.js';
 import InventoryComparisonTable from './InventoryComparisonTable.jsx';
 import InventorySummary from './InventorySummary.jsx';
-import InventoryFilters from './InventoryFilters.jsx';
+import InventoryFilters, { InventoryViewTabs } from './InventoryFilters.jsx';
 import InventoryDetail from './InventoryDetail.jsx';
 import DataCoverageTicketModal from './DataCoverageTicketModal.jsx';
 import { subjectFor } from './inventoryPresentation.js';
@@ -91,15 +91,15 @@ function InventoryWorkspace({ period, navigation, onAsk }) {
         <div><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">Finance & revenue assurance</p>
           <h1 className="text-2xl font-semibold tracking-tight mt-1">Inventory Intelligence</h1>
           <p className="text-sm text-gray-600 mt-2">Compare reported activations with recorded IFS purchases by dealer and product.</p>
-          <p className="text-sm text-gray-600 mt-2">Reporting period · {formatPeriod(period)}</p>
         </div>
-        {!selected && <div className="flex flex-wrap gap-2"><button className="overview-button" onClick={() => query.refetch()} disabled={busy}>Refresh</button>
-          <button className="overview-button" onClick={() => setTicketOpen(true)}>Prepare coverage ticket</button></div>}
+        {!selected && <button className="overview-button" onClick={() => query.refetch()} disabled={busy}>Refresh</button>}
       </header>
-      <aside className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900" aria-label="Invoice coverage limitation">
-        <p className="font-semibold">Invoice coverage is limited</p>
-        <p className="mt-1">The reporting period selects activations. Purchases use the available invoice dataset; a matching invoice window and complete period coverage are not established. Treat excess quantities as observations requiring investigation.</p>
-        {data?.source_note && <p className="mt-2">{data.source_note}</p>}
+      <aside className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700" aria-label="Invoice coverage limitation">
+        <p>Purchases come from available IFS invoices, which may not cover this reporting period.</p>
+        <details className="mt-1"><summary className="cursor-pointer font-medium">What this means</summary>
+          <p className="mt-2">Activations come from the selected reporting period. Purchases come from whatever invoice data is available and are not matched to the same window, so some purchases may be missing. Treat excess units as something to investigate, not a confirmed shortfall.</p>
+          {data?.source_note && <p className="mt-2">{data.source_note}</p>}
+        </details>
       </aside>
       {selected ? selectedRow ? <InventoryDetail row={selectedRow} period={period} retrievedAt={selected.period === period ? selected.retrievedAt : selectionQuery.dataUpdatedAt} onAsk={onAsk}
         onTicket={() => setTicketOpen(true)} onBack={() => { returnFocus.current = subjectFor(selected.row); setSelected(null); }} /> : <section className="overview-surface p-5 space-y-4">
@@ -108,18 +108,21 @@ function InventoryWorkspace({ period, navigation, onAsk }) {
         <p role={selectionQuery.isError ? 'alert' : 'status'}>{selectionQuery.isFetching ? 'Loading this dealer-product for the current period…' : selectionQuery.isError ? 'Current-period comparison unavailable.' : 'This dealer-product was not found in the current period’s dealer results. Return to the comparison to investigate.'}</p>
         {selectionQuery.isError && <button className="overview-button" onClick={() => selectionQuery.refetch()}>Retry comparison</button>}
       </section> : <>
+        <InventoryViewTabs view={filters.view} onChange={updateFilter} />
+        <div role="tabpanel" id="inventory-view-panel" aria-labelledby={`inventory-tab-${filters.view}`} className="space-y-6">
         <InventoryFilters filters={filters} onChange={updateFilter} />
         {query.isError && <p role="alert" className="overview-notice text-red-800">Inventory comparison unavailable. {data ? 'The figures below are the last successful result for these filters and have not been refreshed.' : 'No inventory position can be established.'} <button className="underline" onClick={() => query.refetch()}>Retry</button></p>}
         {busy && <p role="status" className="text-sm text-gray-600">{data ? 'Refreshing this comparison…' : 'Loading matching comparisons…'}</p>}
         {!data && busy && <div aria-hidden="true" className="space-y-4 animate-pulse"><div className="h-40 rounded-lg bg-gray-200" /><div className="h-64 rounded-lg bg-gray-200" /></div>}
         {data && <>
+          {filters.view === 'coverage' && <div className="flex justify-end"><button className="overview-button" onClick={() => setTicketOpen(true)}>Prepare coverage ticket</button></div>}
           <InventorySummary summary={data.summary} view={filters.view} />
           <section className="overview-surface overflow-hidden" aria-labelledby="inventory-comparisons-heading">
             <div className="p-5 border-b border-gray-200"><h2 ref={listHeading} tabIndex={-1} id="inventory-comparisons-heading" className="font-semibold">Dealer-product comparisons</h2>
-              <p className="text-sm text-gray-600 mt-2" role="status">{pagination.total.toLocaleString()} matching combinations · {filters.view === 'coverage' ? 'Invoice coverage gaps' : includeWithin ? 'Within recorded purchases' : 'Needs investigation'}</p>
-              <p className="text-xs text-gray-500 mt-2">Excess = activations minus recorded purchases. Unknown quantities show —. Negative differences are not stock balances.</p>
+              <p className="text-sm text-gray-600 mt-2" role="status">{formatPeriod(period)} · {pagination.total.toLocaleString()} matching combinations</p>
+              {filters.view !== 'coverage' && <p className="text-xs text-gray-500 mt-2">Excess = activations minus recorded purchases. Unknown quantities show —.</p>}
             </div>
-            {data.items.length ? <InventoryComparisonTable rows={data.items} busy={busy || query.isError} rowRefs={rowRefs}
+            {data.items.length ? <InventoryComparisonTable rows={data.items} view={filters.view} busy={busy || query.isError} rowRefs={rowRefs}
               onSelect={(row) => setSelected({ row, period, retrievedAt: query.dataUpdatedAt })} />
               : <div className="p-6 text-sm" role="status"><p className="font-semibold">No matching comparisons</p><p className="text-gray-600 mt-2">No dealer-product rows match this view and search. This does not establish complete invoice coverage.</p><button className="overview-button mt-4" onClick={() => updateFilter('reset')}>Reset filters</button></div>}
             <div className="p-4 flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 text-sm text-gray-600">
@@ -133,8 +136,9 @@ function InventoryWorkspace({ period, navigation, onAsk }) {
               </div>
             </div>
           </section>
-          <p className="text-xs text-gray-500">Comparison retrieved {new Date(query.dataUpdatedAt).toLocaleString()} · Retrieval time does not establish source freshness.</p>
+          <p className="text-xs text-gray-500">Comparison retrieved {new Date(query.dataUpdatedAt).toLocaleString()}</p>
         </>}
+        </div>
       </>}
       {ticketOpen && <DataCoverageTicketModal period={period} open onClose={() => setTicketOpen(false)} />}
     </div>

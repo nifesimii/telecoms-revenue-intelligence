@@ -34,7 +34,7 @@ body {
   .overview-notice { @apply border rounded-lg bg-white p-4 text-sm; }
   .overview-headline { font-size: clamp(1.25rem, 3vw, 2.25rem); }
   .overview-amount { @apply text-base xl:text-lg; }
-  .overview :is(button, input, select):focus-visible,
+  .overview :is(button, input, select, summary):focus-visible,
   .app-header :is(button, select):focus-visible {
     outline: 2px solid #854d0e;
     outline-offset: 3px;
