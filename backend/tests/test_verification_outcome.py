@@ -79,14 +79,13 @@ ORACLE_ANSWER = (
     "- Caveat: 3 zero-commission product(s) absent from the USP rate card — 'USP snapshot miss' root cause.\n"
     "- Caveat: Possible payment under a different period/reference, or a partial settlement. Manual review before finalising 'not paid'.\n"
     '\n'
-    'The eligibility definition is unresolved: the source documentation describes a window relative to the reporting month, '
-    'while the audit model uses an invoice-to-activation 180-day window. Finance must confirm the authoritative date anchor, '
-    'calendar-month versus day interpretation, and inclusive boundaries before Atlas can establish whether an activation '
-    'is outside the eligibility window. Recorded dates and audit labels describe the implemented checks; '
-    'they do not resolve this policy conflict or independently prove entitlement.\n'
+    'Demo policy · 180 days: Invoice date to first activation date, calendar days 0–180 inclusive. '
+    'Day 181 onwards is outside. Activation before invoice is a date-quality issue; missing or invalid dates '
+    'remain unclassified. Being inside the window alone does not establish commission entitlement.\n'
     '\n'
-    'The following is a recorded audit result; its confidence describes the recorded check, '
-    'not confirmation that the disputed eligibility rule is correct.\n'
+    'Recorded audit labels describe the implemented check. Attributions to other zero-commission causes are candidate '
+    'explanations requiring source evidence; labels and confidence do not independently establish entitlement. '
+    'Date-quality issues remain unclassified even when a recorded verdict says POLICY_MET.\n'
     '\n'
     '**Eligibility Window**: MIXED_ATTRIBUTION (confidence HIGH). Checked on request with the current audit code; nothing was saved.\n'
     '- Step 1, zero commission records present: 50 zero-commission record(s) found.\n'
@@ -178,7 +177,7 @@ def test_oracle_rendered_answer(no_store):
     assert answer.startswith("Verification outcome for dealer 296065, 202606: 4 audit modules")
     assert "**Payment Reconciliation**: UNDERPAID (confidence MEDIUM)." in answer
     assert "Checked on request with the current audit code; nothing was saved." in answer
-    assert not DEMO_WORDING.search(answer)
+    assert 'Demo policy · 180 days:' in answer
     assert answer.endswith("Source: Audit trails.")
 
 

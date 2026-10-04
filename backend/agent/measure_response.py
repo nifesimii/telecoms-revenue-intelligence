@@ -692,6 +692,13 @@ def _check_verification(period: dict) -> None:
             if (not _texts(trail["caveats"]) or not isinstance(trail["limited"], bool)
                     or not _is_count(trail.get("withheld", 0))):
                 raise ValueError("Audit trail caveats must be text")
+            counts = trail.get("eligibility_counts")
+            if counts is not None:
+                keys = {"total", "inside", "outside", "future", "unknown", "window_days"}
+                if (module["module"] != "eligibility_window" or not isinstance(counts, dict)
+                        or set(counts) != keys or not all(_is_count(value) for value in counts.values())
+                        or counts["total"] != sum(counts[key] for key in ("inside", "outside", "future", "unknown"))):
+                    raise ValueError("Eligibility classification counts are inconsistent")
             for line in trail["evidence"]:
                 if not _is_count(line["step"]) or any(not isinstance(line[k], str) for k in ("name", "result")):
                     raise ValueError("Audit step evidence must be text")
@@ -768,8 +775,67 @@ def _render_audit_module(module: dict, dealer: str) -> str:
     return "\n".join([f"{label}: {_text(header)}", *(f"- {_text(bullet)}" for bullet in bullets)])
 
 
+def _render_demo_eligibility(measure: dict, dealer: str) -> list[str]:
+    """Lead with the structured window result; preserve the recorded trail for inspection."""
+    from backend.agent.knowledge_response import eligibility_evidence_note, eligibility_policy
+    from backend.agent.prompts import KB_CONTENT
+
+    parts, details = [], []
+    for period in measure["periods"]:
+        scope = f"Dealer {_text(dealer)} · {_text(period['period'])}"
+        if period["status"] == "unavailable":
+            parts.append(f"Eligibility check unavailable. {scope}.")
+            parts.append(_text(period.get("note") or "The audit evidence could not be read."))
+            parts.append("Source: audit\\_trails · unavailable.")
+            continue
+        if not period["verification"].get("found", True):
+            parts.append(f"No recorded activity. {scope}; check the dealer code.")
+            parts.append("Source: audit\\_trails · no dealer activity found.")
+            continue
+        modules = [module for module in period["verification"]["modules"]
+                   if module["module"] == "eligibility_window"]
+        if len(modules) != 1:
+            raise ValueError("Verification evidence does not include the requested focus")
+        module = modules[0]
+        counts = (module["trails"][0].get("eligibility_counts")
+                  if module["status"] == "verified" and module["subject_count"] == 1 else None)
+        if module["status"] == "no_subject":
+            parts.append(f"No zero-commission records to check. {scope}.")
+        elif module["status"] == "unavailable":
+            parts.append(f"Eligibility check unavailable. {scope}.")
+            parts.append(_text(module["note"]))
+            parts.append("Source: audit\\_trails · unavailable.")
+        elif counts is not None and counts["window_days"] != 180:
+            parts.append(f"The 180-day classification is unavailable. {scope}.")
+            parts.append(f"The recorded audit used a {counts['window_days']:,}-day window; "
+                         "its counts cannot answer the current demo rule.")
+        elif counts is None:
+            parts.append(f"The 180-day classification is unavailable. {scope}.")
+            parts.append("The recorded audit does not provide complete counts for this rule; "
+                         "it cannot establish whether all records were outside the window.")
+        else:
+            parts.append(f"**{counts['outside']:,} of {counts['total']:,} zero-commission records "
+                         f"were outside the 180-day window; {counts['inside']:,} were inside.**")
+            parts.append(f"{scope}.")
+            if counts["unknown"] or counts["future"]:
+                parts.append(f"{counts['unknown']:,} could not be classified because dates were missing or invalid; "
+                             f"{counts['future']:,} had activation before invoice and require a data check.")
+        if module["basis"] == "saved":
+            parts.append(f"Source: audit\\_trails · saved eligibility audit from {_text(module['run_at'])}.")
+        elif module["basis"] == "on_request":
+            parts.append("Source: audit\\_trails · eligibility audit checked on request; nothing was saved.")
+        details.extend([f"**{scope}**", _render_audit_module(module, dealer)])
+    parts.append(_text(eligibility_policy(KB_CONTENT, sample_mode=True)))
+    if details:
+        parts.extend(["### Verification evidence", _text(eligibility_evidence_note(KB_CONTENT)), *details])
+    return parts
+
+
 def _render_verification(measure: dict, dealer_id: str | None, focus: str | None = None) -> list[str]:
     """Each audit module's verdict; unavailable and no-subject are never a pass."""
+    from backend import config
+    if focus == "eligibility_window" and config.USE_SAMPLE_DATA:
+        return _render_demo_eligibility(measure, dealer_id or "—")
     parts, dealer = [], dealer_id or "—"
     for period in measure["periods"]:
         month = _text(period["period"])
@@ -793,11 +859,14 @@ def _render_verification(measure: dict, dealer_id: str | None, focus: str | None
             f"{tally['no_subject']} with no subject, {tally['unavailable']} unavailable."))
         for module in modules:
             if module["module"] == "eligibility_window" and module["status"] == "verified":
-                from backend.agent.knowledge_response import eligibility_limitation
+                from backend.agent.knowledge_response import eligibility_evidence_note, eligibility_policy
                 from backend.agent.prompts import KB_CONTENT
-                parts.append(_text(eligibility_limitation(KB_CONTENT)))
-                parts.append("The following is a recorded audit result; its confidence describes the "
-                             "recorded check, not confirmation that the disputed eligibility rule is correct.")
+                parts.append(_text(eligibility_policy(KB_CONTENT, sample_mode=config.USE_SAMPLE_DATA)))
+                if config.USE_SAMPLE_DATA:
+                    parts.append(_text(eligibility_evidence_note(KB_CONTENT)))
+                else:
+                    parts.append("The following is a recorded audit result; its confidence describes the "
+                                 "recorded check, not confirmation that the disputed eligibility rule is correct.")
             parts.append(_render_audit_module(module, dealer))
         if period.get("note"):
             parts.append(_text(period["note"]))

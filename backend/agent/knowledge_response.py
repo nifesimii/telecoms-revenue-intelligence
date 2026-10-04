@@ -8,6 +8,7 @@ _ELIGIBILITY = re.compile(
     r'eligibility[- ]window|180[- ]day|(?:6|six)[- ]months?|'
     r'invoice[-→ ](?:to[- ])?activation|POLICY_MET|POLICY_VIOLATED|MIXED_ATTRIBUTION', re.I)
 _LIMITATION_HEADING = '### Eligibility policy limitation'
+_DEMO_HEADING = '### Demo eligibility policy'
 _TOPIC_HEADINGS = {
     'zero_commission_causes': '### Four documented zero-commission causes',
     'activation_eligibility': _LIMITATION_HEADING,
@@ -20,30 +21,41 @@ _QUERY_EXPRESSION = re.compile(
     r'\b(?:INSERT\s+INTO|DELETE\s+FROM|DROP\s+TABLE|CREATE\s+TABLE)\b', re.I)
 
 
-def eligibility_limitation(kb: str) -> str:
-    """Read the limitation from the KB; never supply a business rule in code."""
-    marker = _LIMITATION_HEADING + '\n\n'
+def _section_paragraph(kb: str, heading: str, label: str) -> str:
+    marker = heading + '\n\n'
     if marker not in kb:
-        raise ValueError('Eligibility policy limitation is missing from the core KB')
+        raise ValueError(f'{label} is missing from the core KB')
     paragraph = kb.split(marker, 1)[1].split('\n\n', 1)[0].strip()
     if not paragraph or paragraph.startswith('#'):
-        raise ValueError('Eligibility policy limitation has no explanatory paragraph')
+        raise ValueError(f'{label} has no explanatory paragraph')
     return paragraph
 
 
-def knowledge_response(scope, kb: str) -> str:
+def eligibility_limitation(kb: str) -> str:
+    """Read the limitation from the KB; never supply a business rule in code."""
+    return _section_paragraph(kb, _LIMITATION_HEADING, 'Eligibility policy limitation')
+
+
+def eligibility_policy(kb: str, sample_mode: bool) -> str:
+    """Select the applicable KB policy without promoting demo assumptions to live rules."""
+    if not sample_mode:
+        return eligibility_limitation(kb)
+    return _section_paragraph(kb, _DEMO_HEADING, 'Demo eligibility policy')
+
+
+def eligibility_evidence_note(kb: str) -> str:
+    return _section_paragraph(kb, '### Eligibility evidence interpretation', 'Eligibility evidence interpretation')
+
+
+def knowledge_response(scope, kb: str, *, sample_mode: bool = False) -> str:
     """Only exact source text crosses this boundary, with qualifying context intact."""
     quote = scope.knowledge_quote
     topic = getattr(scope, 'knowledge_topic', None)
     if topic is not None:
         if quote is not None or topic not in _TOPIC_HEADINGS:
             raise ValueError('Knowledge requires a supported topic or quote, not both')
-        marker = _TOPIC_HEADINGS[topic] + '\n\n'
-        if marker not in kb:
-            raise ValueError('Named policy section is missing from the core KB')
-        quote = kb.split(marker, 1)[1].split('\n\n', 1)[0].strip()
-        if not quote or quote.startswith('#'):
-            raise ValueError('Named policy section has no explanatory paragraph')
+        heading = _DEMO_HEADING if sample_mode and topic == 'activation_eligibility' else _TOPIC_HEADINGS[topic]
+        quote = _section_paragraph(kb, heading, 'Named policy section')
     if not isinstance(quote, str) or not quote.strip() or quote not in kb:
         raise ValueError('Knowledge excerpt is not present in the core KB')
     start = kb.index(quote)
@@ -69,7 +81,7 @@ def knowledge_response(scope, kb: str) -> str:
             raise ValueError('Core KB has no capability boundary for technical excerpts')
         return 'Documented policy:\n\n' + boundary.removeprefix('**capability** — ')
     if any(_ELIGIBILITY.search(block) for block in blocks):
-        limitation = eligibility_limitation(kb)
+        limitation = eligibility_policy(kb, sample_mode)
         if limitation not in blocks:
             blocks.append(limitation)
     return 'Documented policy:\n\n' + '\n\n'.join(blocks)

@@ -158,7 +158,7 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
     elif scope.kind == 'unsupported':
         answer = unsupported_response(scope, prompts.KB_CONTENT)
     elif scope.kind == 'knowledge':
-        answer = knowledge_response(scope, prompts.KB_CONTENT)
+        answer = knowledge_response(scope, prompts.KB_CONTENT, sample_mode=config.USE_SAMPLE_DATA)
     elif scope.kind == 'identity':
         evidence = await asyncio.to_thread(tool_executor.execute_dealer_lookup, scope.model_dump())
         run.remaining()

@@ -3,6 +3,29 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-10-04 (Demo eligibility answers)
+
+- Adopted the existing invoice-to-first-activation check as the documented
+  sample-mode policy: calendar days 0–180 inclusive. Live policy still needs
+  Finance confirmation. Policy wording comes from the KB; the prompt no longer
+  hardcodes the conflicting reporting-month interpretation.
+- Focused eligibility answers lead with structured outside/inside counts, dealer,
+  period and audit source. June 2026 dealer 296065 shows 2 outside and 48 inside
+  out of 50. Missing/invalid dates and activation-before-invoice records remain
+  explicit; old saved trails without valid counts cannot establish a result.
+- Recorded audit steps sit in a native, keyboard-accessible “View evidence”
+  disclosure. Candidate-cause and recorded-verdict qualifications remain with
+  that evidence. The underlying audit calculation and stored trails are unchanged.
+- Existing focused verification tests: 52 passed; policy/agent tests: 35 passed,
+  1 skipped; demo contract: 22 passed. Browser checks verified collapsed evidence,
+  mouse/Enter/Space, streaming and 320px layout with no browser errors. Frontend
+  transport checks and production build passed; Python compilation passed.
+  No standalone typecheck is configured. Standards and Spec reviews resolved.
+- Full backend run: 945 passed, 34 skipped and one outdated policy-wording
+  expectation failed. Updated that existing expectation; its 22-test file and
+  the final failed-test rerun passed. The affected 52-test verification suite
+  also passed after the final evidence-qualification change.
+
 ## Session — 2026-10-04 (Atlas opening context)
 
 - Payment's explicit Ask Atlas action immediately submits the readable opening

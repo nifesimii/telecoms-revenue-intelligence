@@ -27,6 +27,7 @@ Exports:
 from __future__ import annotations
 
 from pathlib import Path
+from backend import config
 
 # backend/agent/prompts.py -> backend/knowledge_base/fbb_commission_kb.md
 KB_PATH: Path = (
@@ -235,9 +236,8 @@ _BEHAVIOUR_RULES = """\
    supports it. The permitted causes (taken directly from the KB) are:
      1. **USP snapshot miss** — the device's product_name did not match any \
         itemdescription in the USP dimension for that period (KB Issue 1).
-     2. **Outside the 6-month eligibility window** — first_activation_date \
-        is more than 5 months before the reporting period (KB Section 1, \
-        Eligibility window).
+     2. **Outside the eligibility window** — apply the applicable KB \
+        eligibility policy for the current data mode.
      3. **NULL account_profile_class** — distributor_code has no matching \
         entry in tas_augmented_customer_master (KB Issue 6).
      4. **Known denomination split (Hynex / Hynex_1)** — the same physical \
@@ -307,6 +307,9 @@ def build_system_prompt() -> str:
             _USERS,
             _TOOLS_OVERVIEW,
             _BEHAVIOUR_RULES,
+            'Current data mode: ' + ('sample; use the KB demo eligibility policy.'
+                                    if config.USE_SAMPLE_DATA else
+                                    'live; retain the KB eligibility policy limitation.'),
             _KB_HEADER,
             KB_CONTENT,
         ]

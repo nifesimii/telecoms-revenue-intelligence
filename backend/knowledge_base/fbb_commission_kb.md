@@ -88,6 +88,16 @@ not zero.
 
 The eligibility definition is unresolved: the source documentation describes a window relative to the reporting month, while the audit model uses an invoice-to-activation 180-day window. Finance must confirm the authoritative date anchor, calendar-month versus day interpretation, and inclusive boundaries before Atlas can establish whether an activation is outside the eligibility window. Recorded dates and audit labels describe the implemented checks; they do not resolve this policy conflict or independently prove entitlement.
 
+### Demo eligibility policy
+
+Demo policy · 180 days: Invoice date to first activation date, calendar days 0–180 inclusive. Day 181 onwards is outside. Activation before invoice is a date-quality issue; missing or invalid dates remain unclassified. Being inside the window alone does not establish commission entitlement.
+
+This rule is adopted for sample-data demonstrations only. Use it to answer demo eligibility questions directly, leading with the outside/inside counts and keeping detailed audit steps under evidence. The reporting month selects the records to examine; it is not the demo window's date anchor. Finance confirmation is required before applying this assumption as live policy. In live mode, the preceding eligibility policy limitation still applies. Audit attributions to other causes remain candidate explanations until supported by the corresponding source evidence.
+
+### Eligibility evidence interpretation
+
+Recorded audit labels describe the implemented check. Attributions to other zero-commission causes are candidate explanations requiring source evidence; labels and confidence do not independently establish entitlement. Date-quality issues remain unclassified even when a recorded verdict says POLICY_MET.
+
 ### Atlas capability boundaries
 
 **read_only_action** — Atlas cannot release, approve, recalculate or change a commission payment, or update production records. Finance must use the authorized payment or adjustment process; Atlas can review the available recorded amounts and evidence.

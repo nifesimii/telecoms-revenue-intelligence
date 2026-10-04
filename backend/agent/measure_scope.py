@@ -300,10 +300,10 @@ def clarification_response(scope: MeasureScope) -> str:
     return (('; '.join(context) + '.\n\n') if context else '') + questions[scope.clarification]
 
 
-def knowledge_response(scope: MeasureScope, kb: str) -> str:
+def knowledge_response(scope: MeasureScope, kb: str, *, sample_mode: bool = False) -> str:
     from backend.agent.knowledge_response import knowledge_response as render_knowledge
 
-    return render_knowledge(scope, kb)
+    return render_knowledge(scope, kb, sample_mode=sample_mode)
 
 
 def unsupported_response(scope: MeasureScope, kb: str) -> str:

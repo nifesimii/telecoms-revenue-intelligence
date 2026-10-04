@@ -13,6 +13,37 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatNGN, formatPeriod, NGN_RE, NGN_MATCH_RE } from '../lib/format.js';
 
+// Transform parsed Markdown, so quoted/fenced examples never become disclosures.
+// Keep one Markdown tree to preserve references and formatting across the split.
+function remarkVerificationEvidence() {
+  return (tree, file) => {
+    const source = String(file.value);
+    const index = tree.children.findIndex((node) =>
+      node.type === 'heading' && node.depth === 3 &&
+      node.position.start.column === 1 &&
+      source.slice(node.position.start.offset, node.position.end.offset) ===
+        '### Verification evidence' &&
+      /^\r?\n/.test(source.slice(node.position.end.offset)) &&
+      source.slice(node.position.end.offset).trim().length > 0,
+    );
+    if (index === -1) return;
+
+    const evidence = tree.children.splice(index);
+    tree.children.push({
+      type: 'blockquote',
+      data: { hName: 'details' },
+      children: [
+        {
+          type: 'paragraph',
+          data: { hName: 'summary' },
+          children: [{ type: 'text', value: 'View evidence' }],
+        },
+        ...evidence.slice(1),
+      ],
+    });
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Currency highlighter — wraps "NGN X[,XXX].XX" matches in a bolder span.
 // Mirrors the agent's KB-mandated output format (see CLAUDE.md).
@@ -42,6 +73,14 @@ function enhanceText(node) {
 }
 
 const mdComponents = {
+  details: ({ children }) => (
+    <details className="mt-3 border-t border-gray-200 pt-2">{children}</details>
+  ),
+  summary: ({ children }) => (
+    <summary className="cursor-pointer rounded text-sm font-semibold text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600">
+      {children}
+    </summary>
+  ),
   p: ({ children }) => <p className="mb-2 last:mb-0">{enhanceText(children)}</p>,
   ul: ({ children }) => (
     <ul className="list-disc ml-5 mb-2 space-y-0.5">{children}</ul>
@@ -232,7 +271,7 @@ export default function MessageBubble({ message }) {
     <div className="flex justify-start mb-3">
       <div className="max-w-[90%] bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm text-sm text-gray-800 leading-relaxed">
         {message.incomplete && <p className="text-xs text-amber-800 mb-2">{message.status === 'streaming' ? 'Writing explanation…' : message.status === 'stopped' ? 'Stopped · incomplete answer' : 'Interrupted · incomplete answer'}</p>}
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkVerificationEvidence]} components={mdComponents}>
           {message.content || ''}
         </ReactMarkdown>
         {miniTable}

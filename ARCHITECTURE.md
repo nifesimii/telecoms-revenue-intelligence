@@ -493,8 +493,15 @@ Financial selectors restrict individual KPIs/statements/lines. Inventory snapsho
 and financial statement lines are not added into misleading totals. Requested why
 answers may include bounded zero-record observations; conflicting eligibility
 definitions and missing historical source matches prevent unsupported causal claims.
-Eligibility-specific verification loads only that audit module and explains the
-policy conflict before presenting recorded audit confidence. Single-month
+Eligibility-specific verification loads only that audit module. In sample mode,
+it leads with structured outside/inside counts under the KB's demo policy
+(invoice to first activation, calendar days 0–180 inclusive). Missing dates and
+activation-before-invoice records remain visible as data gaps. Saved trails
+without complete structured counts or with a different window cannot establish
+the demo classification. Detailed recorded verdicts sit below the exact Markdown
+heading `### Verification evidence`, rendered as an accessible, collapsed
+“View evidence” disclosure. In live mode, the Finance policy conflict remains
+explicit before recorded audit confidence. Single-month
 activation commission rankings accept a bounded top-N limit (maximum 100).
 Existing standalone tools and scoped finding explanations keep their contracts;
 ordinary chat no longer performs an unrestricted model-selected tool loop.

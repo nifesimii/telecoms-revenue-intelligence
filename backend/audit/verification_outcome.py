@@ -139,7 +139,7 @@ def _trail_summary(module: str, trail: dict) -> dict:
     shown_steps = [s for s in steps if s["name"] in keys or not s.get("passed")]
     withheld = (sum(_withheld(s.get("result")) for s in shown_steps)
                 + sum(_withheld(s.get("caveat")) for s in steps))
-    return {
+    summary = {
         "subject": code,
         "product_code": code.split(":", 1)[1] if ":" in code else None,
         "conclusion": trail["conclusion"],
@@ -147,10 +147,28 @@ def _trail_summary(module: str, trail: dict) -> dict:
         "evidence": [line for line in evidence if line["result"]],
         "caveats": [c for c in (_shown(module, s.get("caveat")) for s in steps) if c],
         # Inventory comparison scenarios disclose that they are not authentic records.
-        "limited": any((s.get("detail") or {}).get("scenario_id") for s in steps),
+        "limited": any(s["detail"].get("scenario_id") for s in steps if isinstance(s.get("detail"), dict)),
         # Recorded text withheld above, disclosed as a count so evidence is never silently shortened.
         "withheld": withheld,
     }
+    if module == "eligibility_window":
+        details = {step["name"]: step["detail"] if isinstance(step.get("detail"), dict) else {}
+                   for step in steps}
+        fields = {
+            "total": ("zero_commission_records_present", "zero_commission_count"),
+            "unknown": ("fetch_dates", "without_dates_count"),
+            "inside": ("classify_against_window", "inside_window_count"),
+            "outside": ("classify_against_window", "outside_window_count"),
+            "future": ("classify_against_window", "future_dated_count"),
+            "window_days": ("classify_against_window", "window_days"),
+        }
+        counts = {key: details.get(step, {}).get(field) for key, (step, field) in fields.items()}
+        # Old saved trails may lack structured detail. Never recover counts from prose.
+        if (all(isinstance(value, int) and not isinstance(value, bool) and value >= 0
+                for value in counts.values())
+                and counts["total"] == sum(counts[key] for key in ("inside", "outside", "future", "unknown"))):
+            summary["eligibility_counts"] = counts
+    return summary
 
 
 def _module_payload(module, label, status, basis, run_at, trails, note=None, payment_source=None):
