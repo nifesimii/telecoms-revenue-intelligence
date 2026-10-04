@@ -39,14 +39,14 @@ def answer_text(payload):
             return 'The disputed dealer payments and outstanding amounts are shown below.'
         return 'NGN 368,324.63 was paid and NGN 552,486.95 remains outstanding for dealer 296065 in 202603. The payment is disputed. Source: Payment records.'
     if 'dealer_investigation' in measures:
+        if scope.get('presentation') == 'records':
+            return 'Here are the requested evidence records.'
         family = scope.get('investigation_family')
         if family == 'payment':
             return 'NGN 594,652.08 remains outstanding for dealer 296065 in 202606.'
         if family == 'commission_variance':
             return 'Commission changed by NGN 39,873.42 for dealer 296065 between 202605 and 202606.'
         presentation = scope.get('presentation')
-        if presentation == 'records':
-            return 'Here are the IMEI records for dealer 296065 in 202606, offset 20.'
         if presentation == 'actions':
             return 'Revenue Assurance: review the 50 zero-commission activations for dealer 296065 in 202606.'
         if presentation == 'dealer_draft':

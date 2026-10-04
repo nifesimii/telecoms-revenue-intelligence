@@ -99,7 +99,7 @@ def test_record_followup_preserves_context_and_gets_the_next_evidence_page(monke
 
     history = [
         {'role': 'user', 'content': 'Show the first 20 zero-commission records for 296065 in June 2026.'},
-        {'role': 'assistant', 'content': 'Showing 20 of 50 evidence records, offset 0. Ask for the next page.'},
+        {'role': 'assistant', 'content': 'Showing records 1–20 of 50.'},
     ]
     original = deepcopy(history)
     scope = request(presentation='records', record_offset=20, limit=20)
@@ -111,7 +111,10 @@ def test_record_followup_preserves_context_and_gets_the_next_evidence_page(monke
     assert result['pagination']['offset'] == 20
     assert result['total_records'] == 50 and len(result['records']) == 20
     assert not {r['imei'] for r in result['records']} & {r['imei'] for r in first['records']}
-    assert 'offset 20' in answer['response'] and 'IMEI' in answer['response']
+    assert 'Showing records 21–40 of 50.' in answer['response']
+    assert answer['response'].count('| IMEI |') == 1
+    assert all(answer['response'].count(record['imei']) == 1 for record in result['records'])
+    assert not any(record['imei'] in answer['response'] for record in first['records'])
     assert calls[0]['messages'][:-1] == original and history == original
     assert json.loads(calls[0]['messages'][-1]['content'])['question'] == 'Next page please'
 

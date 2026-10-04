@@ -187,7 +187,7 @@ def test_final_model_receives_structured_evidence_and_authors_public_answer(monk
     wording = 'My finding: dealer 74050 recorded 806 activations in 202603.'
     calls, _ = install_scope_provider(monkeypatch, measure_scope('activation_count'), answer=wording)
     result = _run(run_agent('How many activations?'))
-    assert result['response'].split('\n\n')[0] == wording
+    assert result['response'].split('\n\n')[0] == 'My finding: dealer 74050 recorded 806 activations in March 2026.'
     assert len(calls) == 2
     payload = json.loads(calls[1]['messages'][-1]['content'])
     assert payload['evidence']['measure_evidence']['measures'][0]['periods'][0]['total'] == 806

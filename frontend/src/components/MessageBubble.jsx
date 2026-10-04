@@ -109,8 +109,8 @@ const mdComponents = {
   ),
   hr: () => <hr className="my-3 border-gray-200" />,
   table: ({ children }) => (
-    <div className="overflow-x-auto my-3">
-      <table className="text-xs border-collapse border border-gray-200 w-full">
+    <div className="max-w-full overflow-x-auto my-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gray-500" tabIndex={0} role="region" aria-label="Scrollable evidence table">
+      <table className="text-xs border-collapse border border-gray-200 w-full min-w-max [overflow-wrap:normal]">
         {children}
       </table>
     </div>
@@ -145,13 +145,13 @@ function MiniDealerTable({ rows, valueKey, valueHeader, countKey, countHeader, p
     .slice(0, 10);
   if (top.length === 0) return null;
   return (
-    <div className="mt-3 overflow-x-auto">
+    <div className="mt-3 max-w-full overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-gray-500" tabIndex={0} role="region" aria-label="Scrollable dealer summary table">
       {period && (
         <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">
           Top 10 by {valueHeader.toLowerCase()} · {formatPeriod(period)}
         </div>
       )}
-      <table className="text-xs border-collapse border border-gray-200 w-full">
+      <table className="text-xs border-collapse border border-gray-200 w-full min-w-max [overflow-wrap:normal]">
         <thead className="bg-gray-100 text-gray-700">
           <tr>
             <th className="border border-gray-200 px-2 py-1 text-left">#</th>

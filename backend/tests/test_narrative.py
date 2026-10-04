@@ -194,6 +194,15 @@ def test_identifier_cannot_introduce_unsupported_documented_cause_or_workflow():
             compose(client, evidence={'status': 'unavailable', 'dealer_name': injected})
 
 
+def test_period_fact_displays_readable_month_while_retaining_scope_value():
+    def answer(payload, attempt):
+        fact = next(f for f in payload['facts'] if f['path'] == 'scope.periods[0]')
+        assert fact['value'] == '202606'
+        return 'These records cover {{' + fact['id'] + '}}.'
+    client, _ = provider(answer)
+    assert compose(client).startswith('These records cover June 2026.')
+
+
 def test_rate_card_cause_requires_support_and_keeps_legacy_payload_compatible():
     import pytest
     from backend.agent.narrative import NarrativeGroundingError

@@ -475,7 +475,7 @@ def test_chat_stream_ambiguous_dealer_name_asks_and_reads_no_evidence(monkeypatc
     phases = [e['phase'] for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
     assert phases == ['tool_start', 'tool_complete']
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text.startswith('Several recorded dealers match “River Isle” for 202606')
+    assert text.startswith('Several recorded dealers match “River Isle” for June 2026')
     assert 'Which dealer do you mean? Give the dealer code.' in text
     assert events[-1]['tools_called'] == ['get_dealer_codes']
 
@@ -528,7 +528,7 @@ def test_final_generation_is_buffered_until_validated_and_preserves_evidence(mon
         await asyncio.wait_for(task, 3)
         assert [e['text'] for e in events if e['type'] == 'text'] == [
             events[-1]['response']]
-        assert events[-1]['response'].split('\n\n')[0] == 'I counted 806 activations for dealer 74050 in 202603.'
+        assert events[-1]['response'].split('\n\n')[0] == 'I counted 806 activations for dealer 74050 in March 2026.'
         assert events[-1]['raw_data']['measure_evidence']['measures'][0]['periods'][0]['total'] == 806
         assert len(fake.calls) == 2
     asyncio.run(exercise())

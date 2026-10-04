@@ -188,7 +188,7 @@ def test_river_isle_is_ambiguous_in_june_and_reads_no_evidence(monkeypatch):
     result = asyncio.run(agent.run_agent("What do we owe River Isle in June?"))
     assert calls == []
     assert result["response"].split("\n\n### Verification evidence", 1)[0] == "\n".join([
-        "Several recorded dealers match “River Isle” for 202606 (6 in total; showing 5).",
+        "Several recorded dealers match “River Isle” for June 2026 (6 in total; showing 5).",
         "",
         "- River Isle Ventures \\(121038\\)",
         "- River Isle Trading \\(19969\\)",
@@ -205,7 +205,7 @@ def test_river_isle_is_ambiguous_in_june_and_reads_no_evidence(monkeypatch):
 def test_unknown_name_answers_with_a_clarification(monkeypatch):
     install(monkeypatch, statement(dealer_name="Nowhere Ltd"))
     result = asyncio.run(agent.run_agent("What do we owe Nowhere Ltd?"))
-    assert result["response"].split("\n\n### Verification evidence", 1)[0] == ("No dealer named “Nowhere Ltd” is recorded for 202606; "
+    assert result["response"].split("\n\n### Verification evidence", 1)[0] == ("No dealer named “Nowhere Ltd” is recorded for June 2026; "
                                   "give the dealer code or the full recorded name.")
 
 

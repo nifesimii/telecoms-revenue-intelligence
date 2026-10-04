@@ -76,12 +76,24 @@ response builders. This follows the SDK's separation between application-run
 tools and model composition ([official tool lifecycle](https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works)).
 
 The model returns an answer with references to supplied facts. Substitution owns
-numerical and identifier formatting. Known-invalid values, references, causal
+numerical and identifier formatting. Exact source product/date labels can also
+be resolved to their existing fact references; unknown labels and ambiguous
+month aliases are rejected. Purely numeric identifiers, counts and amounts still
+require explicit references. The generation projection supplies calculated
+largest-positive-contribution and all-product-growth facts, keeping the original
+raw evidence unchanged. Fact meanings distinguish period levels from changes
+and total activation counts from qualified counts.
+Known-invalid values, references, causal
 assertions and direct payment-label contradictions are rejected before any text
 event. One repair uses the same request deadline and retry allowance; failure
 returns a short message while preserving already retrieved evidence. The model
-sees at most twelve rows per narrative sample, with omissions identified; the
-requested evidence page remains application-owned, bounded at one hundred rows.
+sees at most twelve rows per narrative sample, with omissions identified. For
+record-page requests it receives only status, family and scoped identity/date
+facts; exact page ranges and the complete bounded table are application-owned.
+This prevents a second model-written range or duplicate table. Missing evidence
+does not become a zero-sized population. Account codes and machine-readable
+periods remain in supporting evidence even when the prose uses a recorded name
+or a readable month. Monetary policy-table cells retain their NGN units.
 
 These checks constrain known failure modes, not all meanings of natural language.
 A valid fact can still be described incorrectly. Do not treat reference checking,
@@ -89,8 +101,10 @@ mocked-provider tests or an independent model review as proof of factual accurac
 Use the public conversation walkthrough to assess factual correctness and
 naturalness, including follow-ups, dates, unknown evidence and payment distinctions.
 
-Verification for this boundary is in progress. Initial real-provider walkthrough
-attempts retrieved the expected evidence but returned composition failures; that
-run is not a pass. Local regression and independent review fixes are recorded in
-PROGRESS.md. The previous successful seven-turn result above describes the prior
-deterministic response implementation, not this new composition stage.
+Live evaluation exposed and prompted fixes for missing policy-identifier facts,
+page-range duplication, activation counts described as product counts, an affected
+subset described as a whole dealer month, and a flat product described as growing.
+Targeted public regressions cover these failures and valid counterpart answers;
+independent Standards and Spec reviews are recorded in PROGRESS.md. The previous
+successful result above describes the original deterministic implementation;
+the separate Claude-composition verification results are recorded in PROGRESS.md.

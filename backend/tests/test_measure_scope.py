@@ -227,7 +227,7 @@ def test_priority_question_answers_from_the_investigation_queue(monkeypatch):
     result = asyncio.run(agent.run_agent('is this dealer a high priority for investigation on commission'))
     response = result['response']
     assert calls == [('202606', '296065')]
-    assert response.startswith('Investigation priority for dealer 296065, 202606: HIGH — rank 1 of 922')
+    assert response.startswith('Investigation priority for dealer 296065, June 2026: HIGH — rank 1 of 922')
     assert 'Commission-module priority: MEDIUM' in response
     assert 'knowledge base defines no' not in response
     assert '999,999,999' not in response
@@ -331,7 +331,7 @@ def test_affiliation_code_anchor_runs_end_to_end_without_leaking_draft(monkeypat
     assert '9 other dealer codes' in response and '202606' in response
     assert 'NGN 790,062.67' in response and 'indicative' in response.lower()
     # The anchor code appears once (headline), never re-listed as its own sibling.
-    assert response.count('19580') == 1
+    assert response.split('### Verification evidence')[0].count('19580') == 1
     assert '19577' in response  # a sibling code is listed
     assert result['tools_called'] == ['get_dealer_codes', 'get_dealer_summary']
     assert '999,999,999' not in response  # model draft must not leak

@@ -27,40 +27,63 @@ end of each work session. Newest session on top.
   provider calls, production writes, migration, push or deployment. Browser fixtures
   used local mocked evidence; this does not establish real-model answer quality.
 
-## Session — 2026-10-04 (Claude-composed answers — live acceptance pending)
+## Session — 2026-10-04 (Claude-composed conversational answers)
 
 - Added a shared final Claude composition call after validated scope/evidence,
-  including clarification, policy, identity, affiliation and dealer-resolution
-  branches. Existing builders retain evidence checks, derived figures, requested
-  tables and audit disclosures; raw evidence/tool traces keep their public shape.
-- Final prose uses application-owned fact references. Known-invalid claims are
-  withheld, with one repair inside the existing request budget. Provider failures
-  retain retrieved evidence; streamed composition failures remain retryable and
-  excluded from successful conversation history. Logs exclude payloads.
-- Independent Spec and Herdr Standards review drove regressions for scope offsets
-  reused as counts, unavailable evidence called zero, payment field relabelling,
-  source-text injection and honest uncertainty. These are concrete guards, not a
-  proof of natural-language entailment. The existing full KB remains in the prompt.
-- Full offline backend run: 990 passed, 37 skipped, 10 failed. Follow-up focused
-  runs addressed legacy single-call provider fixtures and grounding regressions;
-  final targeted run across all failed files and conversation/review regressions:
-  **311 passed, 35 skipped**. Frontend transport: 11 passed;
-  production build and Python compilation passed. No standalone typecheck exists.
-- Existing browser chat and Payment suites passed Stop/disconnect, exact Retry,
-  context/history isolation, keyboard opening and responsive widths. A mocked
-  conversational answer/table passed collapsed evidence, Enter/Space expansion,
-  1440/320px layout and runtime-error checks. This is UI evidence, not model quality.
-- **Not complete:** the first real-Claude rehearsal retrieved the expected sample
-  evidence but returned composition failures on its first three turns; stopped
-  before continuing. Automatic approval review then rejected the diagnostic API
-  call as requiring additional export authorization. User approval for diagnostic
-  calls/reruns was requested and remains pending. No successful live naturalness
-  or latency result is claimed for this new stage. Resume with the seven-turn
-  walkthrough and reject both retrieval and composition fallbacks in evaluation.
-- Preserved pre-existing presentation and PaymentDetail edits. No push, deployment,
-  production query or write-back. Temporary local artifacts include
-  `/tmp/atlas-conversation-backend-tests.log`, `/tmp/atlas_narrative_probe.py`,
-  and `/tmp/atlas-narrative-{desktop,narrow}.png`.
+  including clarification, policy, identity, affiliation and dealer resolution.
+  Existing builders retain evidence validation, calculations, classifications,
+  requested tables and audit disclosures; public raw evidence/tool traces remain.
+- Fact references own formatting; known-invalid claims are withheld, with one
+  repair inside the shared deadline/retry allowance. Provider failures retain
+  retrieved evidence; streamed composition failures are retryable and excluded
+  from successful history. These guards do not prove semantic entailment.
+- Real-provider diagnostics drove fixes for policy/product identifier references,
+  readable periods, NGN policy amounts, record-count/product-count confusion,
+  whole-dealer claims from affected subsets, flat-tier growth and incorrectly
+  named largest contributors. Public regressions include valid counterpart claims.
+  The narrative projection now supplies calculated contribution rankings and
+  all-product growth flags; fact meanings distinguish period amounts, changes,
+  total activation counts and qualified counts. Original raw evidence is unchanged.
+- Record introductions use only current validated family/status and scoped
+  identity/date facts. Prior tables, page ranges and offsets are withheld from
+  final record-page generation after live diagnosis showed the model copying
+  earlier page output. Interpretation still receives unchanged conversation
+  history. Exact ranges and complete bounded tables remain application-owned;
+  unavailable pages never become a confirmed zero population.
+- The real Claude seven-turn walkthrough passed: why, records, next page, actions,
+  dealer draft, month comparison, then streamed payment explanation. Latencies:
+  **6.26 / 4.51 / 5.37 / 5.91 / 15.42 / 7.63 / 5.99 seconds**. Counts, disjoint
+  pages, product contributions and paid/owed/outstanding amounts were checked
+  against returned evidence. Initial failed rehearsals were not counted as passes.
+- Full offline backend suite: **1,049 passed, 37 skipped**. Final focused run after
+  subsequent contributor/count/identifier fixes: **176 passed, 1 skipped**.
+  An isolated source snapshot
+  also verified these changes without the concurrent terminology edits. Frontend:
+  **17 tests passed**, production build and Python compilation passed; no separate
+  typecheck is configured. Browser chat/Payment suites passed Stop/disconnect,
+  exact Retry, history/account/period isolation, keyboard opening and narrow layout.
+  Visual review caught squeezed record columns at 320px; shared Markdown tables
+  now retain readable widths in contained, keyboard-scrollable regions. The real
+  seven-turn response replay passed at 320/768/1024/1440px with evidence expansion,
+  no document overflow and no runtime errors. Screenshots were inspected.
+- Independent Spec review and Herdr Standards review completed. Reported account
+  escaping, missing-versus-zero page totals and metric-specific growth findings
+  were fixed and rechecked. The broader 31-case Claude run initially passed 27;
+  the four failing cases subsequently passed targeted evaluation. Independent
+  reading exposed additional variance errors beyond substring checks: incorrect
+  ranking, unsupported product-mix/universal-growth claims, a delta described as
+  a level, and total activations called qualified. Each received a public
+  regression and fix; a fresh variance answer passed independent factual and
+  naturalness review. This is not a claim of a single final 31/31 rerun or proof
+  of general semantic correctness. Conservative failures can still require Retry.
+- The user approved Anthropic calls. Automatic review initially rejected the
+  broader evaluation, then accepted it on reassessment with the handoff's explicit
+  real-Claude/sample-evidence authorization. No authorization remains pending.
+- Preserved unrelated presentation and PaymentDetail edits and the other session's
+  separate terminology commit. No push, deployment, production query or write-back.
+  Local artifacts: `/tmp/atlas-narrative-walkthrough.json`,
+  `/tmp/atlas-narrative-golden-final.json`, `/tmp/atlas-final-backend-tests.log`,
+  `/tmp/atlas-final-frontend-tests.log`, and `/tmp/atlas-live-*.png`.
 
 ## Session — 2026-10-04 (Evidence-based Atlas investigations)
 
