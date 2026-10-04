@@ -244,7 +244,7 @@ def _triage_get_activation_exceptions(
         "must_review": _records(must, cols),
         "worth_review": _records(worth, cols),
         "drill_down_hint": (
-            "ALL_UNQUALIFIED → most likely USP snapshot miss (KB Issue 1). "
+            "ALL_UNQUALIFIED → investigate whether the product was matched to the commission rate card for the calculation month (KB Issue 1); confirm record-level evidence. "
             "HIGH_UNQUALIFIED_RATE → run get_zero_commission_records to classify. "
             "UNUSUAL_VOLUME → present as 'requires investigation', never 'fraud'."
         ),

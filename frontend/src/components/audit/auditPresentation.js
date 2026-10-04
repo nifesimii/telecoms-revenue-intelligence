@@ -1,6 +1,7 @@
+import { commissionTerminology, legacyEvidenceLabels } from '../../lib/commissionTerminology.js';
 import { formatNGN } from '../../lib/format.js';
 
-export const label = (value) => value ? String(value).toLowerCase().replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()) : 'Unavailable';
+export const label = (value) => value ? legacyEvidenceLabels[String(value).toLowerCase()] || String(value).toLowerCase().replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()) : 'Unavailable';
 export const savedTime = (value) => value ? new Date(value).toLocaleString() : 'Unavailable';
 const MEASURE_LABELS = {
   total_units_purchased: 'Recorded purchases (units)', activation_count: 'Activation records', inventory_gap: 'Activations minus purchases (units)',
@@ -18,13 +19,16 @@ export function qualifications(trail) {
   if (trail.module === 'inventory_mismatch') notes.push('Carryover and alias checks can miss products with purchases but no activations. Invoice data presence does not establish complete period coverage. Excess units do not establish commission owed.');
   if (trail.module === 'eligibility_window') notes.push('Being inside the window alone does not establish commission entitlement; other eligibility checks are required.');
   if (trail.conclusion === 'NOT_PAID' && Number(trail.measures?.amount_paid_ngn) > 0) notes.push(`${trail.partial_payment ? 'Partial payment' : 'Positive payment'} recorded: ${formatNGN(Number(trail.measures.amount_paid_ngn))}. The saved NOT_PAID label does not mean no payment occurred. Manual review is required.`);
-  return notes;
+  return notes.map(commissionTerminology);
 }
-export function detailText(value, indent = '') {
+const DETAIL_PROSE = new Set(['note', 'basis', 'limitation', 'limitations', 'explanation', 'result', 'checked', 'caveat']);
+const DETAIL_CAUSES = new Set(['alt_root_causes', 'cause', 'root_cause']);
+export function detailText(value, indent = '', field = '') {
   if (value == null) return 'Unavailable';
-  if (Array.isArray(value)) return value.map((v) => `${indent}- ${detailText(v, indent + '  ')}`).join('\n') || 'None recorded';
-  if (typeof value === 'object') return Object.entries(value).filter(([k]) => k !== 'query').map(([k, v]) => `${indent}${label(k)}: ${k.endsWith('_ngn') ? measureValue(k, v) : detailText(v, indent + '  ')}`).join('\n');
-  return String(value);
+  if (Array.isArray(value)) return value.map((v) => `${indent}- ${detailText(v, indent + '  ', field)}`).join('\n') || 'None recorded';
+  if (typeof value === 'object') return Object.entries(value).filter(([k]) => k !== 'query').map(([k, v]) => `${indent}${label(k)}: ${k.endsWith('_ngn') ? measureValue(k, v) : detailText(v, indent + '  ', k)}`).join('\n');
+  if (DETAIL_CAUSES.has(field)) return legacyEvidenceLabels[String(value).toLowerCase()] || String(value);
+  return DETAIL_PROSE.has(field) ? commissionTerminology(String(value)) : String(value);
 }
 export function evidenceReport(trail) {
   return [
@@ -34,9 +38,9 @@ export function evidenceReport(trail) {
     '\nSUPPORTING MEASURES', ...Object.entries(trail.measures || {}).map(([k, v]) => `${measureLabel(k)}: ${measureValue(k, v)}`),
     '\nCHECKS', ...(trail.steps || []).flatMap((step) => [
       `${step.step}. ${label(step.name)} — recorded check ${step.passed ? 'passed' : 'did not pass'}`,
-      step.checked, step.presentation_result || step.result,
-      ...(step.presentation_qualification ? [step.presentation_qualification, `Original recorded wording: ${step.result}`] : []),
-      `Caveat: ${step.caveat || 'No recorded caveat'}`, detailText(step.detail),
+      commissionTerminology(step.presentation_checked ?? step.checked), commissionTerminology(step.presentation_result || step.result),
+      ...(step.presentation_qualification ? [commissionTerminology(step.presentation_qualification), `Recorded wording (current terminology): ${commissionTerminology(step.result)}`] : []),
+      `Caveat: ${commissionTerminology(step.presentation_caveat ?? step.caveat) || 'No recorded caveat'}`, detailText(step.presentation_detail ?? step.detail),
     ]), '\nLIMITATIONS', ...qualifications(trail),
     '\nPROVENANCE', `Saved: ${trail.generated_at || 'Unavailable'}`, `Source: ${trail.payment_source || 'Unavailable'}`,
     `Run: ${trail.run_id || 'Unavailable'}`, `Pipeline: ${trail.pipeline_version || 'Unavailable'}`, `Trail: ${trail.trail_id || 'Unavailable'}`,

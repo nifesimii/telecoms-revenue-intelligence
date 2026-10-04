@@ -44,7 +44,7 @@ touching anything.
 - Open `http://localhost:5173`, click through every tab
 - Read [`docs/GM_DEMO.md`](GM_DEMO.md) while browsing so the vocabulary maps
   to what you're seeing on screen
-- Write down the acronyms that come up (ORSC, USP, IFS, dev_act, FBB, EB) —
+- Write down the acronyms that come up (ORSC, IFS, dev_act, FBB, EB; legacy USP means commission rate card) —
   they appear everywhere
 
 **Done when**

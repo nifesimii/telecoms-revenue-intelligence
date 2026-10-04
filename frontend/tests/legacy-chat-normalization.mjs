@@ -41,10 +41,12 @@ try {
     const key = `fbb.chat.thread.${scope}`;
     const text = `${prefix}\n\n${question}`;
     const expected = recognized ? question : text;
+    const assistantOriginal = text + '\nUSP snapshot miss. Calculation-month USP snapshot. `usp_dimension` \"USP snapshot miss\"';
+    const assistantDisplay = text + '\nProduct not matched to commission rate card. Calculation-month commission rate card snapshot. `usp_dimension` \"USP snapshot miss\"';
     const metadata = { tools_called: ['evidence'], raw_data: { evidence: 'retain' }, mon_period: '202606' };
     const messages = [
       { role: 'user', content: text, ...metadata },
-      { role: 'assistant', content: text, ...metadata, status: 'complete' },
+      { role: 'assistant', content: assistantOriginal, ...metadata, status: 'complete' },
       { role: 'user', content: text, ...metadata },
       { role: 'assistant', content: 'Partial evidence', ...metadata, status: 'streaming', incomplete: true,
         request: { text, monPeriod: '202606', explanation: null } },
@@ -80,9 +82,9 @@ try {
     let displayed = await readMessages();
     assert.equal(displayed.length, 4, name);
     assert.equal(displayed[0].content, expected, `${name}: display`);
-    assert.equal(displayed[1].content, text, `${name}: assistant prose unchanged`);
+    assert.equal(displayed[1].content, assistantDisplay, `${name}: assistant terminology display`);
     assert.deepEqual(displayed[0], { ...messages[0], content: expected });
-    assert.deepEqual(displayed[1], messages[1]);
+    assert.deepEqual(displayed[1], { ...messages[1], content: assistantDisplay });
     assert.deepEqual(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).messages, key), messages, 'Restoring a thread must not eagerly overwrite its stored data');
     assert.equal(displayed[3].status, 'interrupted');
     assert.equal(displayed[3].request.text, expected, `${name}: retry payload`);
@@ -91,9 +93,10 @@ try {
     await page.waitForFunction(() => JSON.parse(document.querySelector('#messages').textContent).at(-1).status === 'complete');
     assert.equal(requests.length, 1);
     assert.deepEqual(requests[0], { message: expected, mon_period: '202606', investigation_context: currentContext,
-      conversation_history: [{ role: 'user', content: expected }, { role: 'assistant', content: text }] });
+      conversation_history: [{ role: 'user', content: expected }, { role: 'assistant', content: assistantDisplay }] });
     displayed = await readMessages();
     assert.equal(displayed.length, 4, 'Retry replaces only incomplete turn');
+    assert.equal(await page.evaluate((key) => JSON.parse(localStorage.getItem(key)).messages[1].content, key), assistantOriginal, 'Persistence keeps original assistant evidence after a new turn');
     assert.equal(displayed[2].content, expected);
     await page.reload();
     assert.equal((await readMessages())[0].content, expected, 'Normalized thread survives reload');

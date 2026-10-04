@@ -35,8 +35,7 @@ activation count as sales through that rendering boundary.
 Explanations show supported comparisons and bounded source observations. Causes
 require verification; free-form provider prose is not rendered. The KB currently
 describes both reporting-month and invoice-to-activation eligibility windows.
-The application does not choose between those conflicting rules or infer a USP
-snapshot miss from a zero rate. Exact-dealer activation explanation requests may
+The application does not choose between those conflicting rules or infer a product not matched to the commission rate card from a zero rate. Exact-dealer activation explanation requests may
 inspect up to 100 zero-record date observations and disclose what remains
 unverified. Other explanations preserve source-specific uncertainty.
 

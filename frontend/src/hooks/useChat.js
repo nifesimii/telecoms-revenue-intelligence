@@ -1,5 +1,6 @@
 // Conversations outlive their presentation. Navigation during a request must
 // not discard the answer or mix it into another account's thread.
+import { assistantPresentation } from '../lib/commissionTerminology.js';
 import { useSyncExternalStore } from 'react';
 import { normalizeLegacyMessages } from '../lib/legacyChat.js';
 import { streamMessage, explainFinding } from '../api/client.js';
@@ -50,7 +51,7 @@ export default function useChat({ scope, investigationContext } = {}) {
     const previous = retry ? current.messages.slice(0, -2) : current.messages;
     const history = previous.filter((message, index) => !message.incomplete &&
       !(message.role === 'user' && previous[index + 1]?.incomplete))
-      .map(({ role, content }) => ({ role, content }));
+      .map(assistantPresentation).map(({ role, content }) => ({ role, content }));
     const request = { text: trimmed, monPeriod, explanation };
     const messages = [...previous, { role: 'user', content: trimmed, tools_called: [], raw_data: {}, mon_period: monPeriod }, {
       role: 'assistant', content: '', tools_called: [], raw_data: {}, mon_period: monPeriod,
@@ -106,6 +107,6 @@ export default function useChat({ scope, investigationContext } = {}) {
     if (!conversation.snapshot().isLoading) conversation.update({ messages: [], error: null });
   }
 
-  return { ...state, sendMessage, clearChat, stopMessage, retryMessage,
+  return { ...state, messages: state.messages.map(assistantPresentation), sendMessage, clearChat, stopMessage, retryMessage,
     canRetry: Boolean(!state.isLoading && state.messages.at(-1)?.incomplete && state.messages.at(-1)?.request) };
 }

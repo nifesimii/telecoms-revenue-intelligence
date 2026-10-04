@@ -8,10 +8,10 @@ Severity / action mapping (taken straight from the KB / spec):
     +-------------------------+----------+-----------------------------------------+
     | exception_type          | severity | recommended_action                      |
     +-------------------------+----------+-----------------------------------------+
-    | ALL_UNQUALIFIED         | HIGH     | Verify product codes against USP        |
-    |                         |          | dimension for this period               |
+    | ALL_UNQUALIFIED         | HIGH     | Verify product codes against the        |
+    |                         |          | commission rate card for this period    |
     | HIGH_UNQUALIFIED_RATE   | MEDIUM   | Review activation qualification rate    |
-    |                         |          | and USP coverage                        |
+    |                         |          | and commission rate card coverage       |
     | UNUSUAL_VOLUME          | LOW      | Investigate activation volume for       |
     |                         |          | legitimacy. Not confirmed fraud.        |
     +-------------------------+----------+-----------------------------------------+
@@ -32,10 +32,10 @@ SEVERITY_BY_EXCEPTION: dict[str, str] = {
 
 ACTION_BY_EXCEPTION: dict[str, str] = {
     "ALL_UNQUALIFIED": (
-        "Verify product codes against USP dimension for this period"
+        "Verify product codes against commission rate card for this period"
     ),
     "HIGH_UNQUALIFIED_RATE": (
-        "Review activation qualification rate and USP coverage"
+        "Review activation qualification rate and commission rate card coverage"
     ),
     "UNUSUAL_VOLUME": (
         "Investigate activation volume for legitimacy. Not confirmed fraud."

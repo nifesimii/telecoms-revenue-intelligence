@@ -17,7 +17,7 @@ def answer_text(payload):
     if kind == 'knowledge' and scope.get('knowledge_quote'):
         return 'The documented activation commission rate is 8,215.81.'
     if kind == 'knowledge' and scope.get('knowledge_topic') == 'zero_commission_causes':
-        return 'The documented causes include USP snapshot miss and the Hynex denomination split. A cause remains unverified without supporting records.'
+        return 'The documented causes include Product not matched to commission rate card and the Hynex denomination split. A cause remains unverified without supporting records.'
     if kind in ('knowledge', 'unsupported', 'clarification'):
         return 'Here is the relevant detail: ' + payload['validated_context']
     if kind == 'identity':
@@ -84,7 +84,7 @@ def answer_text(payload):
     if len(scope.get('periods', [])) == 12:
         return 'Partial total: missing months are unavailable. | 202612 | Unavailable |'
     if 'zero_commission_count' in measures:
-        return 'NGN 1,140,192.85 is recorded for dealer 74050 in 202603. There are 93 zero-commission activations; some are unresolved and the evidence includes USP snapshot miss.'
+        return 'NGN 1,140,192.85 is recorded for dealer 74050 in 202603. There are 93 zero-commission activations; some are unresolved and the evidence includes Product not matched to commission rate card.'
     if measures == ['activation_commission']:
         return 'NGN 1,140,192.85 is the recorded activation commission for dealer 74050 in 202603.'
     if 'activation_commission' in measures:

@@ -53,7 +53,7 @@ not zero.
   sales of MTN products. Dealers without a statement have no recorded sales
   revenue; say so rather than substituting another measure.
 - **Respect the evidence's direction and meaning.** IFS inventory quantities
-  describe purchases by the dealer, not onward sales to customers. USP reference
+  describe purchases by the dealer, not onward sales to customers. commission rate card reference
   prices and commission amounts do not establish actual retail selling prices
   or sales revenue. Retail sales require dealer sales transactions with dates,
   products, quantities and actual amounts, including returns where relevant.
@@ -67,14 +67,14 @@ not zero.
   each answer, identifies demo data.
 - **Recorded commission is not verified eligibility.** A positive commission
   rate supports a recorded commission-bearing activation; a 100% qualification
-  rate does not prove there were no USP, eligibility or classification errors.
+  rate does not prove there were no commission rate card, eligibility or classification errors.
   A zero rate alone does not identify its cause. Apply the four documented
   causes only when the relevant record and source evidence support attribution;
   otherwise label the cause unverified and name the missing evidence.
 - **Flags and co-occurrence are not causes.** An inventory mismatch establishes
   a discrepancy in the compared records, not a sourcing problem or the cause of
   zero commission or withheld payment. A new product in the returned period is
-  not proof of first-ever sales or a USP miss. Only make cross-product or
+  not proof of first-ever sales or a commission rate card miss. Only make cross-product or
   cross-period claims after checking the corresponding evidence. Distinguish
   observations, supported interpretations and unknowns; do not turn a plausible
   explanation into a verified finding. These evidence requirements apply to
@@ -141,7 +141,13 @@ This report feeds directly into: Monthly Financial Reporting, Yearly Statutory A
 
 ## 2. Commission Rate Structure
 
-### Rate card (from `mtnn_it.usp_dimension`)
+### Commission rate card (from `mtnn_it.usp_dimension`)
+
+Canonical label: **Product not matched to commission rate card**.
+
+The product could not be matched to the commission rate card for the calculation month, so the applicable commission amount could not be retrieved.
+
+Legacy references to “USP” name this same dataset. Source identifiers such as `usp_dimension`, `USP_SNAPSHOT_MISS` and persisted evidence keys remain compatibility aliases. **Unit Selling Price** and `unit_selling_price` remain numeric product selling prices, distinct from the applicable commission amount.
 
 The MIFI / HYNETFLEX / HYNETFLEX_1 tiers are **exactly 10% of the unit selling price**. The **5G ROUTER tier is a tier-specific override** set to ₦8,215.81 (approximately 12% of unit price), not 10%. Use the rate-card value directly — **do not derive rates by computing 10% of the unit selling price for any tier**. The literal commission_rate column in `mtnn_it.usp_dimension` is the source of truth.
 
@@ -154,9 +160,9 @@ The MIFI / HYNETFLEX / HYNETFLEX_1 tiers are **exactly 10% of the unit selling p
 | 5G ROUTER            | 68,465.12                | 8,215.81              | TOZED ROUMOD4393, ZTE MC888D 5G CPE, HUAWEI ROUWIR4332      |
 
 
-### USP dimension versioning — critical rule
+### commission rate card versioning — critical rule
 
-The `usp_dimension` table is **versioned by month** (`tbl_dt`). When calculating commissions for a given period, the script must join against the USP snapshot for that exact month window (e.g. `tbl_dt BETWEEN '20250601' AND '20250630'`). Using the wrong monthly snapshot caused the 21,016 mismatched profile class records in the historical UAT dispute (Aug 2025). The canonical source is `mtnn_it.usp_dimension`; the development copy is `development.usp_dimension`.
+The `usp_dimension` table is **versioned by month** (`tbl_dt`). When calculating commissions for a given period, the script must join against the commission rate card snapshot for that exact month window (e.g. `tbl_dt BETWEEN '20250601' AND '20250630'`). Using the wrong monthly snapshot caused the 21,016 mismatched profile class records in the historical UAT dispute (Aug 2025). The canonical source is `mtnn_it.usp_dimension`; the development copy is `development.usp_dimension`.
 
 ### Partner eligibility classes
 
@@ -190,7 +196,7 @@ The following reference material has been moved out of L1 and into named addenda
 | Section | Topic                                            | Fetch via                              |
 | ------- | ------------------------------------------------ | -------------------------------------- |
 | 3       | Source-system inventory + development schema     | ``get_kb_section("data_architecture")``        |
-| 4       | Column-level table schemas (dev_act, Subscription commission, USP)  | ``get_kb_section("table_schemas")``            |
+| 4       | Column-level table schemas (dev_act, Subscription commission, commission rate card)  | ``get_kb_section("table_schemas")``            |
 | 5       | Commission calculation pseudo-SQL                | ``get_kb_section("calculation_logic")``        |
 | 7       | FTTH subscriptions CDR query                     | ``get_kb_section("ftth_subscriptions_query")`` |
 | 8       | Reconciliation anchors used by Finance           | ``get_kb_section("reconciliation_reference")`` |
@@ -205,13 +211,13 @@ Use these when grounding an answer requires authoritative detail (e.g. a column 
 
 ### Four documented zero-commission causes
 
-The four documented candidate causes of zero commission are: USP snapshot miss; outside the eligibility window; NULL `account_profile_class`; and the known denomination split (Hynex / Hynex_1). A zero commission alone establishes none of them. The cause remains unverified until the affected record and corresponding USP snapshot, confirmed eligibility policy, partner classification or product-master evidence support it.
+The four documented candidate causes of zero commission are: Product not matched to commission rate card; outside the eligibility window; NULL `account_profile_class`; and the known denomination split (Hynex / Hynex_1). A zero commission alone establishes none of them. The cause remains unverified until the affected record and corresponding commission rate card snapshot, confirmed eligibility policy, partner classification or product-master evidence support it.
 
 ### Issue 1: Zero commission records in dev_act
 
-In the historical 200-row sample, a documented explanation for some zero commission records was a USP snapshot miss: the device's `product_name` did not match an `itemdescription` for that period. This historical explanation does not establish the cause for a current dealer or another record. Verify the affected month's USP match before attributing the zero to that cause; a zero rate alone is insufficient evidence.
+In the historical 200-row sample, a documented explanation for some zero commission records was a Product not matched to commission rate card: the device's `product_name` did not match an `itemdescription` for that period. This historical explanation does not establish the cause for a current dealer or another record. Verify the affected month's commission rate card match before attributing the zero to that cause; a zero rate alone is insufficient evidence.
 
-### Issue 2: USP dimension formatting
+### Issue 2: commission rate card formatting
 
 The `mtnn_it.usp_dimension` source stores `unit_selling_price` and `commission_rate` as comma-formatted strings (e.g. `"12,558.14"` with embedded quotes). The ETL must apply `REGEXP_REPLACE(value, ',', '')` and `CAST AS DOUBLE` before using these values. Failure to do this is a silent error — the JOIN will resolve but the numeric value will be wrong.
 
@@ -221,7 +227,7 @@ June 2025 UAT showed minor variance due to transaction count differences between
 
 ### Issue 4: Hynex / Hynex_1 device denomination split
 
-August 2025 UAT flagged variance specifically on two device denominations labelled Hynex and Hynex_1. These are the same physical device registered under slightly different product description strings. Resolution: confirmed as data entry inconsistency in the product master; handled by the USP dimension versioning.
+August 2025 UAT flagged variance specifically on two device denominations labelled Hynex and Hynex_1. These are the same physical device registered under slightly different product description strings. Resolution: confirmed as data entry inconsistency in the product master; handled by the commission rate card versioning.
 
 ### Issue 5: IMEI 14-char truncation in Subscription commission join
 
@@ -241,9 +247,9 @@ Phase 2 of the platform. Where Phase 1 (Sections 1–10) explains **why commissi
 
 **activation_count** — Total number of device activations recorded for a dealer in a reporting month. Includes both qualified and non-qualified activations.
 
-**qualified_activation_count** — Activations where `commission_rate > 0`. This is a recorded positive-commission classification, not independent verification of the USP match or eligibility window.
+**qualified_activation_count** — Activations where `commission_rate > 0`. This is a recorded positive-commission classification, not independent verification of the commission rate card match or eligibility window.
 
-**non_qualified_activation_count** — Activations where `commission_rate = 0`. Root causes are the four documented in Section 6 of this KB: USP snapshot miss, outside eligibility window, NULL `account_profile_class`, or known denomination split issue (Hynex / Hynex_1).
+**non_qualified_activation_count** — Activations where `commission_rate = 0`. Root causes are the four documented in Section 6 of this KB: Product not matched to commission rate card, outside eligibility window, NULL `account_profile_class`, or known denomination split issue (Hynex / Hynex_1).
 
 **qualification_rate_pct** — `qualified_activation_count` divided by `activation_count` expressed as a percentage. Industry expectation is above 80%. Rates below 50% warrant investigation.
 
@@ -257,7 +263,7 @@ Phase 2 of the platform. Where Phase 1 (Sections 1–10) explains **why commissi
 
 **Rule 3 — Volume flat, commission down.** A product mix shift is a possible explanation. Check denomination counts and recorded commission in both periods before stating that it occurred; totals alone do not establish a shift toward lower-value tiers.
 
-**Rule 4 — ALL_UNQUALIFIED exception.** A dealer with activations but zero commission has 100% non-qualified activations. The flag alone does not identify which of the four documented causes applies. A **USP snapshot miss** requires evidence from the affected month's USP match; until checked, describe it as a candidate explanation, not a confirmed cause.
+**Rule 4 — ALL_UNQUALIFIED exception.** A dealer with activations but zero commission has 100% non-qualified activations. The flag alone does not identify which of the four documented causes applies. A **Product not matched to commission rate card** requires evidence from the affected month's commission rate card match; until checked, describe it as a candidate explanation, not a confirmed cause.
 
 **Rule 5 — UNUSUAL_VOLUME exception.** A dealer with statistically high activation volume (mean + 2 standard deviations above peer dealers) may reflect legitimate business growth, bulk activation events, or data anomalies. **This is a flag for investigation, not a finding of wrongdoing.** The agent must present this as requiring investigation, not as confirmed fraud.
 
@@ -462,12 +468,12 @@ amounts, or actual lending recommendations are supported by this demonstration.
 
 For sample-data investigations, calculation decision records supplement the activation
 extract. Each decision identifies the device, account, reporting month, calculation-month
-USP lookup, historical profile lookup, recorded rejection reason and evidence reference.
+commission rate card lookup, historical profile lookup, recorded rejection reason and evidence reference.
 A fingerprint binds it to the original activation fields. These are fictional upstream
 records for demonstrating a fully connected investigation, not a new commission calculation.
 
 Use a recorded rejection reason only when its corresponding evidence supports it: a
-USP snapshot miss requires a no-match lookup for that month; a NULL profile cause requires
+Product not matched to commission rate card requires a no-match lookup for that month; a NULL profile cause requires
 a missing profile at calculation time; the Hynex / Hynex_1 split requires both historical
 labels and a product-master mapping reference. Current profile presence does not disprove
 a documented historical miss. A product name alone proves no split. Missing, stale,
@@ -476,7 +482,7 @@ reason is counted per device; overlapping observations are not additional affect
 The sample generator includes a fictional historical Hynex/Hynex_1 mapping for product
 1283281; this is not an approved live mapping and must never extend live alias tables.
 
-Revenue Assurance should reconcile USP lookup misses against the affected month's snapshot;
+Revenue Assurance should reconcile commission rate card lookup misses against the affected month's snapshot;
 FBB Operations should correct historical profile lookups; product-master owners should
 resolve documented denomination splits. Finance should retain the date evidence for valid
 window exclusions and consider corrected source dates when supplied. These are review

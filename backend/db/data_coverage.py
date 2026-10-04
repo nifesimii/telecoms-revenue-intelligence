@@ -7,7 +7,7 @@ commission impact or remediation can be established:
     record (``NO_INVOICE_RECORD`` rows in the inventory comparison view).
     Affects inventory mismatch determination and may flag false positives.
 
-  * **USP missing** — dealer's ``account_profile_class`` is NULL in the
+  * **Missing partner classification** — dealer's ``account_profile_class`` is NULL in the
     dealer summary. One of the four KB-documented root causes for
     zero-commission records. Affects qualification and commission payout.
 
@@ -38,10 +38,10 @@ _SEVERITY_MEDIUM = 10
 def _severity_for(total_dealers: int) -> tuple[str, str]:
     """Return (label, recommended_action)."""
     if total_dealers <= _SEVERITY_LOW:
-        return "LOW", "Verify whether the affected dealers' data falls outside the IFS / USP snapshot window."
+        return "LOW", "Verify whether the affected dealers' data falls outside the IFS / partner-classification snapshot window."
     if total_dealers <= _SEVERITY_MEDIUM:
-        return "MEDIUM", "Confirm source coverage and the IFS / USP snapshot window for the affected dealers before proposing remediation."
-    return "HIGH", "Prioritize confirmation of source coverage and the IFS / USP snapshot window across the affected dealers; dealer count alone does not diagnose a source fault."
+        return "MEDIUM", "Confirm source coverage and the IFS / partner-classification snapshot window for the affected dealers before proposing remediation."
+    return "HIGH", "Prioritize confirmation of source coverage and the IFS / partner-classification snapshot window across the affected dealers; dealer count alone does not diagnose a source fault."
 
 
 def collect_ifs_missing(mon_period: str) -> list[dict[str, Any]]:
@@ -74,7 +74,7 @@ def collect_profile_class_missing(mon_period: str) -> list[dict[str, Any]]:
     Per KB: a missing account_profile_class is one of the four documented
     root causes for zero-commission records. We surface ALL such dealers
     (not only those with zero-comm records this period) so the data team
-    can fix the upstream USP snapshot before next month's commission run.
+    can fix the upstream partner-classification snapshot before next month's commission run.
     """
     df = execute_query("get_dealer_summary", {"mon_period": mon_period})
     if df.empty:
@@ -153,7 +153,7 @@ def _format_ticket_body(
         lines.append("")
 
     if usp_missing:
-        lines.append("## USP missing — NULL account_profile_class")
+        lines.append("## Missing partner classification — NULL account_profile_class")
         lines.append("")
         lines.append("Per the FBB Commission KB, a missing account_profile_class is ")
         lines.append("one of four documented root causes for zero-commission records. ")
@@ -190,7 +190,7 @@ def _format_ticket_body(
         if total_zero > 0:
             lines.append(
                 f"* {total_zero:,} zero-commission activation records across "
-                f"the USP-missing dealers require record-level eligibility review; "
+                f"the dealers missing partner classification require record-level eligibility review; "
                 f"a profile correction alone does not establish entitlement."
             )
     lines.extend([
@@ -219,7 +219,7 @@ def compile_data_coverage_ticket(
             "severity_action": str,
             "affected_dealers": int,
             "ifs_missing": [...],   # empty list if source excludes IFS
-            "usp_missing": [...],   # empty list if source excludes USP
+            "usp_missing": [...],   # empty list if source excludes partner classification
             "ticket_body":  str,    # markdown
         }``
     """

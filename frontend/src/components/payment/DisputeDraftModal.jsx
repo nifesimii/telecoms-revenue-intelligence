@@ -10,6 +10,7 @@
 // before composing — it's included in the letter so the recipient sees
 // exactly what we're responding to.
 
+import { RATE_CARD_CAUSE, commissionTerminology } from '../../lib/commissionTerminology.js';
 import { useEffect, useId, useRef, useState } from 'react';
 import { draftDisputeResponse } from '../../api/client.js';
 import { formatNGN, formatPeriod } from '../../lib/format.js';
@@ -21,7 +22,7 @@ const POSITION_TONE = {
 };
 
 const CAUSE_LABEL = {
-  USP_SNAPSHOT_MISS: 'USP snapshot miss',
+  USP_SNAPSHOT_MISS: RATE_CARD_CAUSE,
   OUTSIDE_6_MONTH_WINDOW: 'Outside 6-month window',
   NULL_PROFILE_CLASS: 'Missing profile class',
   HYNEX_DENOMINATION_SPLIT: 'Hynex denomination',
@@ -80,7 +81,7 @@ export default function DisputeDraftModal({ open, onClose, row, period }) {
     })
       .then((d) => {
         if (request !== requestRef.current) return;
-        setData(d);
+        setData({ ...d, markdown: commissionTerminology(d.markdown) });
         setComposed(true);
       })
       .catch((e) => {

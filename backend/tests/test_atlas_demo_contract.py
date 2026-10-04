@@ -62,7 +62,7 @@ def test_top_commission_ranking_cannot_change_scope(changes):
 
 
 @pytest.mark.parametrize('topic,required', [
-    ('zero_commission_causes', ['USP snapshot miss', 'Hynex', 'unverified']),
+    ('zero_commission_causes', ['Product not matched to commission rate card', 'Hynex', 'unverified']),
     ('activation_eligibility', ['Demo policy · 180 days', 'calendar days 0–180 inclusive', 'does not establish commission entitlement']),
 ])
 def test_named_policy_topics_use_source_sections_without_model_transcription(monkeypatch, topic, required):

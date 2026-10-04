@@ -23,6 +23,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from backend.terminology import RATE_CARD_MISS_LABEL, RATE_CARD_MISS_EXPLANATION
+
 import pandas as pd
 
 from backend import config
@@ -57,8 +59,8 @@ class ZeroCommissionInputs:
     # Step 2 — rate / eligibility.
     # There is no partner-level contract table. Eligibility is assessed from:
     #   (a) account_profile_class on the activation row (NULL ⇒ root cause), and
-    #   (b) whether the zero-commission products exist in the USP product rate
-    #       card (usp_dimension.item_no) — absence ⇒ "USP snapshot miss".
+    #   (b) whether the zero-commission products exist in the commission rate
+    #       card (usp_dimension.item_no) — absence ⇒ product not matched to commission rate card.
     account_profile_class: str | None    # None / "" ⇒ NULL profile class
 
     # Step 3 — expected commission
@@ -115,7 +117,7 @@ def build_trail(inp: ZeroCommissionInputs) -> VerificationTrail:
     ))
 
     # ── Step 2 — Applicable rate / contract check ────────────────────────
-    # No contract table; assess profile eligibility + USP product coverage.
+    # No contract table; assess profile eligibility + commission rate card product coverage.
     has_profile = bool(inp.account_profile_class)
     usp_miss = bool(inp.products_missing_from_usp)
     rate_ok = has_profile and not usp_miss
@@ -125,7 +127,7 @@ def build_trail(inp: ZeroCommissionInputs) -> VerificationTrail:
     elif usp_miss:
         s2_caveat = (
             f"{len(inp.products_missing_from_usp)} zero-commission product(s) "
-            "absent from the USP rate card — 'USP snapshot miss' root cause."
+            f"— {RATE_CARD_MISS_LABEL}. {RATE_CARD_MISS_EXPLANATION}"
         )
     else:
         s2_caveat = None
@@ -137,14 +139,15 @@ def build_trail(inp: ZeroCommissionInputs) -> VerificationTrail:
         result=(
             f"Profile class '{inp.account_profile_class or '(none)'}'; "
             f"{qualified} of {inp.total_activations} activations carry a non-zero rate; "
-            f"{len(inp.products_missing_from_usp)} zero-comm product(s) missing from USP."
+            f"{len(inp.products_missing_from_usp)} zero-commission product(s) not matched "
+            "to the commission rate card for the calculation month."
         ),
         passed=rate_ok,
         caveat=s2_caveat,
         detail={
             "no_contract_table": True,
             "basis": ("rate is inline on fbb_comm_dev_act rows; eligibility from "
-                      "account_profile_class + usp_dimension product rate card "
+                      "account_profile_class + commission rate card (usp_dimension) "
                       "(item_no) + KB 6-month window"),
             "account_profile_class": inp.account_profile_class,
             "qualified_count": qualified,
@@ -317,10 +320,10 @@ def _conclude(
 # ---------------------------------------------------------------------------
 
 def _load_usp_items() -> set[str]:
-    """Set of product codes (item_no) present in the USP rate card.
+    """Set of product codes (item_no) present in the commission rate card.
 
     Reads usp_dimension directly. On any failure returns an empty set —
-    conservative: every product then reads as 'missing from USP', which
+    conservative: every product then reads as 'not matched to the commission rate card', which
     surfaces as a step-2 caveat rather than a false clean.
     """
     try:
@@ -360,7 +363,7 @@ def gather_inputs(
 ) -> ZeroCommissionInputs:
     """Assemble a :class:`ZeroCommissionInputs` for one partner.
 
-    The optional keyword args let ``run_period`` pass shared lookups (USP
+    The optional keyword args let ``run_period`` pass shared lookups (commission rate card
     item set, payment frame, period list) so we don't refetch them per
     partner.
     """
@@ -378,7 +381,7 @@ def gather_inputs(
 
     profile = summary_row.get("account_profile_class") or None
 
-    # Step 2 — USP product coverage for the partner's zero-comm products.
+    # Step 2 — commission rate card product coverage for the partner's zero-comm products.
     zero_products = _zero_comm_product_codes(str(partner_code), str(mon_period))
     missing_from_usp = [p for p in zero_products if p not in usp_items]
 

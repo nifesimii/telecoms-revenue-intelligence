@@ -113,3 +113,25 @@ def test_duplicate_subject_opens_selected_saved_trail(saved):
     assert response.json()['trail_id'] == '0'
     assert response.json()['conclusion'] == 'RECONCILED'
     assert client.get(BASE + '/wrong', params={**PARAMS, 'trail_id': '0'}).status_code == 404
+
+
+def test_saved_rate_card_presentation_preserves_record_and_quotes(monkeypatch):
+    from copy import deepcopy
+    trail = dict(partner_code='D1', partner_name='Dealer', mon_period='202602', module='zero_commission',
+                 steps=[dict(step=2, name='applicable_rate',
+                             result='USP snapshot miss; `usp_dimension`; "USP snapshot miss"',
+                             checked='Check USP coverage', caveat='USP snapshot miss',
+                             detail={'basis': 'USP dimension snapshot', 'products_missing_from_usp': ['USP'],
+                                     'note': 'Check USP snapshot', 'user_note': 'USP snapshot miss'})])
+    original = deepcopy(trail)
+    monkeypatch.setattr(audit_store, 'get_partner_trail', lambda *args: trail)
+    response = client.get(BASE + '/D1', params={'mon_period': '202602'}).json()
+    step = response['steps'][0]
+    assert step['presentation_result'] == 'Product not matched to commission rate card; `usp_dimension`; "USP snapshot miss"'
+    assert step['presentation_caveat'] == 'Product not matched to commission rate card'
+    assert step['presentation_checked'] == 'Check commission rate card coverage'
+    assert step['presentation_detail']['basis'] == 'commission rate card snapshot'
+    assert step['presentation_detail']['products_missing_from_usp'] == ['USP']
+    assert step['presentation_detail']['user_note'] == 'USP snapshot miss'
+    assert trail == original
+    assert step['result'] == original['steps'][0]['result']

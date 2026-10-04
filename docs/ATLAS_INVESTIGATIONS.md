@@ -40,8 +40,8 @@ Natural-language routing is checked separately from deterministic evidence calcu
 
 Select River Isle Ventures, account 296065, June 2026, in Payments:
 
-1. “Why does this dealer have zero commission?” — 50 records: 48 recorded USP
-   lookup misses and 2 outside the 180-day window.
+1. “Why does this dealer have zero commission?” — 50 records: 48 recorded products not matched to the calculation-month commission
+   rate card and 2 outside the 180-day window.
 2. “Show me the affected records.” — the first 20 records, including invoice and
    activation dates, date gaps, rejection reasons and source references.
 3. “Show the next page.” — a disjoint page, preserving full-population counts.

@@ -12,6 +12,7 @@ import re
 from decimal import Decimal
 from typing import Any
 
+from backend.terminology import RATE_CARD_MISS_LABEL, normalize_generated_prose
 from backend.agent import prompts
 from backend.agent.inference import cached_system
 
@@ -32,15 +33,15 @@ ANSWER_TOOL = {
 _TOKEN = re.compile(r'\{\{(f\d+)\}\}')
 _NUMBER = re.compile(r'(?<![\w])(?:NGN\s*)?-?\d[\d,]*(?:\.\d+)?%?')
 _CAUSES = {
-    'USP_SNAPSHOT_MISS': 'a product lookup miss in the calculation-month USP snapshot',
+    'USP_SNAPSHOT_MISS': RATE_CARD_MISS_LABEL,
     'OUTSIDE_6_MONTH_WINDOW': 'activation outside the invoice-to-activation eligibility window',
     'NULL_PROFILE_CLASS': 'a missing account profile at calculation time',
     'HYNEX_DENOMINATION_SPLIT': 'the Hynex / Hynex_1 denomination split',
 }
 _CAUSE_PATTERNS = {
-    'USP_SNAPSHOT_MISS': r'\b(?:USP|snapshot|lookup miss)',
+    'USP_SNAPSHOT_MISS': r'\b(?:USP|snapshot|lookup miss|(?:commission )?rate[- ]card)',
     'OUTSIDE_6_MONTH_WINDOW': r'\b(?:outside|beyond|exceed\w*)\b.{0,55}\b(?:window|eligib|day|month)',
-    'NULL_PROFILE_CLASS': r'\b(?:missing|null)\b.{0,35}\b(?:profile|account class)',
+    'NULL_PROFILE_CLASS': r'\b(?:missing|null)\b.{0,35}\b(?:profile|account class|partner classification)',
     'HYNEX_DENOMINATION_SPLIT': r'\b(?:Hynex|denomination split)',
 }
 # These represent known unsupported assertions, not a general semantic validator.
@@ -240,7 +241,7 @@ def _candidate(response, facts, scope, context, evidence):
         raise NarrativeGroundingError('Periods must use supplied placeholders')
     if re.search(r'\b(?:account|dealer code|batch|reference)\s*(?:#|:)?\s+[A-Z][A-Z_-]{2,}\b', plain):
         raise NarrativeGroundingError('Identifiers must use supplied placeholders')
-    rendered = _TOKEN.sub(lambda m: ledger[m.group(1)]['display'], answer).strip()
+    rendered = _TOKEN.sub(lambda m: ledger[m.group(1)]['display'], normalize_generated_prose(answer)).strip()
     if re.search(r'https?://|www\.|!\[|\]\(', rendered, re.I) or _INTERNAL.search(rendered):
         raise NarrativeGroundingError('Unsafe source text cannot be published through a fact')
     if _asserted(_UNSUPPORTED_CAUSE, rendered):

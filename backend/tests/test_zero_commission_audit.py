@@ -104,11 +104,11 @@ def test_null_profile_raises_step2_caveat():
     assert "NULL account_profile_class" in s2.caveat
 
 
-def test_usp_miss_raises_step2_caveat():
+def test_rate_card_miss_raises_step2_caveat():
     t = build_trail(_inputs(products_missing_from_usp=["P1", "P2"]))
     s2 = t.step(2)
     assert s2.passed is False
-    assert "USP snapshot miss" in s2.caveat
+    assert "Product not matched to commission rate card" in s2.caveat
 
 
 def test_partial_payment_flags_near_match():
@@ -247,3 +247,13 @@ def test_trails_endpoint_caveat_filter_calls_right_store_fn():
                   "?mon_period=202602&caveat_step=upstream_completeness")
     assert r.status_code == 200
     m.assert_called_once_with("upstream_completeness", "202602")
+
+
+def test_rate_card_cause_uses_product_language_and_preserves_evidence():
+    trail = build_trail(_inputs(products_missing_from_usp=['P1']))
+    step = trail.steps[1]
+    assert 'Product not matched to commission rate card' in step.caveat
+    assert 'for the calculation month' in step.caveat
+    assert 'USP' not in step.result
+    assert step.detail['products_missing_from_usp'] == ['P1']
+    assert trail.steps[2].detail['expected_commission_ngn'] == 5000.0

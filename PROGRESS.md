@@ -3,6 +3,30 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-10-04 (Commission rate-card terminology)
+
+- Adopted “Product not matched to commission rate card” and the calculation-month
+  explanation across Atlas, KB, evidence, dispute drafts, audit reports and current
+  documentation. Coverage tickets separately say “Missing partner classification.”
+- Kept source/persisted `usp*` aliases, numeric selling prices, financial amounts
+  and evidence requirements unchanged. Historical assistant history and saved audit
+  displays/exports use presentation overlays; original storage, user prose, source
+  identifiers, quoted text and code remain intact.
+- Standards review passed. Herdr Spec review identified quote/fence preservation,
+  historical coverage aliases and the API audit appendix; all findings were fixed
+  with regressions and verified on re-review.
+- Full offline backend run: 1,024 passed, 37 skipped, 5 failures while concurrent
+  narrative work and updated expectations changed during collection. All affected
+  files then passed: 74 tests. The isolated terminology-only commit candidate passed
+  138 tests, 1 skipped, excluding the other session’s narrative changes.
+- Frontend: 22 tests and production build passed. All 18 legacy chat browser cases,
+  chat streaming and Payment regressions passed. Rendered chat/audit and downloaded
+  evidence verified at 1440/320px with keyboard disclosure and no runtime errors.
+  Python compilation/diff checks passed; no standalone typecheck is configured.
+- Preserved pre-existing/concurrent work outside the focused commit. No billed
+  provider calls, production writes, migration, push or deployment. Browser fixtures
+  used local mocked evidence; this does not establish real-model answer quality.
+
 ## Session — 2026-10-04 (Claude-composed answers — live acceptance pending)
 
 - Added a shared final Claude composition call after validated scope/evidence,

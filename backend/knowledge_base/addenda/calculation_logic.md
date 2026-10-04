@@ -15,8 +15,8 @@ AND substring(first_activation_date, 1, 6) BETWEEN
     AND replace(cast(mon_period AS varchar), ',', '')
 AND first_activation_date != ''
 
--- Step 2: Join to USP dimension on product_name = itemdescription
--- Filter USP to the reporting month: tbl_dt BETWEEN '{YYYYMM}01' AND '{YYYYMM}30'
+-- Step 2: Join to commission rate card on product_name = itemdescription
+-- Filter commission rate card to the reporting month: tbl_dt BETWEEN '{YYYYMM}01' AND '{YYYYMM}30'
 -- CRITICAL: strip comma formatting from unit_selling_price before casting to DOUBLE
 
 -- Step 3: Deduplicate by IMEI (one activation record per device)

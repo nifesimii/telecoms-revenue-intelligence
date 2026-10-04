@@ -1,3 +1,4 @@
+import { commissionTerminology } from '../../lib/commissionTerminology.js';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useEffect, useRef, useState } from 'react';
 import { getPaymentAccount, getDealerVerification, getAuditTrail } from '../../api/client.js';
@@ -83,7 +84,7 @@ function SavedTrail({ dealerId, period }) {
       <p className="font-semibold">Saved conclusion: {data.conclusion?.replaceAll('_', ' ')} · Confidence {data.confidence || 'unavailable'}</p>
       <p>Source: {data.payment_source || 'unavailable'} · Recorded {data.generated_at ? new Date(data.generated_at).toLocaleString() : 'date unavailable'}</p>
       <p className="text-gray-600">This saved assessment may predate the current payment position. Confidence applies to the saved checks and their evidence; it does not establish current settlement or source completeness.</p>
-      <ol className="space-y-4">{data.steps?.map((step) => <li key={step.step} className="border-l-2 pl-4"><h4 className="font-semibold">{step.step}. {step.name?.replaceAll('_', ' ')}</h4><p>{step.checked}</p><p className="mt-2">{step.result}</p>{step.caveat && <p className="mt-2 text-amber-900">Limitation: {step.caveat}</p>}</li>)}</ol>
+      <ol className="space-y-4">{data.steps?.map((step) => <li key={step.step} className="border-l-2 pl-4"><h4 className="font-semibold">{step.step}. {step.name?.replaceAll('_', ' ')}</h4><p>{commissionTerminology(step.presentation_checked ?? step.checked)}</p><p className="mt-2">{commissionTerminology(step.presentation_result ?? step.result)}</p>{step.caveat && <p className="mt-2 text-amber-900">Limitation: {commissionTerminology(step.presentation_caveat ?? step.caveat)}</p>}</li>)}</ol>
     </>}
   </div>;
 }

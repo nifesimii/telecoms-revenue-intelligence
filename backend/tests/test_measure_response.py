@@ -94,7 +94,7 @@ def test_explanation_compares_requested_amounts_without_claiming_causation():
     assert "202603: NGN 900.00" in answer
     assert "Change (202603 − 202602): NGN -300.00" in answer
     assert "unverified" in answer and "source records" in answer
-    assert "USP snapshot miss" not in answer
+    assert "Product not matched to commission rate card" not in answer
     assert "NGN 2,100.00" not in answer
 
 
@@ -329,10 +329,10 @@ def test_explanation_reports_checked_records_without_inventing_cause():
         'period': '202603', 'dealer_id': 'D1', 'records_checked': 8,
         'records_with_dates': 6, 'total_records': 18, 'source': 'SAMPLE',
         'tool': 'get_zero_commission_records', 'status': 'available',
-        'note': 'Historical USP, profile and denomination evidence and an authoritative eligibility-window rule are needed to establish the cause.'}]
+        'note': 'Historical commission rate card, profile and denomination evidence and an authoritative eligibility-window rule are needed to establish the cause.'}]
     answer = render_measure_response(request, evidence)
     assert '8 of 18' in answer and '6' in answer
-    assert 'Historical USP' in answer
+    assert 'Historical commission rate card' in answer
     assert 'requires supporting source records' not in answer
     assert 'unverified' in answer
     assert 'get_zero' not in answer

@@ -1,3 +1,4 @@
+import { commissionTerminology } from '../../lib/commissionTerminology.js';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
 
 import { getAuditTrail } from '../../api/client.js';
@@ -41,9 +42,9 @@ export default function InventoryEvidence({ subject, period }) {
       <p className="text-sm text-gray-600 mt-2">This saved assessment may precede the current comparison. It does not establish commission on excess units.</p>
       <ol className="mt-5 space-y-5">{(data.steps || []).map((step) => <li key={step.step} className="border-l-2 border-gray-200 pl-4">
         <h4 className="text-sm font-semibold">{step.step}. {STEPS[step.name] || step.name?.replaceAll('_', ' ')}</h4>
-        <p className="mt-1 text-sm text-gray-600">{step.checked}</p>
-        <p className="mt-2 text-sm">{step.result}</p>
-        {step.caveat && <p className="mt-2 text-sm text-amber-900">Caveat: {step.caveat}</p>}
+        <p className="mt-1 text-sm text-gray-600">{commissionTerminology(step.presentation_checked ?? step.checked)}</p>
+        <p className="mt-2 text-sm">{commissionTerminology(step.presentation_result ?? step.result)}</p>
+        {step.caveat && <p className="mt-2 text-sm text-amber-900">Caveat: {commissionTerminology(step.presentation_caveat ?? step.caveat)}</p>}
       </li>)}</ol>
     </>}
     <aside className="mt-5 border-t border-gray-200 pt-4 text-sm text-gray-600">

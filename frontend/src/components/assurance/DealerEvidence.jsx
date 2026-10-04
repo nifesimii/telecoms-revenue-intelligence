@@ -1,3 +1,4 @@
+import { commissionTerminology } from '../../lib/commissionTerminology.js';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
 
 import { getAuditTrail, getDealerVerification, getDealerStatement } from '../../api/client.js';
@@ -34,8 +35,8 @@ export default function DealerEvidence({ finding, period, onClose, onNavigate })
       <p className="mt-1 text-xs text-gray-500">Persisted audit evidence{data.generated_at ? ` · ${new Date(data.generated_at).toLocaleString()}` : ''} · {sourceLabel}. This may precede the current assessment.</p>
       <ol className="mt-3 space-y-3">{(Array.isArray(data.steps) ? data.steps : []).map((step) => <li key={step.step}>
         <p className="text-sm font-medium">{step.step}. {step.name?.replaceAll('_', ' ')}</p>
-        <p className="text-sm text-gray-600 mt-1">{step.result}</p>
-        {step.caveat && <p className="text-sm text-amber-900 mt-1">Caveat: {step.caveat}</p>}
+        <p className="text-sm text-gray-600 mt-1">{commissionTerminology(step.presentation_result ?? step.result)}</p>
+        {step.caveat && <p className="text-sm text-amber-900 mt-1">Caveat: {commissionTerminology(step.presentation_caveat ?? step.caveat)}</p>}
       </li>)}</ol>
     </>}
     {data && finding.module === 'activation' && <>

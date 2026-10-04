@@ -127,6 +127,24 @@ APDP coverage never establishes a balance and cannot use simulated supporting ev
 Data mode stays in workspace provenance rather than repeated answer disclaimers.
 See `docs/ATLAS_INVESTIGATIONS.md` and `data/samples/README.md` for scenario generation.
 
+## Commission rate-card terminology
+
+Readable responses, evidence, tickets and exports use **commission rate card**.
+The canonical cause label is **Product not matched to commission rate card**.
+It means the product could not be matched for the calculation month, so the
+applicable commission amount could not be retrieved. Monthly evidence requirements
+and calculations remain unchanged.
+
+Source and persistence identifiers, including `usp_dimension`, `USP_SNAPSHOT_MISS`,
+`usp_snapshot_period`, `usp_lookup`, `products_missing_from_usp` and `source=usp`,
+remain compatibility aliases. “Unit Selling Price” / `unit_selling_price` retains
+its numeric selling-price meaning. The coverage alias `usp_missing` describes
+**Missing partner classification**, a separate cause.
+
+Historical generated assistant and audit prose receives presentation overlays;
+original stored evidence and user-authored messages remain intact. Normalization
+preserves quotations, code and source identifiers. Legacy input remains accepted.
+
 ## 2. Tech Stack
 
 ### FBB backend (Python)
@@ -232,7 +250,7 @@ backend/
 │   │                        dealer_statement evidence (owed/paid/outstanding per
 │   │                        commission type, plus a plain-sum combined total).
 │   ├── triage.py            TRIAGE_HANDLERS: shape/trim query results for the agent.
-│   ├── data_coverage.py     Compiles the IFS/USP data-gap ServiceNow ticket.
+│   ├── data_coverage.py     Compiles the IFS / partner-classification data-gap ServiceNow ticket.
 │   ├── data_coverage_evidence.py  Projects its two collectors into Atlas
 │   │                        data_coverage evidence (one month, all dealers or one);
 │   │                        a failed collector is unavailable, never zero dealers.
@@ -930,7 +948,7 @@ Things that are deliberately incomplete, temporary, or non-obvious — don't
   reachable (isolated APDP checkouts, testing).
 - **Audit trail confidence on the `zero_commission` module reads LOW
   everywhere on sample data.** This is the module being honest about
-  ambiguous data: sample USP codes don't overlap activation codes
+  ambiguous data: sample commission rate-card product codes don't overlap activation codes
   (trips step 2), simulated payments carry adjacent-period partials
   (trips step 5). Use `payment_reconciliation` for the broader signal
   — on APDP data it produces a rich UNDERPAID / OVERPAID /

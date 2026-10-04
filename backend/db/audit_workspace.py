@@ -2,6 +2,7 @@
 from collections import Counter
 from datetime import datetime, timezone
 from backend.db import audit_store
+from backend.db.audit_presentation import present_saved_trail
 
 FIELDS = ('trail_id', 'partner_code', 'partner_name', 'mon_period', 'module',
           'conclusion', 'confidence', 'caveat_count', 'caveat_steps', 'generated_at',
@@ -16,10 +17,11 @@ MEASURES = {
 
 
 def compact(trail):
+    trail = present_saved_trail(trail)
     details = {}
     limitations = []
     for step in trail.get('steps') or []:
-        detail = step.get('detail') or {}
+        detail = step.get('presentation_detail') or step.get('detail') or {}
         details.update(detail)
         for key, value in detail.items():
             if key in ('note', 'limitation', 'limitations') and value:
@@ -69,11 +71,12 @@ def detail(subject, period, module, trail_id=None):
                       if row['partner_code'] == subject and str(row['trail_id']) == trail_id), None)
     if trail is None:
         return None
+    trail = present_saved_trail(trail)
     result = {**trail, **compact(trail)}
     result['steps'] = []
     for step in trail.get('steps') or []:
         presented = dict(step)
-        text = step.get('result', '')
+        text = step.get('presentation_result', step.get('result', ''))
         if module == 'eligibility_window' and 'should have earned commission' in text:
             presented['presentation_result'] = text.replace('should have earned commission', 'other eligibility checks required')
             presented['presentation_qualification'] = 'Historical wording qualified for display: being inside the window alone does not establish entitlement. The recorded text is preserved.'

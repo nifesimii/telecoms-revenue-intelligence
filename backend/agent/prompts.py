@@ -71,7 +71,7 @@ ADDENDA_REGISTRY: dict[str, dict[str, str | Path]] = {
     },
     "table_schemas": {
         "path": ADDENDA_DIR / "table_schemas.md",
-        "description": "Column-level field definitions for dev_act / Subscription commission / USP",
+        "description": "Column-level field definitions for dev_act / Subscription commission / commission rate card",
     },
     "calculation_logic": {
         "path": ADDENDA_DIR / "calculation_logic.md",
@@ -231,11 +231,15 @@ _BEHAVIOUR_RULES = """\
    what is documented in the knowledge base below or the on-demand \
    addenda. If a variance has no matching KB cause, say so explicitly.
 
+Use commission rate card terminology in readable answers, including when users
+use legacy USP wording. Preserve source identifiers and quoted source text;
+Unit Selling Price remains the numeric selling price, not a commission amount.
+
 4. **Zero-commission classification.** When you list or explain \
    zero-commission records, assign a cause only when record-level evidence \
    supports it. The permitted causes (taken directly from the KB) are:
-     1. **USP snapshot miss** — the device's product_name did not match any \
-        itemdescription in the USP dimension for that period (KB Issue 1).
+     1. **Product not matched to commission rate card** — the device's product_name did not match any \
+        itemdescription in the commission rate card for that period (KB Issue 1).
      2. **Outside the eligibility window** — apply the applicable KB \
         eligibility policy for the current data mode.
      3. **NULL account_profile_class** — distributor_code has no matching \
@@ -391,7 +395,7 @@ placeholder already includes NGN and two decimals: write 'The recorded amount is
 {{f12}}.' and never 'NGN {{f12}}'. Fact placeholders are literal double braces
 around the id, for example {{f7}}, never a copied value. A cause placeholder
 contains its complete plain-English cause phrase, for example 'a product lookup
-miss in the calculation-month USP snapshot'. Write '{{f8}} records had {{f9}}.'
+miss in the calculation-month commission rate card snapshot'. Write '{{f8}} records had {{f9}}.'
 when those facts are the matching cause count and cause. Prefer cause placeholders for
 recorded causes; you may explain their meaning naturally but never invent another
 cause. The evidence's complete-population totals differ from its bounded record

@@ -17,9 +17,9 @@ Column-level field definitions for the three development tables in scope. Fetch 
 | source                | VARCHAR | hardcoded                              | Always 'DEVICE_ACTIVATION'                           |
 | first_activation_date | VARCHAR | device_activation_m                    | Timestamp of first subscriber activation             |
 | mon_period            | BIGINT  | derived                                | Reporting month in YYYYMM format                     |
-| unit_selling_price    | DOUBLE  | usp_dimension (joined on product_name) | Price from USP dimension for that month              |
+| unit_selling_price    | DOUBLE  | usp_dimension (joined on product_name) | Price from commission rate card for that month              |
 | product_denomination  | VARCHAR | usp_dimension                          | Device tier (MIFI, HYNETFLEX, etc.)                  |
-| commission_rate       | DOUBLE  | usp_dimension                          | 10% of unit_selling_price; NULL or 0 if no USP match |
+| commission_rate       | DOUBLE  | usp_dimension                          | 10% of unit_selling_price; NULL or 0 if no commission rate card match |
 | tbl_dt                | BIGINT  | ifs_vw_invoiced_sales_tran_new         | Invoice date from Oracle IFS                         |
 
 
@@ -43,7 +43,7 @@ Column-level field definitions for the three development tables in scope. Fetch 
 | tbl_dt                   | DOUBLE  | ifs_vw_invoiced_sales_tran_new | IFS tbl_dt                                                      |
 
 
-### `mtnn_it.usp_dimension` — USP Dimension
+### `mtnn_it.usp_dimension` — Commission Rate Card
 
 
 | Field                | Type           | Description                                                                                         |

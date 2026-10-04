@@ -339,7 +339,7 @@ def _handle_compile_data_coverage_ticket(
         **payload,
         "drill_down_hint": (
             "Lead with the severity + affected_dealers count. Present the "
-            "IFS and USP dealer tables verbatim if the user wants the full "
+            "IFS and partner-classification dealer tables verbatim if the user wants the full "
             "list, otherwise summarise the top-3 by activation count. "
             "Hand the markdown ticket_body to the user as-is — they paste "
             "it into ServiceNow themselves (Stage 1 — no live submission)."

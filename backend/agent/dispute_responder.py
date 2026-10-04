@@ -12,7 +12,7 @@ The letter has four sections:
   1. Activation evidence    — total / qualified / unqualified / rate
   2. Recorded payment position — source owed / paid / outstanding; activation comparison
   3. Root-cause analysis    — zero-commission records classified into the
-                              four KB root causes (USP snapshot miss /
+                              four KB root causes (Product not matched to commission rate card /
                               outside 6-month window / NULL profile class /
                               Hynex denomination split)
   4. Conditional observation — recorded shortfall / excess / alignment for Finance review

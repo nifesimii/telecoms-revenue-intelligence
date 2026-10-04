@@ -38,7 +38,7 @@ describe those recorded checks; they do not settle that conflict.
   104 records; bounded inspection of 100 records; causes remain unverified
   without the corresponding historical source evidence and confirmed policy.
 - **What are the four documented zero-commission causes?**
-  USP snapshot miss, outside the eligibility window, NULL account profile,
+  Product not matched to commission rate card, outside the eligibility window, NULL account profile,
   and Hynex/Hynex_1 denomination split. These are candidates, not automatic
   attributions to every zero-rate record.
 - **How many activations did this dealer have in July 2026?**

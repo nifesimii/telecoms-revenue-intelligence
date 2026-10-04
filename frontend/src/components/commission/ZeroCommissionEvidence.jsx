@@ -1,3 +1,4 @@
+import { commissionTerminology, RATE_CARD_CAUSE, RATE_CARD_EXPLANATION } from '../../lib/commissionTerminology.js';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useState } from 'react';
 import { getCommissionZeroRecords, getAuditTrail } from '../../api/client.js';
@@ -13,7 +14,7 @@ export default function ZeroCommissionEvidence({ dealerId, period, onNavigate })
   return <section className="overview-surface overflow-hidden" aria-label="Zero-commission evidence">
     <div className="p-5"><h2 className="font-semibold">Zero-commission source records</h2>
       <p className="text-sm text-gray-600 mt-2">These are raw records, not confirmed root-cause classifications. Missing dates remain unknown; a zero rate alone does not establish an error.</p>
-      <p className="text-xs text-gray-500 mt-2">Documented causes: USP snapshot miss, outside the 6-month eligibility window, NULL account profile class, and the known Hynex/Hynex_1 split. Apply only where evidence supports them.</p>
+      <p className="text-xs text-gray-500 mt-2">Documented causes: <span title={RATE_CARD_EXPLANATION}>{RATE_CARD_CAUSE}</span>, outside the 6-month eligibility window, NULL account profile class, and the known Hynex/Hynex_1 split. Apply only where evidence supports them.</p>
     </div>
     {query.isPending && <p role="status" className="p-5">Loading account evidence…</p>}
     {query.isError && <p role="alert" className="p-5 text-red-800">Source records unavailable. <button className="underline" onClick={() => query.refetch()}>Retry</button></p>}
@@ -41,7 +42,7 @@ function SavedVerification({ dealerId, period, onNavigate }) {
   return <div className="mt-4 text-sm"><h3 className="font-medium">Saved conclusion: {data.conclusion?.replaceAll('_', ' ').toLowerCase()}</h3>
     <p className="mt-1 font-medium">Confidence: {data.confidence || 'Not recorded'}</p>
     <p className="text-xs text-gray-500 mt-2">{data.generated_at ? new Date(data.generated_at).toLocaleString() : 'Date not recorded'} · Payment source: {data.payment_source || 'not recorded'}. Saved evidence may predate the current figures.</p>
-    <ol className="mt-4 space-y-3">{(data.steps || []).map((step) => <li key={step.step}><p>{step.step}. {step.result}</p>{step.caveat && <p className="text-amber-900 mt-1">Caveat: {step.caveat}</p>}</li>)}</ol>
+    <ol className="mt-4 space-y-3">{(data.steps || []).map((step) => <li key={step.step}><p>{step.step}. {commissionTerminology(step.presentation_result ?? step.result)}</p>{step.caveat && <p className="text-amber-900 mt-1">Caveat: {commissionTerminology(step.presentation_caveat ?? step.caveat)}</p>}</li>)}</ol>
     <button className="underline mt-4" onClick={() => onNavigate('audit', { module: 'zero_commission', subject: dealerId, search: dealerId })}>Open this audit in workspace →</button>
   </div>;
 }

@@ -9,6 +9,7 @@
 // Loading      → an isolated assistant-styled bubble with three bouncing dots.
 
 import React from 'react';
+import { commissionTerminology } from '../lib/commissionTerminology.js';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatNGN, formatPeriod, NGN_RE, NGN_MATCH_RE } from '../lib/format.js';
@@ -272,7 +273,7 @@ export default function MessageBubble({ message }) {
       <div className="max-w-[90%] bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm text-sm text-gray-800 leading-relaxed">
         {message.incomplete && <p className="text-xs text-amber-800 mb-2">{message.status === 'streaming' ? 'Writing explanation…' : message.status === 'stopped' ? 'Stopped · incomplete answer' : 'Interrupted · incomplete answer'}</p>}
         <ReactMarkdown remarkPlugins={[remarkGfm, remarkVerificationEvidence]} components={mdComponents}>
-          {message.content || ''}
+          {commissionTerminology(message.content || '')}
         </ReactMarkdown>
         {miniTable}
       </div>

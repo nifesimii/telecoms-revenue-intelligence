@@ -1,14 +1,15 @@
 """Business answers from the shared investigation facts, with bounded evidence."""
 from backend.agent.measure_response import _text
+from backend.terminology import RATE_CARD_MISS_LABEL, RATE_CARD_MISS_EXPLANATION
 
 LABELS = {
-    'USP_SNAPSHOT_MISS': 'USP snapshot miss',
+    'USP_SNAPSHOT_MISS': RATE_CARD_MISS_LABEL,
     'OUTSIDE_6_MONTH_WINDOW': 'Outside the eligibility window',
     'NULL_PROFILE_CLASS': 'Missing account profile at calculation time',
     'HYNEX_DENOMINATION_SPLIT': 'Hynex / Hynex_1 denomination split',
 }
 ACTIONS = {
-    'USP_SNAPSHOT_MISS': 'Revenue Assurance: reconcile the affected product codes against the calculation-month USP snapshot and refer confirmed mapping omissions for correction.',
+    'USP_SNAPSHOT_MISS': 'Revenue Assurance: reconcile the affected product codes against the calculation-month commission rate card snapshot and refer confirmed mapping omissions for correction.',
     'OUTSIDE_6_MONTH_WINDOW': 'Finance: retain the invoice and activation dates supporting the exclusion; review only records where the dealer supplies corrected dates.',
     'NULL_PROFILE_CLASS': 'FBB Operations: resolve the historical dealer-profile lookup, then request a review of the affected calculation records.',
     'HYNEX_DENOMINATION_SPLIT': 'Product-master owner: reconcile Hynex / Hynex_1 mappings and return the affected records to Revenue Assurance for review.',
@@ -38,7 +39,7 @@ def render_investigation(result, presentation='explanation'):
         parts.append('| Reason | Records |\n|---|---:|\n' + '\n'.join(
             f"| {LABELS[c['cause']]} | {c['count']:,} |" for c in result['causes']))
         if any(c['cause'] == 'USP_SNAPSHOT_MISS' for c in result['causes']):
-            parts.append('For the snapshot misses, the recorded product lookup found no match in the calculation-month USP snapshot. '
+            parts.append(RATE_CARD_MISS_EXPLANATION + ' '
                          'The calculation decision records identify this lookup failure as the reason for zero commission.')
         counts = result['eligibility']
         parts.append(f"The date check places **{counts['outside']:,} outside** and **{counts['inside']:,} inside** "

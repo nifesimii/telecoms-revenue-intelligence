@@ -79,7 +79,7 @@ def test_multiple_measures_and_zero_commission_why_use_supported_causes(monkeypa
     assert "93" in result["response"] and "unresolved" in result["response"]
     diagnosis = result['raw_data']['measure_evidence']['explanations'][0]['investigation']
     assert sum(c['count'] for c in diagnosis['causes']) + diagnosis['unresolved_count'] == 93
-    assert "USP snapshot miss" in result["response"]
+    assert "Product not matched to commission rate card" in result["response"]
     assert result["tools_called"] == ["get_dealer_summary", "get_zero_commission_records", "investigation_support"]
 
 
@@ -306,5 +306,5 @@ def test_honest_unconfirmed_cause_explanation_can_be_published(monkeypatch):
     answer = 'A USP snapshot miss cannot be confirmed without supporting calculation records.'
     install_scope_provider(monkeypatch, measure_scope('activation_count'), answer=answer)
     result = _run(run_agent('Does the activation count prove a snapshot miss?'))
-    assert result['response'].startswith(answer)
+    assert result['response'].startswith(answer.replace('USP snapshot miss', 'Product not matched to commission rate card'))
     assert evidence_period(result)['total'] == 806

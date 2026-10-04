@@ -104,7 +104,7 @@ most-cited zero-commission root cause per IMEI. Conclusions:
 - `POLICY_VIOLATED` — inside-window records with no other explaining root
   cause (partner may be owed commission on the listed IMEIs)
 - `MIXED_ATTRIBUTION` — inside-window records exist but every one is
-  attributable to another documented cause (NULL profile / USP snapshot
+  attributable to another documented cause (NULL profile / commission rate-card lookup
   miss / Hynex alias) — the label is imprecise, not the underlying
   calculation
 - `INSUFFICIENT_DATA`
@@ -146,7 +146,7 @@ means read the step-by-step before acting.
   APDP remains available as an opt-in integration environment, but is not the
   data source for the GM preview.
 - **`Zero-Commission` module reads LOW confidence everywhere.** Legit:
-  sample USP codes don't overlap activation codes (trips step 2) and
+  sample commission rate-card product codes don't overlap activation codes (trips step 2) and
   sample payments are adjacent-period partials (trips step 5). This is
   the system being honest about ambiguous data, not a bug. Use
   **`Payment Reconciliation`** for the broader signal — on APDP data it

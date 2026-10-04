@@ -25,5 +25,5 @@ test('historical report qualifies entitlement while preserving recorded wording'
   assert.match(report, /other eligibility checks required/);
   assert.match(report, /Being inside the window alone does not establish commission entitlement; other eligibility checks are required\./);
   assert.doesNotMatch(report, /Inside the window; other eligibility checks required/);
-  assert.match(report, /Original recorded wording: should have earned commission/);
+  assert.match(report, /Recorded wording \(current terminology\): should have earned commission/);
 });

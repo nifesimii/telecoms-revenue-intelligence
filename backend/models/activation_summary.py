@@ -28,7 +28,7 @@ class ActivationSummary(BaseModel):
     qualified_activation_count: int = Field(
         ...,
         ge=0,
-        description="Activations where commission_rate > 0 (USP matched and within the 6-month eligibility window).",
+        description="Activations where commission_rate > 0 (commission rate card matched and within the 6-month eligibility window).",
     )
     non_qualified_activation_count: int = Field(
         ...,

@@ -165,3 +165,16 @@ def test_agent_tool_source_ifs_excludes_usp_section() -> None:
     envelope = json.loads(result["content"])
     assert envelope["source"] == "ifs"
     assert envelope["usp_missing"] == []
+
+
+def test_legacy_usp_filter_describes_partner_classification(monkeypatch):
+    from backend.db import data_coverage
+    monkeypatch.setattr(data_coverage, 'collect_profile_class_missing', lambda _: [dict(
+        dealer_id='D1', dealer_name='Dealer', total_activations=3,
+        zero_commission_count=2, commission_ngn=100.0)])
+    ticket = compile_data_coverage_ticket('202603', 'usp')
+    assert ticket['source'] == 'usp'
+    assert ticket['usp_missing'][0]['commission_ngn'] == 100.0
+    assert 'Missing partner classification' in ticket['ticket_body']
+    assert 'USP' not in ticket['ticket_body']
+    assert 'Product not matched to commission rate card' not in ticket['ticket_body']

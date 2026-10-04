@@ -1,3 +1,4 @@
+import { commissionTerminology } from '../../lib/commissionTerminology.js';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { useEffect, useRef } from 'react';
 import { getAuditEvidence } from '../../api/client.js';
@@ -35,12 +36,12 @@ export default function AuditEvidence({ subject, trailId, module, period, onBack
       <ol className="mt-4 space-y-5">{(data.steps || []).map((step) => <li key={step.step} className="border-l-2 border-gray-200 pl-4">
         <h4 className="font-semibold">{step.step}. {label(step.name)}</h4>
         <p className="text-xs text-gray-500 mt-1">Recorded check: {step.passed ? 'passed' : 'did not pass'}</p>
-        <p className="text-sm text-gray-600 mt-2">{step.checked}</p>
-        <p className="text-sm mt-2">{step.presentation_result || step.result}</p>
-        {step.presentation_qualification && <div className="text-sm text-amber-900 mt-2"><p>{step.presentation_qualification}</p><details className="mt-2"><summary className="cursor-pointer">Original recorded wording</summary><p>{step.result}</p></details></div>}
-        {step.caveat && <p className="text-sm text-amber-900 mt-2">Recorded caveat: {step.caveat}</p>}
-        {step.detail?.note && <p className="text-sm text-amber-900 mt-2">Recorded limitation: {step.detail.note}</p>}
-        {step.detail && <details className="text-sm mt-2"><summary className="cursor-pointer">Supporting detail for {label(step.name)}</summary><pre className="whitespace-pre-wrap break-words font-sans mt-2 text-gray-600">{detailText(step.detail)}</pre></details>}
+        <p className="text-sm text-gray-600 mt-2">{commissionTerminology(step.presentation_checked ?? step.checked)}</p>
+        <p className="text-sm mt-2">{commissionTerminology(step.presentation_result || step.result)}</p>
+        {step.presentation_qualification && <div className="text-sm text-amber-900 mt-2"><p>{commissionTerminology(step.presentation_qualification)}</p><details className="mt-2"><summary className="cursor-pointer">Recorded wording (current terminology)</summary><p>{commissionTerminology(step.result)}</p></details></div>}
+        {step.caveat && <p className="text-sm text-amber-900 mt-2">Recorded caveat: {commissionTerminology(step.presentation_caveat ?? step.caveat)}</p>}
+        {step.detail?.note && <p className="text-sm text-amber-900 mt-2">Recorded limitation: {commissionTerminology((step.presentation_detail ?? step.detail).note)}</p>}
+        {step.detail && <details className="text-sm mt-2"><summary className="cursor-pointer">Supporting detail for {label(step.name)}</summary><pre className="whitespace-pre-wrap break-words font-sans mt-2 text-gray-600">{detailText(step.presentation_detail ?? step.detail)}</pre></details>}
       </li>)}</ol>
       <div className="mt-6 pt-5 border-t border-gray-200 text-sm text-gray-600 break-words">
         <h3 className="font-semibold text-gray-900">Provenance</h3>

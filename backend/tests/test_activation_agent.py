@@ -55,9 +55,9 @@ def test_kb_activation_rules_grounded() -> None:
     text = (result["response"] or "").lower()
     assert text, "Live API returned empty response"
 
-    # Must reference USP snapshot miss — the documented Rule-4 root cause.
-    assert "usp" in text and "snapshot" in text, (
-        "Response did not reference USP snapshot miss:\n\n" + result["response"]
+    # Must reference Product not matched to commission rate card — the documented Rule-4 root cause.
+    assert "commission rate card" in text, (
+        "Response did not reference Product not matched to commission rate card:\n\n" + result["response"]
     )
 
     # Must reference the 6-month eligibility window.

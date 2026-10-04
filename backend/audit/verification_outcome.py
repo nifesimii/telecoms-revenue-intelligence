@@ -10,8 +10,8 @@ the result equals that dealer's trail in a full run. Nothing is written. A modul
 a pass. A dealer that is not one of a module's subjects (e.g. no
 zero-commission records) is "no subject", distinct from unavailable.
 
-Step text is copied from the trails unchanged; this module adds no
-thresholds, rules or recalculation.
+Step text uses read-only presentation wording; original trail evidence is
+unchanged. This module adds no thresholds, rules or recalculation.
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ from backend.audit import (
     zero_commission_audit,
 )
 from backend.audit.trail import INSUFFICIENT_DATA
+from backend.terminology import normalize_generated_prose
 
 logger = logging.getLogger(__name__)
 
@@ -126,14 +127,14 @@ def _shown(module: str, text: Any) -> str | None:
         # Same display qualification as the Audit Trails tab (db.audit_workspace.detail):
         # being inside the window alone does not establish entitlement.
         text = text.replace("should have earned commission", "other eligibility checks required")
-    return text
+    return normalize_generated_prose(text)
 
 
 def _trail_summary(module: str, trail: dict) -> dict:
     steps = sorted(trail.get("steps") or [], key=lambda s: int(s["step"]))
     keys = _KEY_STEPS.get(module, set())
     evidence = [{"step": int(s["step"]), "name": str(s["name"]).replace("_", " "),
-                 "result": _shown(module, s.get("result"))}
+                 "result": _shown(module, s.get("presentation_result", s.get("result")))}
                 for s in steps if s["name"] in keys or not s.get("passed")]
     code = str(trail["partner_code"])
     shown_steps = [s for s in steps if s["name"] in keys or not s.get("passed")]
@@ -145,7 +146,7 @@ def _trail_summary(module: str, trail: dict) -> dict:
         "conclusion": trail["conclusion"],
         "confidence": trail["confidence"],
         "evidence": [line for line in evidence if line["result"]],
-        "caveats": [c for c in (_shown(module, s.get("caveat")) for s in steps) if c],
+        "caveats": [c for c in (_shown(module, s.get("presentation_caveat", s.get("caveat"))) for s in steps) if c],
         # Inventory comparison scenarios disclose that they are not authentic records.
         "limited": any(s["detail"].get("scenario_id") for s in steps if isinstance(s.get("detail"), dict)),
         # Recorded text withheld above, disclosed as a count so evidence is never silently shortened.

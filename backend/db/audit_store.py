@@ -26,6 +26,7 @@ import psycopg2.extras
 from backend import config
 from backend.audit.trail import VerificationTrail
 from backend.db.dealer_aliases import mask_saved_dealer_names
+from backend.db.audit_presentation import present_saved_trail
 
 # Full schema DDL — the same script the local docker-compose Postgres runs at
 # init. Executed at first write against a managed DB (e.g. Render Postgres)
@@ -276,7 +277,8 @@ def _query(sql: str, params: dict[str, Any]) -> list[dict[str, Any]]:
             cur.execute(sql, params)
             rows = [dict(r) for r in cur.fetchall()]
         conn.rollback()
-        return [mask_saved_dealer_names(row) for row in rows] if config.USE_SAMPLE_DATA else rows
+        rows = [mask_saved_dealer_names(row) for row in rows] if config.USE_SAMPLE_DATA else rows
+        return [present_saved_trail(row) for row in rows]
     except Exception:
         conn.rollback()
         raise

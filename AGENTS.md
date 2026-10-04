@@ -163,7 +163,7 @@ It does not contain hardcoded business rules — those live in the KB.
 - Codex must never invent rules not documented in the KB
 - When explaining zero-commission records, Codex must use
   only these four root causes from the KB:
-  1. USP snapshot miss
+  1. Product not matched to commission rate card (legacy code: `USP_SNAPSHOT_MISS`)
   2. Outside 6-month eligibility window
   3. NULL account_profile_class
   4. Known denomination split (Hynex/Hynex_1)

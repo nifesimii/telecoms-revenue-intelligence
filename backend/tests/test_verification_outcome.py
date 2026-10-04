@@ -72,11 +72,11 @@ ORACLE_ANSWER = (
     '- Caveat: Possible payment posted under an adjacent period reference; reconcile before finalising the amount bucket.\n'
     '\n'
     '**Zero-Commission**: NOT_PAID (confidence LOW). Checked on request with the current audit code; nothing was saved.\n'
-    "- Step 2, applicable rate: Profile class 'ENTERPRISE BUSINESS'; 445 of 495 activations carry a non-zero rate; 3 zero-comm product(s) missing from USP.\n"
+    "- Step 2, applicable rate: Profile class 'ENTERPRISE BUSINESS'; 445 of 495 activations carry a non-zero rate; 3 zero-commission product(s) not matched to the commission rate card for the calculation month.\n"
     '- Step 3, expected commission: Expected commission NGN 991,086.80 from 445 qualified activations.\n'
     '- Step 4, payment record search: Payment record found: NGN 396,434.72 (DISPUTED).\n'
     '- Step 5, near match: 1 payment(s) to this partner in adjacent periods. Partial payment detected (paid &lt; expected).\n'
-    "- Caveat: 3 zero-commission product(s) absent from the USP rate card — 'USP snapshot miss' root cause.\n"
+    "- Caveat: 3 zero-commission product(s) — Product not matched to commission rate card. The product could not be matched to the commission rate card for the calculation month, so the applicable commission amount could not be retrieved.\n"
     "- Caveat: Possible payment under a different period/reference, or a partial settlement. Manual review before finalising 'not paid'.\n"
     '\n'
     'Demo policy · 180 days: Invoice date to first activation date, calendar days 0–180 inclusive. '
@@ -130,7 +130,7 @@ def test_oracle_dealer_month_runs_every_audit_on_request(no_store):
     zero = by["zero_commission"]["trails"][0]
     assert (zero["conclusion"], zero["confidence"]) == ("NOT_PAID", "LOW")
     assert zero["caveats"] == [
-        "3 zero-commission product(s) absent from the USP rate card — 'USP snapshot miss' root cause.",
+        "3 zero-commission product(s) — Product not matched to commission rate card. The product could not be matched to the commission rate card for the calculation month, so the applicable commission amount could not be retrieved.",
         "Possible payment under a different period/reference, or a partial settlement. "
         "Manual review before finalising 'not paid'."]
 
@@ -538,3 +538,31 @@ def test_agent_answers_verification_from_audit_evidence_not_model_prose(monkeypa
     assert "confidence HIGH" not in response
     assert "paid correctly" not in response
     assert result["tools_called"] == ["audit_trails"]
+
+
+def test_saved_legacy_rate_card_evidence_is_presented_without_mutating_record(monkeypatch):
+    from backend.db.audit_presentation import present_saved_trail
+    recorded = {
+        'partner_code': '296065', 'conclusion': 'NOT_PAID', 'confidence': 'LOW',
+        'run_id': 'legacy-run', 'generated_at': datetime(2026, 8, 7, tzinfo=timezone.utc),
+        'payment_source': 'simulated', 'steps': [{
+            'step': 2, 'name': 'applicable_rate', 'passed': False,
+            'result': 'One product missing from USP.', 'caveat': 'USP snapshot miss.',
+            'detail': {'products_missing_from_usp': ['P1'], 'amount_ngn': 5000.0},
+        }],
+    }
+    original = copy.deepcopy(recorded)
+    saved = present_saved_trail(recorded)
+    monkeypatch.setattr(audit_store, 'healthcheck', lambda: True)
+    monkeypatch.setattr(audit_store, 'get_period_trails',
+                        lambda period, module: [saved] if module == 'zero_commission' else [])
+    for module in vo._ON_REQUEST:
+        monkeypatch.setitem(vo._ON_REQUEST, module, lambda *args: [])
+    evidence = verification_outcome_evidence('202606', '296065')
+    answer = plain(render_measure_response(request_for(), wrap(evidence)))
+    assert 'One product missing from the commission rate card.' in answer
+    assert 'Product not matched to commission rate card.' in answer
+    assert 'USP' not in answer
+    assert recorded == original
+    assert saved['steps'][0]['result'] == original['steps'][0]['result']
+    assert saved['steps'][0]['detail'] == original['steps'][0]['detail']

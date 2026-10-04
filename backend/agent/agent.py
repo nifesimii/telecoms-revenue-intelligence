@@ -139,6 +139,15 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
                     conversation_history: list, *, reporting_period=None,
                     investigation_context=None, emit=None) -> dict:
     # Keep the latest question distinct from contextual workspace terminology.
+    # A presentation overlay keeps historical assistant language current without
+    # mutating original messages or rewriting user-authored questions.
+    from backend.terminology import normalize_generated_prose
+    conversation_history = [
+        {**message, 'content': normalize_generated_prose(message['content'])}
+        if message.get('role') == 'assistant' and isinstance(message.get('content'), str)
+        else dict(message)
+        for message in conversation_history
+    ]
     messages = list(conversation_history)
     messages.append({'role': 'user', 'content': json.dumps({
         'question': user_message, 'reporting_period': reporting_period,

@@ -38,7 +38,7 @@ def test_the_four_causes_have_one_exact_quoteable_source_paragraph():
     paragraph = next((p for p in KB.split('\n\n') if p.startswith('The four documented candidate causes')), '')
     assert paragraph
     result = answer(paragraph)
-    for cause in ['USP snapshot miss', 'eligibility window', 'NULL `account_profile_class`', 'Hynex / Hynex_1']:
+    for cause in ['Product not matched to commission rate card', 'eligibility window', 'NULL `account_profile_class`', 'Hynex / Hynex_1']:
         assert cause in result
     assert 'unverified' in result
 
@@ -50,14 +50,14 @@ def test_non_source_quotes_are_rejected(quote):
 
 
 def test_every_output_paragraph_comes_from_the_kb():
-    for quote in ['POLICY_MET', 'USP snapshot miss', '5G ROUTER']:
+    for quote in ['POLICY_MET', 'Product not matched to commission rate card', '5G ROUTER']:
         result = answer(quote).removeprefix('Documented policy:\n\n')
         assert all(paragraph in KB for paragraph in result.split('\n\n'))
 
 
 def test_a_selected_section_heading_includes_its_explanatory_paragraph():
     result = answer('### Four documented zero-commission causes')
-    assert 'USP snapshot miss' in result
+    assert 'Product not matched to commission rate card' in result
     assert 'cause remains unverified' in result
 
 
@@ -96,7 +96,7 @@ def test_one_commission_definition_does_not_expand_to_the_other_list_item():
 
 
 @pytest.mark.parametrize('topic, required', [
-    ('zero_commission_causes', ['USP snapshot miss', 'NULL `account_profile_class`', 'Hynex / Hynex_1', 'unverified']),
+    ('zero_commission_causes', ['Product not matched to commission rate card', 'NULL `account_profile_class`', 'Hynex / Hynex_1', 'unverified']),
     ('activation_eligibility', ['Finance must confirm', 'reporting month', 'invoice-to-activation']),
 ])
 def test_named_policy_topics_select_exact_source_without_model_transcription(topic, required):

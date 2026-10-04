@@ -19,7 +19,7 @@ later phase once this pattern is validated.
 | # | Step (`name`) | What it checks |
 |---|---|---|
 | 1 | `qualifying_activity` | Did the partner have activation records this period? (source table + counts) |
-| 2 | `applicable_rate` | Valid rate/eligibility? No contract table exists — assessed from `account_profile_class` presence + whether zero-comm products exist in the USP rate card (`usp_dimension.item_no`) + KB 6-month window |
+| 2 | `applicable_rate` | Valid rate/eligibility? No contract table exists — assessed from `account_profile_class` presence + whether zero-comm products exist in the commission rate card (`usp_dimension.item_no`) + KB 6-month window |
 | 3 | `expected_commission` | Computed entitlement + inputs |
 | 4 | `payment_record_search` | Search the payment dataset for this partner/period (source recorded) |
 | 5 | `near_match` | Before concluding "not paid": adjacent-period payments + partial-amount matches |

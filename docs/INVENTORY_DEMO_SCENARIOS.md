@@ -8,7 +8,7 @@ It also records baseline-versus-enriched comparisons so the effect of adding
 purchase evidence can be demonstrated without presenting a fictional ingestion
 event as historical fact.
 
-- Preserve all existing activation, IFS, USP, ORSC and payment fixture bytes.
+- Preserve all existing activation, IFS, commission rate-card, ORSC and payment fixture bytes.
 - Store fictional purchase quantities in `inventory_demo_scenarios.csv`, with
   stable scenario IDs, labels, dealer/product keys and nullable purchased units.
 - Apply only through the sample Inventory query. Existing matching IFS evidence

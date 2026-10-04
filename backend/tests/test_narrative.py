@@ -169,7 +169,7 @@ def test_unconfirmed_cause_can_be_discussed_honestly():
     client, calls = provider(lambda payload, attempt:
         'A USP snapshot miss cannot be confirmed without supporting calculation records.')
     result = compose(client, evidence={'status': 'unavailable'}, validated_context='Calculation evidence unavailable.')
-    assert result.startswith('A USP snapshot miss cannot be confirmed')
+    assert result.startswith('A Product not matched to commission rate card cannot be confirmed')
     assert len(calls) == 1
 
 
@@ -192,3 +192,31 @@ def test_identifier_cannot_introduce_unsupported_documented_cause_or_workflow():
         client, _ = provider(answer)
         with pytest.raises(NarrativeGroundingError):
             compose(client, evidence={'status': 'unavailable', 'dealer_name': injected})
+
+
+def test_rate_card_cause_requires_support_and_keeps_legacy_payload_compatible():
+    import pytest
+    from backend.agent.narrative import NarrativeGroundingError
+    wording = 'Product not matched to commission rate card.'
+    client, _ = provider(lambda payload, attempt: wording)
+    assert compose(client).startswith(wording)
+    client, _ = provider(lambda payload, attempt: wording)
+    with pytest.raises(NarrativeGroundingError):
+        compose(client, evidence={'total_records': 50}, validated_context='No cause verified.')
+
+
+def test_all_four_cause_labels_remain_grounded_in_compatible_evidence():
+    import pytest
+    from backend.agent.narrative import NarrativeGroundingError
+    cases = [
+        ('USP_SNAPSHOT_MISS', 'Product not matched to commission rate card.'),
+        ('OUTSIDE_6_MONTH_WINDOW', 'Activation outside the eligibility window.'),
+        ('NULL_PROFILE_CLASS', 'Missing partner classification.'),
+        ('HYNEX_DENOMINATION_SPLIT', 'The Hynex denomination split.'),
+    ]
+    for cause, text in cases:
+        client, _ = provider(lambda payload, attempt: text)
+        assert compose(client, evidence={'causes': [{'cause': cause}]}, validated_context='').startswith(text)
+        client, _ = provider(lambda payload, attempt: text)
+        with pytest.raises(NarrativeGroundingError):
+            compose(client, evidence={'causes': []}, validated_context='')

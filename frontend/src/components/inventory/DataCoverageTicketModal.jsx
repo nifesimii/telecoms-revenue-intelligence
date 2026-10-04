@@ -37,14 +37,14 @@ export default function DataCoverageTicketModal({ period, open, onClose }) {
       </header>
       <p id="coverage-ticket-scope" className="text-sm text-gray-600">Includes all affected dealers in this reporting period for the selected source. Table filters and the selected dealer-product do not restrict this draft.</p>
       <fieldset className="flex flex-wrap gap-4 text-sm"><legend className="mb-2 font-medium">Data sources</legend>
-        {[['ifs', 'IFS invoices'], ['usp', 'USP qualification'], ['both', 'IFS and USP']].map(([value, label]) => <label key={value} className="flex items-center gap-2">
+        {[['ifs', 'IFS invoices'], ['usp', 'Partner classification'], ['both', 'IFS and partner classification']].map(([value, label]) => <label key={value} className="flex items-center gap-2">
           <input type="radio" name="coverage-source" checked={source === value} onChange={() => { setSource(value); setCopyStatus(''); }} className="accent-mtn-yellow" />{label}
         </label>)}
       </fieldset>
       {query.isFetching && <p role="status" className="text-sm">Compiling coverage draft…</p>}
       {query.isError && <p role="alert" className="text-sm text-red-800">Coverage draft unavailable. <button className="underline" onClick={() => query.refetch()}>Retry draft</button></p>}
       {data && !query.isError && !query.isFetching && <>
-        <p className="text-sm"><strong>{data.affected_dealers.toLocaleString()}</strong> affected dealers · IFS missing: {data.ifs_missing.length} · USP missing: {data.usp_missing.length}</p>
+        <p className="text-sm"><strong>{data.affected_dealers.toLocaleString()}</strong> affected dealers · IFS missing: {data.ifs_missing.length} · Missing partner classification: {data.usp_missing.length}</p>
         {data.affected_dealers === 0 ? <p role="status" className="text-sm text-gray-600">No coverage issues identified for this source and period in the available data.</p> : <>
           <label className="block text-sm font-medium" htmlFor="coverage-ticket-body">Ticket draft</label>
           <textarea ref={body} id="coverage-ticket-body" readOnly value={data.ticket_body} className="w-full h-64 border border-gray-300 rounded-md p-3 text-sm font-mono bg-gray-50" />

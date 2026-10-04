@@ -54,7 +54,7 @@ one month and its devices have synthetic IDs. April–June retain March's histor
 devices/dates as assumed continuing subscriptions. These are demonstration choices,
 not forecasts, commission rules or evidence of actual revenue.
 
-The shared IFS purchase history and USP reference remain unchanged: inventory
+The shared IFS purchase history and commission rate-card reference remain unchanged: inventory
 comparisons continue using the existing cumulative purchase evidence rather than
 inventing duplicate monthly purchases. Added payments derive from each month's
 commission totals and the existing exception/rate mapping. All are SIMULATED.

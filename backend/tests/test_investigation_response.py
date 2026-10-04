@@ -23,7 +23,8 @@ def test_zero_investigation_is_useful_without_repeated_demo_disclaimers(presenta
     evidence = execute_measure_request(scope)
     text = render_measure_response(scope, evidence)
     assert '50' in text
-    assert 'USP snapshot miss' in text
+    assert 'Product not matched to commission rate card' in text
+    assert 'USP' not in text
     assert 'unverified' not in text.lower()
     assert not any(word in text.lower() for word in ('synthetic', 'fake', 'demo policy'))
     assert '296065' in text and '202606' in text
@@ -203,3 +204,18 @@ def test_contradictory_settlement_process_is_not_a_verified_reason(monkeypatch):
         return frame
     monkeypatch.setattr(queries, 'investigation_support', contradictory)
     assert investigate('296065', ['202606'], 'payment')['payment']['process'] is None
+
+
+def test_legacy_assistant_history_is_presented_without_rewriting_user_or_original(monkeypatch):
+    from backend.tests.test_agent import install_scope_provider
+    history = [
+        {'role': 'user', 'content': 'Explain USP snapshot miss and `usp_dimension`.'},
+        {'role': 'assistant', 'content': '48 USP snapshot misses. Source quote: "First line\nUSP snapshot miss". Code: ``first ` USP snapshot miss``.'},
+    ]
+    original = deepcopy(history)
+    calls, _ = install_scope_provider(monkeypatch, request())
+    asyncio.run(run_agent('Explain that again', history, reporting_period='202606'))
+    assert calls[0]['messages'][0] == original[0]
+    assert calls[0]['messages'][1]['content'] == (
+        '48 Product not matched to commission rate card. Source quote: "First line\nUSP snapshot miss". Code: ``first ` USP snapshot miss``.')
+    assert history == original

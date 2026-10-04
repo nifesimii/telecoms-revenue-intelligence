@@ -203,7 +203,7 @@ def build_trail(inp: EligibilityWindowInputs) -> VerificationTrail:
     # For each record inside the window, check if another documented
     # zero-commission root cause explains it (KB Section 6):
     #   - NULL account_profile_class (Issue 6)
-    #   - Product missing from USP rate card (Issue 2 / USP snapshot miss)
+    #   - Product not matched to commission rate card (Issue 2)
     #   - Hynex/Hynex_1 alias split (Issue 4)
     # Records inside the window with NONE of these explanations are the
     # candidate policy violations.
@@ -229,8 +229,8 @@ def build_trail(inp: EligibilityWindowInputs) -> VerificationTrail:
         step=5,
         name="root_cause_attribution",
         checked=("For each inside-window record, check for another documented "
-                 "zero-commission root cause (NULL profile class, USP snapshot "
-                 "miss, known alias split)."),
+                 "zero-commission root cause (NULL profile class, product not matched "
+                 "to commission rate card, known alias split)."),
         result=(
             f"{n_attributed} of {n_inside} inside-window record(s) attributable "
             f"to other root causes; {n_unexplained} unexplained."
