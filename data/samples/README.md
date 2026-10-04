@@ -121,3 +121,27 @@ selected across March activation-volume ranks among codes present January–June
 these identities; selection and scenario assignment do not describe actual dealer
 financial condition. Financial Health figures remain synthetic in every data
 mode, and modeled commission income is independent of commission fixtures.
+
+## Atlas investigation evidence
+
+`commission_calculation_evidence.csv` and `settlement_process_evidence.csv` are
+persisted fictional upstream decision/workflow records. They enrich the existing
+January–June activation/payment fixtures without changing any recorded totals.
+Regenerate with `python -m backend.data.generate_investigation_demo` and restart
+the backend to clear the shared CSV cache. They are never created at request time.
+
+Calculation records bind period, account and device to an activation fingerprint.
+The generator preserves the invoice/activation dates: outside-window records take
+that primary reason; inside-window records demonstrate snapshot misses, historical
+NULL profiles, and a fictional Hynex/Hynex_1 mapping for router code 1283281. The
+current activation extract is not rewritten to pretend its current profile was
+missing. Historical lookup decisions supply that separate evidence. Non-anchor
+records at deterministic intervals remain unresolved controls. These scenario
+choices are not inferred historical facts, new commission rules, or live aliases.
+Account 296065 in June has 48 lookup misses and 2 window exclusions.
+
+Settlement records reconcile exactly to the existing owed/paid amounts and identify
+a batch plus recorded workflow state. They apply only to simulated payments, never
+APDP. Missing, duplicate, stale or contradictory support cannot establish a cause.
+Workspace badges disclose sample data; conversational findings do not repeat the
+label. See `docs/ATLAS_INVESTIGATIONS.md` for behavior and verification.

@@ -1755,3 +1755,17 @@ def has_source_period(source: str, period: str) -> bool:
                        for row in csv.DictReader(handle))
     except (OSError, UnicodeError, csv.Error):
         return False
+
+
+def investigation_support(period: str, dealer_id: str, source: str = 'calculation') -> pd.DataFrame:
+    """Sample source records for an exact account/month; never a live fallback."""
+    if not config.USE_SAMPLE_DATA:
+        raise NotImplementedError('Investigation evidence adapter is sample-only')
+    name = {'calculation': 'commission_calculation_evidence',
+            'settlement': 'settlement_process_evidence'}[source]
+    path = config.PROJECT_ROOT / 'data' / 'samples' / f'{name}.csv'
+    key = (name, None)
+    if key not in _CSV_CACHE:
+        _CSV_CACHE[key] = pd.read_csv(path, dtype=str, keep_default_na=False)
+    frame = _CSV_CACHE[key]
+    return frame[(frame['mon_period'] == period) & (frame['dealer_id'] == dealer_id)].copy()

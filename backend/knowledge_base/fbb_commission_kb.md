@@ -457,3 +457,43 @@ no report, state that financial records are unavailable and identify the missing
 period/dealer records. Do not extrapolate a report from commission activity.
 No credit scores, lending thresholds, funding eligibility, recommended loan
 amounts, or actual lending recommendations are supported by this demonstration.
+
+### Investigation evidence and recorded decisions
+
+For sample-data investigations, calculation decision records supplement the activation
+extract. Each decision identifies the device, account, reporting month, calculation-month
+USP lookup, historical profile lookup, recorded rejection reason and evidence reference.
+A fingerprint binds it to the original activation fields. These are fictional upstream
+records for demonstrating a fully connected investigation, not a new commission calculation.
+
+Use a recorded rejection reason only when its corresponding evidence supports it: a
+USP snapshot miss requires a no-match lookup for that month; a NULL profile cause requires
+a missing profile at calculation time; the Hynex / Hynex_1 split requires both historical
+labels and a product-master mapping reference. Current profile presence does not disprove
+a documented historical miss. A product name alone proves no split. Missing, stale,
+duplicate or contradictory supporting decisions remain unresolved. One recorded primary
+reason is counted per device; overlapping observations are not additional affected devices.
+The sample generator includes a fictional historical Hynex/Hynex_1 mapping for product
+1283281; this is not an approved live mapping and must never extend live alias tables.
+
+Revenue Assurance should reconcile USP lookup misses against the affected month's snapshot;
+FBB Operations should correct historical profile lookups; product-master owners should
+resolve documented denomination splits. Finance should retain the date evidence for valid
+window exclusions and consider corrected source dates when supplied. These are review
+steps, not authorization to pay or a calculation of an additional payable amount.
+
+Month-on-month product contributions explain the arithmetic change in recorded commission.
+Comparing zero-record causes supplies context about exclusions, not an estimate of lost
+commission. Do not turn a volume change or an average rate into a verified business cause.
+
+Payment investigations distinguish recorded owed, recorded paid, and the signed difference.
+A separate settlement-process record may establish that the remaining balance is in a batch
+awaiting release, under dispute review, settled, or under excess-payment review. Its amounts,
+account, period and status must match the payment statement. A status or linked activation
+exception alone cannot establish this workflow cause. Simulated process evidence applies
+only to simulated payments; it must never enrich APDP or live records. Missing statement or
+settlement coverage remains material. No recorded workflow state promises a release date.
+
+Data mode is identified by the workspace. Routine investigation answers should state the
+findings, evidence and next action directly without repeating synthetic/demo disclaimers.
+Retain source provenance in the evidence payload, and answer honestly if asked about it.
