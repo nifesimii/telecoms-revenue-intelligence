@@ -1,5 +1,6 @@
 """Bounded projections of recorded measures; no calculation of entitlements."""
 import re
+from collections import Counter
 from decimal import Decimal
 from math import isfinite
 
@@ -41,6 +42,12 @@ _UNAVAILABLE = {
     'retail_sales_value': ('Retail sales value', 'ngn', 'Retail sales value is unavailable through Atlas. Dated customer transactions with actual selling amounts and returns are missing.'),
     'dealer_purchases': ('Dealer purchases', 'count', 'Complete dealer purchase totals are unavailable. Inventory comparisons omit products without activations and use cumulative purchase snapshots; dated complete purchase records are required.'),
 }
+
+_KPI_STATUS_ORDER = {'unavailable': 0, 'not_meaningful': 1, 'not_applicable': 2, 'available': 3}
+
+
+def _kpi_status_rank(status: str) -> int:
+    return _KPI_STATUS_ORDER.get(status, 0)
 
 
 def _empty(period: str, source: str, note: str, tool: str | None = None) -> dict:
@@ -116,12 +123,14 @@ def _period_evidence(measure: str, period: str, dealer_id: str | None,
                 for kpi in report['kpis']:
                     if selectors['kpi_ids'] and kpi['id'] not in selectors['kpi_ids']:
                         continue
-                    value = (f"{kpi['status']}: {kpi['reason']}" if kpi['status'] != 'available' or kpi['value'] is None
+                    missing = kpi['status'] != 'available' or kpi['value'] is None
+                    value = (f"{kpi['status']}: {kpi['reason']}" if missing
                              else f"NGN {kpi['value']:,.2f}" if kpi['unit'] == 'ngn'
                              else f"{kpi['value']:,.2f}%" if kpi['unit'] == 'percent'
                              else f"{kpi['value']:,.2f}×")
                     rows.append(dict(dealer_id=identity, dealer_name=str(record['dealer_name']),
-                                     dimension=kpi['label'], value=value))
+                                     dimension=kpi['label'], value=value, status=kpi['status'],
+                                     reason=kpi['reason'] or None if missing else None))
                 continue
             if measure == 'financial_statements':
                 report = financial_health.get_report(identity, period)
@@ -159,18 +168,30 @@ def _period_evidence(measure: str, period: str, dealer_id: str | None,
         if inventory:
             # Name which purchase dataset the comparison used, without demo wording.
             label += (' · purchase scenarios' if any(r.get('scenario_id') for r in records) else ' · IFS invoices')
-        if measure != 'financial_statements':
+        status_counts = None
+        if measure == 'financial_kpis':
+            # Missing or not-meaningful ratios answer status questions; lead with
+            # them and count them over every row so the narrative can cite them.
+            rows.sort(key=lambda row: (_kpi_status_rank(row['status']), row['dealer_id'], row['dimension']))
+            counted = Counter((row['dimension'], row['status']) for row in rows if row['status'] != 'available')
+            ordered = sorted(counted, key=lambda pair: (_kpi_status_rank(pair[1]), pair[0]))
+            status_counts = [dict(dimension=dimension, status=status, dealer_count=counted[dimension, status])
+                             for dimension, status in ordered]
+        elif measure != 'financial_statements':
             rows.sort(key=lambda row: (row['value'] if unit == 'text' else -row['value'], row['dealer_id'], row['dimension'] or ''))
         total = None if unit == 'text' or measure == 'financial_statements' else sum((Decimal(str(row['value'])) for row in rows), Decimal(0))
         if denominations:
             total = sum((Decimal(str(record['total_commission_ngn'])) for record in records), Decimal(0))
-        return dict(period=period, status='available', source=label, rows=rows[:100],
+        result = dict(period=period, status='available', source=label, rows=rows[:100],
                     total=None if total is None else int(total) if unit == 'count' else float(total), tool=tool,
                     total_rows=len(rows), truncated=len(rows) > 100,
                     note='Source records cover this month; no completeness claim beyond the supplied dataset.'
                          + (' Purchases are cumulative shared snapshots, not monthly purchases; do not sum across months. '
                             'Only products with activations are compared.' if inventory else '')
                          + (' Showing the first 100 evidence rows; any total includes all matching records.' if len(rows) > 100 else ''))
+        if status_counts is not None:
+            result['kpi_status_counts'] = status_counts
+        return result
     except (ValueError, KeyError, OSError, NotImplementedError):
         return _empty(period, label, 'The requested evidence could not be read or validated.', tool)
 

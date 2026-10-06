@@ -53,6 +53,18 @@ def test_invented_count_is_repaired_before_publication():
     assert len(calls) == 2
 
 
+def test_rejected_narrative_logs_the_fixed_rule_reason(caplog):
+    import logging
+    def answer(payload, attempt):
+        return 'There are five zero records.' if attempt == 1 else 'The recorded product lookup did not find the expected match.'
+    client, calls = provider(answer)
+    with caplog.at_level(logging.INFO, logger='backend.agent.inference'):
+        compose(client)
+    rejected = [json.loads(r.getMessage()) for r in caplog.records if '"narrative_rejected"' in r.getMessage()]
+    assert rejected == [{**rejected[0], 'attempt': 1, 'reason': 'Spelled factual quantities must use supplied placeholders'}]
+    assert len(calls) == 2
+
+
 def test_invalid_candidate_after_repair_never_publishes():
     import pytest
     from backend.agent.narrative import NarrativeGroundingError
@@ -229,3 +241,70 @@ def test_all_four_cause_labels_remain_grounded_in_compatible_evidence():
         client, _ = provider(lambda payload, attempt: text)
         with pytest.raises(NarrativeGroundingError):
             compose(client, evidence={'causes': []}, validated_context='')
+
+
+DSCR_UNAVAILABLE = {'19649', '19742', '19879', '357073', '52023'}
+DEBT_EQUITY_NOT_MEANINGFUL = {'19695', '19897', '319061', '365111', '379102'}
+
+
+def kpi_status_request(monkeypatch):
+    """Real sample-mode evidence for 'Which dealers have missing repayment evidence or ratios that are not meaningful?'"""
+    from backend import config
+    from backend.agent.measure_scope import MeasureScope
+    from backend.agent.measure_response import render_measure_response
+    from backend.db.measure_evidence import collect_measure_evidence
+    monkeypatch.setattr(config, 'USE_SAMPLE_DATA', True)
+    scope = MeasureScope.model_validate(dict(kind='measure', measures=['financial_kpis'], kpi_ids=['dscr', 'debt_to_equity'],
+                                             periods=['202606'], operation='breakdown', breakdown='dealer')).model_dump()
+    evidence = collect_measure_evidence(scope)
+    return scope, {'measure_evidence': evidence}, render_measure_response(scope, evidence)
+
+
+def test_kpi_status_dealers_reach_the_narrative_within_its_visible_rows(monkeypatch):
+    from backend.agent.narrative import _bounded, _facts
+    scope, evidence, _ = kpi_status_request(monkeypatch)
+    projected = _bounded(evidence)
+    period = projected['measure_evidence']['measures'][0]['periods'][0]
+    visible = {(row['dealer_id'], row['status']) for row in period['rows']}
+    assert {(d, 'unavailable') for d in DSCR_UNAVAILABLE} | {(d, 'not_meaningful') for d in DEBT_EQUITY_NOT_MEANINGFUL} <= visible
+    counts = [f for f in _facts(projected, scope, '') if f['path'].endswith('.dealer_count')]
+    assert [f['value'] for f in counts] == [5, 5]
+
+
+def test_kpi_status_answer_citing_count_and_name_placeholders_publishes(monkeypatch):
+    import pytest
+    from backend.agent.narrative import NarrativeGroundingError
+    scope, evidence, context = kpi_status_request(monkeypatch)
+    rows = evidence['measure_evidence']['measures'][0]['periods'][0]['rows']
+    def answer(payload, attempt):
+        ids = {f['path']: f['id'] for f in payload['facts']}
+        base = 'evidence.measure_evidence.measures[0].periods[0]'
+        names = lambda status: ', '.join('{{' + ids[f'{base}.rows[{i}].dealer_name'] + '}}'
+                                         for i, row in enumerate(rows) if row['status'] == status)
+        return ('Debt-service coverage is unavailable for {{' + ids[f'{base}.kpi_status_counts[0].dealer_count'] + '}} dealers: '
+                + names('unavailable') + '. Total liabilities-to-equity is not meaningful for {{'
+                + ids[f'{base}.kpi_status_counts[1].dealer_count'] + '}} dealers: ' + names('not_meaningful') + '.')
+    client, calls = provider(answer)
+    result = compose(client, question='Which dealers have missing repayment evidence or ratios that are not meaningful?',
+                     scope=scope, evidence=evidence, tools_called=['get_financial_health_report'], validated_context=context)
+    status_names = {row['dealer_name'] for row in rows if row['status'] != 'available'}
+    assert len(status_names) == 10 and all(name in result for name in status_names)
+    assert 'unavailable for 5 dealers' in result and len(calls) == 1
+    # The pre-fix failure mode stays rejected: a literal spelled count is not a supplied fact.
+    client, calls = provider(lambda payload, attempt: 'Five dealers have unavailable debt-service coverage.')
+    with pytest.raises(NarrativeGroundingError, match='Spelled factual quantities'):
+        compose(client, scope=scope, evidence=evidence, tools_called=['get_financial_health_report'], validated_context=context)
+    assert len(calls) == 2
+
+
+def test_grounding_errors_carry_only_fixed_rule_text():
+    # Rejection reasons are logged verbatim, so they must never interpolate model output or data.
+    import ast
+    from pathlib import Path
+    import backend.agent.narrative as narrative
+    raises = [node.exc for node in ast.walk(ast.parse(Path(narrative.__file__).read_text()))
+              if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call)
+              and getattr(node.exc.func, 'id', None) == 'NarrativeGroundingError']
+    assert len(raises) > 20
+    assert all(not call.keywords and len(call.args) == 1 and isinstance(call.args[0], ast.Constant)
+               and isinstance(call.args[0].value, str) for call in raises)

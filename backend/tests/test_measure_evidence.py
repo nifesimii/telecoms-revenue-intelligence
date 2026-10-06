@@ -302,3 +302,41 @@ def test_explanation_counts_complete_population_without_inventing_missing_causes
 def test_invalid_financial_line_selector_is_rejected_before_reading_reports():
     with pytest.raises(ValueError, match='selector'):
         request(['financial_statements'], line_ids=['invented_sales_total'])
+
+
+DSCR_UNAVAILABLE = {'19649', '19742', '19879', '357073', '52023'}
+DEBT_EQUITY_NOT_MEANINGFUL = {'19695', '19897', '319061', '365111', '379102'}
+
+
+def _kpi_status_period():
+    return request(['financial_kpis'], dealer_id=None, kpi_ids=['dscr', 'debt_to_equity'])['measures'][0]['periods'][0]
+
+
+def test_financial_kpi_rows_carry_explicit_status_and_lead_with_non_available():
+    period = _kpi_status_period()
+    rows = period['rows']
+    assert len(rows) == 40
+    assert all(row['status'] in {'available', 'unavailable', 'not_meaningful', 'not_applicable'} for row in rows)
+    assert all((row['reason'] is None) == (row['status'] == 'available') for row in rows)
+    assert [row['status'] for row in rows[:10]] == ['unavailable'] * 5 + ['not_meaningful'] * 5
+    assert {row['dealer_id'] for row in rows[:5]} == DSCR_UNAVAILABLE
+    assert {row['dealer_id'] for row in rows[5:10]} == DEBT_EQUITY_NOT_MEANINGFUL
+    assert rows[0]['value'] == 'unavailable: Repayment schedule unavailable.'
+    assert rows[:5] == sorted(rows[:5], key=lambda row: (row['dealer_id'], row['dimension']))
+
+
+def test_financial_kpi_status_counts_are_citable_and_other_measures_omit_them():
+    period = _kpi_status_period()
+    assert period['kpi_status_counts'] == [
+        {'dimension': 'Debt-service coverage', 'status': 'unavailable', 'dealer_count': 5},
+        {'dimension': 'Total liabilities-to-equity', 'status': 'not_meaningful', 'dealer_count': 5}]
+    assert 'kpi_status_counts' not in request(['activation_count'], dealer_id=None)['measures'][0]['periods'][0]
+
+
+
+def test_available_kpi_without_a_value_keeps_its_reason_with_its_display(monkeypatch):
+    report = financial_health.get_report('74050', '202606')
+    kpi = dict(next(k for k in report['kpis'] if k['id'] == 'dscr'), status='available', value=None, reason='No value recorded.')
+    monkeypatch.setattr(financial_health, 'get_report', lambda dealer, period: {**report, 'kpis': [kpi]})
+    row, = request(['financial_kpis'], dealer_id='74050', kpi_ids=['dscr'])['measures'][0]['periods'][0]['rows']
+    assert (row['value'], row['reason']) == ('available: No value recorded.', 'No value recorded.')
