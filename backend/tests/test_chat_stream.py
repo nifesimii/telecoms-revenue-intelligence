@@ -196,11 +196,13 @@ def test_chat_stream_http_contract_and_period(monkeypatch):
 @pytest.mark.parametrize('tool', [None, ToolUseBlock(type='tool_use', id='bad', name='get_dealer_summary', input={'mon_period': '202603'}),
     scope_tool(measures=['invented_sales_metric'])])
 def test_chat_stream_rejects_unscoped_model_figures_without_exposing_draft(monkeypatch, tool):
-    fake = provider(monkeypatch, Stream('Sales are NGN 999,999,999.00.', tool=tool, stop='tool_use' if tool else 'end_turn'))
+    fake = provider(monkeypatch, *[Stream('Sales are NGN 999,999,999.00.', tool=tool, stop='tool_use' if tool else 'end_turn') for _ in range(2)])
     events = collect()
-    assert not any(event['type'] in ('text', 'complete') for event in events)
-    assert events[-1]['type'] == 'error'
-    assert len(fake.calls) == 1
+    assert '999,999,999' not in str(events)
+    assert events[-1]['type'] == 'complete'
+    assert 'cannot resolve' in events[-1]['response']
+    assert events[-1]['tools_called'] == []
+    assert len(fake.calls) == 2
 
 
 def test_chat_stream_measure_status_events_satisfy_browser_contract(monkeypatch):
@@ -475,7 +477,7 @@ def test_chat_stream_ambiguous_dealer_name_asks_and_reads_no_evidence(monkeypatc
     phases = [e['phase'] for e in events if e['type'] == 'status' and e['phase'] != 'thinking']
     assert phases == ['tool_start', 'tool_complete']
     text = ''.join(e['text'] for e in events if e['type'] == 'text')
-    assert text.startswith('Several recorded dealers match “River Isle” for June 2026')
+    assert text.startswith('Several recorded dealers match “River Isle” for 202606')
     assert 'Which dealer do you mean? Give the dealer code.' in text
     assert events[-1]['tools_called'] == ['get_dealer_codes']
 

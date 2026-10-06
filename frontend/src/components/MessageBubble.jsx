@@ -9,6 +9,7 @@
 // Loading      → an isolated assistant-styled bubble with three bouncing dots.
 
 import React from 'react';
+import PortfolioDiscovery from './commission/PortfolioDiscovery.jsx';
 import { commissionTerminology } from '../lib/commissionTerminology.js';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -252,7 +253,7 @@ export function LoadingBubble() {
 // Main bubble
 // ---------------------------------------------------------------------------
 
-export default function MessageBubble({ message }) {
+export default function MessageBubble({ message, onDiscoverySelect, onDiscoveryNextPage, discoveryDisabled }) {
   const isUser = message.role === 'user';
   const miniTable = !isUser
     ? pickDealerMiniTable(message.tools_called, message.raw_data, message.mon_period)
@@ -276,6 +277,7 @@ export default function MessageBubble({ message }) {
           {commissionTerminology(message.content || '')}
         </ReactMarkdown>
         {miniTable}
+        {!message.incomplete && message.raw_data?.portfolio_discovery && <PortfolioDiscovery key={`${message.raw_data.portfolio_discovery.period}:${message.raw_data.portfolio_discovery.offset}`} discovery={message.raw_data.portfolio_discovery} onSelect={onDiscoverySelect} onNextPage={onDiscoveryNextPage} disabled={discoveryDisabled} />}
       </div>
     </div>
   );

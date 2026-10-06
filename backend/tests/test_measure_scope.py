@@ -122,7 +122,7 @@ def test_invalid_scope_never_calls_data_tools(monkeypatch, changes):
     calls = []
     monkeypatch.setattr(agent.tool_executor, 'execute_measure_request', lambda request: calls.append(request))
     result = asyncio.run(agent.run_agent('Activation count for 74050, 202603'))
-    assert result['response'] == agent.FALLBACK_RESPONSE
+    assert 'cannot resolve' in result['response']
     assert calls == []
 
 
@@ -270,7 +270,8 @@ def test_priority_scope_rejects_removed_criterion_and_unscoped_requests(monkeypa
     install_priority(monkeypatch)
     install_plan(monkeypatch, plan)
     result = asyncio.run(agent.run_agent('Is this dealer a priority?'))
-    assert result['response'] == agent.FALLBACK_RESPONSE
+    assert result['tools_called'] == [] and result['raw_data'] == {}
+    assert any(text in result['response'] for text in ('cannot resolve', 'Which exact dealer account'))
 
 
 def test_priority_scope_validates_alone_and_leaves_other_combos_intact():

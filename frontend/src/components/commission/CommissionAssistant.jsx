@@ -4,7 +4,7 @@ import MessageBubble, { LoadingBubble } from '../MessageBubble.jsx';
 import { measureExplanationTiming } from '../../lib/explanationTiming.js';
 import { formatPeriod } from '../../lib/format.js';
 
-export default function CommissionAssistant({ period, comparison, stream, account, inventoryScope, onInventoryScopeClear, prompt = '', onPromptConsumed, composerRequest, onComposerRequestConsumed }) {
+export default function CommissionAssistant({ period, comparison, stream, account, inventoryScope, onInventoryScopeClear, prompt = '', onPromptConsumed, composerRequest, onComposerRequestConsumed, onDiscoverySelect }) {
   const questionId = useId();
   const findingsScope = inventoryScope?.kind === 'findings' ? inventoryScope : null;
   const scope = findingsScope
@@ -76,7 +76,7 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
       : ['Compare profitability and operating cash flow across the 20 dealers.', 'Which dealers have missing repayment evidence or ratios that are not meaningful?']
     : findingsScope ? ['Explain the selected finding and identify the evidence still needed.'] : inventoryScope ? ['Explain this dealer-product Inventory comparison and identify the evidence still needed.'] : stream === 'payment' ? ['Explain this account’s recorded commission, paid amount and outstanding balance. State what remains unverified.'] : stream === 'orsc'
     ? ['Summarise subscription revenue, recorded commission, settlement and outstanding amounts. State any missing evidence.']
-    : [comparison ? 'Explain the commission change by denomination between these periods.' : 'Explain the recorded commission breakdown.', 'Investigate zero-commission records using only documented KB causes. State what remains unverified.'];
+    : [comparison ? 'Explain the commission change by denomination between these periods.' : 'Explain the recorded commission breakdown.', account ? 'Investigate zero-commission records using only documented KB causes. State what remains unverified.' : 'List dealer accounts with zero-commission records, ranked by record count. Let me select an account to investigate.'];
   return <section className="overview-surface overflow-hidden min-w-0" aria-label="Atlas">
     <div className="p-5 border-b border-gray-200">
       <div className="flex justify-between gap-3 items-center"><h2 className="font-semibold">Atlas</h2>{messages.length > 0 && <button className="text-xs underline" disabled={isLoading} onClick={clearChat}>Clear thread</button>}</div>
@@ -87,7 +87,10 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
     <div ref={threadRef} className="p-4 max-h-96 overflow-y-auto commission-conversation" aria-live="polite" aria-busy={isLoading}>
       {!messages.length && <><p className="text-sm text-gray-600 mb-4">Use the records as the starting point. Ask for an explanation when you need more context.</p>
         <div className="space-y-2">{suggestions.map((text) => <button key={text} className="overview-button text-left w-full" onClick={() => { setInput(text); inputRef.current?.focus(); }}>{text}</button>)}</div></>}
-      {messages.map((message, i) => message.status === 'streaming' && !message.content ? null : <MessageBubble key={i} message={message} />)}
+      {messages.map((message, i) => message.incomplete && !message.content ? null : <MessageBubble key={i} message={message}
+        onDiscoverySelect={onDiscoverySelect}
+        onDiscoveryNextPage={(discovery) => sendMessage(`List dealer accounts with zero-commission records for ${formatPeriod(discovery.period)}, starting after the first ${discovery.offset + discovery.limit} accounts, with ${discovery.limit} accounts per page.`, discovery.period)}
+        discoveryDisabled={isLoading || message.raw_data?.portfolio_discovery?.period !== period || stream !== 'activation' || Boolean(inventoryScope || account)} />)}
       {isLoading && !messages.at(-1)?.content && <LoadingBubble />}
     </div>
     {isLoading && <p className="mx-4 mb-3 text-sm text-gray-600" role="status">
@@ -96,7 +99,7 @@ export default function CommissionAssistant({ period, comparison, stream, accoun
         : messages.at(-1)?.phase === 'tool_complete' ? 'Evidence received. Preparing the answer…'
         : 'Atlas is preparing an evidence-based answer…'}
     </p>}
-    {error && <p className="mx-4 mb-3 text-sm text-red-800" role="alert">The explanation could not be completed. Your figures remain available. {error}</p>}
+    {error && <p className="mx-4 mb-3 text-sm text-red-800" role="alert">{error}</p>}
     {canRetry && <button className="overview-button mx-4 mb-3" onClick={retryMessage}>Retry explanation</button>}
     <form ref={composerRef} tabIndex={-1} className="p-4 border-t border-gray-200" onSubmit={submit}>
       <label className="text-xs font-medium text-gray-600" htmlFor={questionId}>Your question</label>

@@ -1495,3 +1495,25 @@ _STANDALONE = {
     "payment_exceptions": ("payment_exceptions", _validate_payment_exceptions, _render_payment_exceptions),
     "investigation_queue": ("queue", _validate_queue, _render_queue),
 }
+
+def render_discovery(discovery):
+    provenance = f"Tool: {', '.join(discovery['tools']) or 'none (source coverage unavailable)'}. Reporting period: {discovery['period']}."
+    if discovery['status'] != 'available':
+        return 'Affected dealer evidence is unavailable for this period; this does not establish zero affected accounts. Please retry or select a period with source coverage.\n\n' + provenance
+    total = discovery['total_count']
+    return (f"{total:,} dealer accounts have zero-commission records. "
+            'Ranked by zero-commission record count descending, then exact account code. '
+            'These counts do not establish root causes or financial exposure. '
+            'Select an exact account to investigate documented causes and what remains unverified.\n\n'
+            + discovery_table(discovery) + '\n\n' + provenance)
+
+
+def discovery_table(discovery):
+    items = discovery['items']
+    if not items:
+        return 'No affected accounts on this page.'
+    start = discovery['offset'] + 1
+    lines = [f"Accounts {start:,}–{start + len(items) - 1:,} of {discovery['total_count']:,}.", '',
+             '| Exact account | Dealer | Zero-commission records |', '| --- | --- | ---: |']
+    lines.extend(f"| {_text(item['dealer_id'])} | {_text(item['dealer_name'])} | {item['zero_commission_count']:,} |" for item in items)
+    return '\n'.join(lines)

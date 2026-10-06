@@ -526,7 +526,7 @@ async def compose_answer(client, run, *, question, history, scope, evidence,
             answer = _candidate(response, facts, scope, context, projected)
         except NarrativeGroundingError as exc:
             run.log('narrative_rejected', attempt=attempt + 1)
-            if attempt:
+            if attempt or not run.claim_recovery('narrative_repair'):
                 raise
             payload['repair'] = str(exc) + '. Compose a fresh answer using the supplied facts.'
             if identifier_placeholders:

@@ -56,6 +56,7 @@ const DEFAULT_FILTERS = { search: '', partner_class: '', status: 'all', sort_by:
 function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptConsumed, onNavigate, navigation, assistantScope, onAssistantScopeClear, selected, setSelected, navigationConsumed }) {
   const [filters, setFilters] = useState(() => ({ ...DEFAULT_FILTERS, search: navigation?.search || navigation?.dealer_id || '' }));
   const [showAssistant, setShowAssistant] = useState(Boolean(pendingPrompt));
+  const [discoveryPrompt, setDiscoveryPrompt] = useState('');
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState('');
   const rowRefs = useRef({});
@@ -95,13 +96,18 @@ function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptC
     setFilters((current) => key === 'reset' ? DEFAULT_FILTERS : { ...current, [key]: value, offset: 0 });
   }
   function back() { returnFocus.current = selected.dealer_id; setSelected(null); }
+  function selectDiscoveryAccount(account, discovery) {
+    if (discovery.period !== period || stream !== 'activation' || discovery.workspace !== 'commission') return;
+    setDiscoveryPrompt('Investigate zero-commission records using only documented KB causes. State what remains unverified.');
+    setSelected(account);
+  }
   async function exportMatching() {
     setExporting(true); setExportError('');
     try { downloadCsv(await getCommissionExport(params), `commission_${stream === 'orsc' ? 'subscription' : stream}_${period}_matching_accounts.csv`); }
     catch { setExportError('The matching-account export is unavailable. Please retry.'); }
     finally { setExporting(false); }
   }
-  if (selected) return <CommissionDetail account={selected} period={period} comparison={comparison} stream={stream} onBack={back} onNavigate={onNavigate} />;
+  if (selected) return <CommissionDetail account={selected} period={period} comparison={comparison} stream={stream} onBack={back} onNavigate={onNavigate} initialPrompt={discoveryPrompt} onInitialPromptConsumed={() => setDiscoveryPrompt('')} />;
   return <>
     {navigationQuery.isError && !navigationConsumed.current && <p role="alert" className="overview-notice text-red-800">Requested account unavailable. <button className="underline" onClick={() => navigationQuery.refetch()}>Retry account</button></p>}
     <div className="flex flex-wrap items-center justify-between gap-3">
@@ -111,7 +117,7 @@ function AccountWorkspace({ period, comparison, stream, pendingPrompt, onPromptC
         <button className="overview-button" aria-expanded={showAssistant} onClick={() => setShowAssistant(!showAssistant)}>{showAssistant ? 'Hide Atlas' : 'Ask Atlas'}</button></div>
     </div>
     {exportError && <p role="alert" className="text-sm text-red-800">{exportError}</p>}
-    {showAssistant && <LazySection label="Atlas"><CommissionAssistant key={assistantScope ? JSON.stringify(assistantScope) : `${period}:${comparison}:${stream}`} inventoryScope={assistantScope} onInventoryScopeClear={onAssistantScopeClear} period={period} comparison={comparison} stream={stream} prompt={pendingPrompt} onPromptConsumed={onPromptConsumed} /></LazySection>}
+    {showAssistant && <LazySection label="Atlas"><CommissionAssistant key={assistantScope ? JSON.stringify(assistantScope) : `${period}:${comparison}:${stream}`} inventoryScope={assistantScope} onInventoryScopeClear={onAssistantScopeClear} period={period} comparison={comparison} stream={stream} onDiscoverySelect={selectDiscoveryAccount} prompt={pendingPrompt} onPromptConsumed={onPromptConsumed} /></LazySection>}
     {query.isError && <div role="alert" className="overview-notice text-red-800">Commission data unavailable. {data ? 'The figures below are the last successful result; they have not been refreshed.' : 'No balance can be established.'} <button className="underline" onClick={() => query.refetch()}>Retry</button></div>}
     {!data && query.isPending && <div role="status" aria-label="Loading commission workspace" className="space-y-5 animate-pulse"><div className="h-56 bg-gray-200 rounded-lg" /><div className="h-80 bg-gray-200 rounded-lg" /></div>}
     {data && <>

@@ -10,10 +10,11 @@ import SubscriptionAmounts from './SubscriptionAmounts.jsx';
 import SubscriptionEvidence from './SubscriptionEvidence.jsx';
 import ZeroCommissionEvidence from './ZeroCommissionEvidence.jsx';
 
-export default function CommissionDetail({ account, period, comparison, stream, onBack, onNavigate }) {
+export default function CommissionDetail({ account, period, comparison, stream, onBack, onNavigate, initialPrompt = '', onInitialPromptConsumed }) {
   const headingRef = useRef(null);
   const [showRecords, setShowRecords] = useState(false);
-  const [prompt, setPrompt] = useState('');
+  const [prompt, setPrompt] = useState(initialPrompt);
+  useEffect(() => { if (initialPrompt) onInitialPromptConsumed?.(); }, [initialPrompt, onInitialPromptConsumed]);
   const params = { mon_period: period, prior_period: comparison || undefined, stream };
   const query = useQuery({ queryKey: ['commission-detail', account.dealer_id, params],
     queryFn: ({ signal }) => getCommissionDetail(account.dealer_id, params, signal) });

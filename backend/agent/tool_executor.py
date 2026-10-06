@@ -522,3 +522,9 @@ def execute_explanation_evidence(
     """Application-only route for scoped finding evidence; not a model tool."""
     from backend.db.explanation_evidence import assemble_finding_evidence
     return assemble_finding_evidence(request, check_active=check_active)
+
+
+def execute_portfolio_discovery(request: dict[str, Any]) -> dict[str, Any]:
+    from backend.db.portfolio_discovery import discover_zero_commission
+    return discover_zero_commission(request['periods'][0], limit=request.get('limit') or 20,
+                                    offset=request.get('discovery_offset', 0))

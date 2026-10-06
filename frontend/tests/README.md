@@ -13,6 +13,7 @@ With sample-mode servers on localhost:5173 and localhost:8000:
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/findings-streaming.mjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/payment-explanation.mjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/chat-streaming.mjs
+PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/atlas-discovery.mjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.mjs node frontend/tests/legacy-chat-normalization.mjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.js node frontend/tests/workspace-navigation.cjs
 PLAYWRIGHT_MODULE=/path/to/playwright/index.js node frontend/tests/workspace-scope-regressions.cjs
@@ -60,3 +61,9 @@ account/period isolation, keyboard opening and 320–1440px layouts. The legacy-
 test needs only Vite and mocks chat transport. It restores v1 threads at the public
 hook boundary and checks display/history/retry normalization, unchanged evidence,
 scope mismatch preservation and literal user prose across v2 reloads.
+
+The discovery regression uses the production Commission workspace with mocked
+NDJSON chat responses. It covers bounded exact-account selection, keyboard
+actions, reporting/comparison context, explicit Send, account/period isolation,
+next-page questions, completed clarification, single operational errors, exact
+Retry, unavailable evidence and 320/768/1024/1440px document containment.

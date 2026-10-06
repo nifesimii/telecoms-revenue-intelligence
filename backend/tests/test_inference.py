@@ -168,7 +168,7 @@ def test_buffered_chat_logs_answer_ready_only_for_success(monkeypatch, caplog, o
 
     response = SimpleNamespace(
         content=[SimpleNamespace(type='tool_use', name='resolve_measure_request',
-                                 input={'kind': 'clarification', 'clarification': 'sales_meaning'})]
+                                 input=({'kind': 'knowledge', 'knowledge_topic': 'zero_commission_causes'} if outcome == 'narrative_error' else {'kind': 'clarification', 'clarification': 'sales_meaning'}))]
         if outcome in {'success', 'narrative_error'} else [],
         stop_reason='tool_use', usage=None,
     )
@@ -190,8 +190,8 @@ def test_buffered_chat_logs_answer_ready_only_for_success(monkeypatch, caplog, o
               if record.name == inference.__name__]
     ready = [event for event in events if event['event'] == 'inference_answer_ready']
     assert not any(event['event'] == 'inference_first_text' for event in events)
-    if outcome == 'success':
-        assert 'By sales, do you mean' in result['response']
+    if outcome in {'success', 'empty_answer'}:
+        assert ('By sales, do you mean' if outcome == 'success' else 'cannot resolve') in result['response']
         assert len(ready) == 1
         assert ready[0]['entry_point'] == 'chat'
         assert ready[0]['duration_seconds'] >= 0

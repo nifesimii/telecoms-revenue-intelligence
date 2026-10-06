@@ -152,4 +152,5 @@ def test_chat_internal_failure_returns_200_with_error(
     assert body["tools_called"] == []
     assert body["raw_data"] == {}
     assert body["error"] is not None
-    assert "simulated agent failure" in body["error"]
+    assert body["error"] == "chat_failed"
+    assert "simulated agent failure" not in str(body)

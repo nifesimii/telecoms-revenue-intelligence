@@ -89,26 +89,27 @@ def test_multiple_measures_and_zero_commission_why_use_supported_causes(monkeypa
     measure_scope("activation_count", periods=["202613"]),
     measure_scope("activation_count", periods=["202603", "202603"]),
 ])
-def test_invalid_scope_fails_in_one_provider_call_without_evidence(monkeypatch, scope):
+def test_invalid_scope_clarifies_after_one_repair_without_evidence(monkeypatch, scope):
     calls, closed = install_scope_provider(monkeypatch, scope)
     result = _run(run_agent("Resolve this requested figure"))
-    assert result == {"response": FALLBACK_RESPONSE, "tools_called": [], "raw_data": {}}
-    assert len(calls) == 1 and closed == [True]
+    assert "cannot resolve" in result["response"]
+    assert result["tools_called"] == [] and result["raw_data"] == {}
+    assert len(calls) == 2 and closed == [True]
 
 
 def test_direct_query_tool_call_is_rejected_without_executing_it(monkeypatch):
     calls, _ = install_scope_provider(monkeypatch, blocks=[SimpleNamespace(
         type="tool_use", id="old-tool", name="get_dealer_summary", input={"mon_period": "202603"})])
     result = _run(run_agent("Summarise commission"))
-    assert result["response"] == FALLBACK_RESPONSE
+    assert "cannot resolve" in result["response"]
     assert result["raw_data"] == {} and result["tools_called"] == []
-    assert len(calls) == 1
+    assert len(calls) == 2
 
 
 def test_api_failure_returns_fallback_and_closes_client(monkeypatch):
     calls, closed = install_scope_provider(monkeypatch, error=RuntimeError("provider unavailable"))
     result = _run(run_agent("Summarise commissions for March 2026"))
-    assert result == {"response": FALLBACK_RESPONSE, "tools_called": [], "raw_data": {}}
+    assert result == {"response": FALLBACK_RESPONSE, "tools_called": [], "raw_data": {}, "error": "chat_failed"}
     assert len(calls) == 1 and closed == [True]
 
 

@@ -62,8 +62,17 @@ class InferenceRun:
         self.started = time.monotonic()
         self.deadline = self.started + REQUEST_DEADLINE_SECONDS
         self.retry_count = 0
+        self.recovery_count = 0
         self.model_calls = 0
         self.chat_text_emitted = False
+
+    def claim_recovery(self, reason: str) -> bool:
+        self.remaining()
+        if self.recovery_count >= 1:
+            return False
+        self.recovery_count += 1
+        self.log('inference_recovery', reason=reason, repair_count=self.recovery_count)
+        return True
 
     def remaining(self) -> float:
         remaining = self.deadline - time.monotonic()
@@ -88,6 +97,8 @@ class InferenceRun:
             return False
         if delay >= self.remaining():
             raise TimeoutError("Provider retry wait exceeds remaining deadline") from None
+        if not self.claim_recovery('provider_retry'):
+            return False
         self.retry_count += 1
         self.log("inference_retry", retry_count=self.retry_count, wait_seconds=delay,
                  error_type=type(exc).__name__)
@@ -187,4 +198,4 @@ class InferenceRun:
 
     def finish(self, status: str) -> None:
         self.log("inference_request", status=status, model_calls=self.model_calls,
-                 retry_count=self.retry_count, duration_seconds=round(time.monotonic() - self.started, 4))
+                 retry_count=self.retry_count, recovery_count=self.recovery_count, duration_seconds=round(time.monotonic() - self.started, 4))

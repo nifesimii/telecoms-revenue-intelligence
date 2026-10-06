@@ -112,6 +112,17 @@ selects the reader; `presentation` selects explanation, records, actions or a de
 letter draft. Exact dealer/month scope and record paging are validated before reads.
 The model resolves intent; it does not create financial figures or rejection reasons.
 
+All-account zero-commission requests use `portfolio_discovery` before an exact
+account investigation. `db/portfolio_discovery.py` reuses one period-scoped
+`get_dealer_summary` read, ranks by zero-commission record count descending and
+exact account code ascending, and returns the complete matching count with a
+bounded page (default 20, maximum 100). It does not load each dealer's detailed
+evidence. Missing source coverage or unreadable evidence remains unavailable,
+with a null count. Counts alone establish neither causes nor financial exposure.
+The response keeps the bounded account table in conversation history; Commission
+provides an explicit exact-account selection action preserving reporting context.
+See `docs/ATLAS_DEMO_RELIABILITY.md` for acceptance evidence and limitations.
+
 `backend/db/investigation_evidence.py` owns the shared result. It reads the existing
 queries plus persisted calculation/workflow fixtures through `db/queries.py`.
 `backend/agent/investigation_response.py` renders business conclusions and next steps.
@@ -577,9 +588,10 @@ workspace navigation, and Stop cancels the active request. Edited questions and
 follow-ups use the evidence-bound ordinary chat path. See `docs/INFERENCE_LATENCY.md` for
 the wire contract, timing measurements and operational validation limits.
 
-Both paths share `agent/inference.py`: SDK retries are disabled, one application
-retry is permitted within a 90-second request deadline, and HTTP timeouts are
-explicit. Stable system/tool prefixes use provider prompt caching. Payload-free
+Both paths share `agent/inference.py`: SDK retries are disabled, and one recovery
+allowance is shared by provider retry, scope repair and narrative repair within
+the existing 90-second request deadline. HTTP timeouts are explicit. Stable
+system/tool prefixes use provider prompt caching. Payload-free
 logs separate evidence, model calls, retries, first text, total duration and
 token/cache usage. Streaming cannot retry after emitting answer text. Blocking
 read-only data work runs in a worker thread; cancellation stops the waiting
@@ -764,10 +776,19 @@ small while keeping the detail reachable.
 scope-resolution call, retrieves and validates bounded evidence, then delegates
 final prose to `agent/narrative.py`. Claude receives structured facts and writes
 the answer; existing builders still own validation, derived arithmetic and tables.
-All ordinary branches share composition, including policy, clarifications and
-unresolved dealer names. A rejected candidate gets at most one repair. The same
-request deadline and single provider retry span all calls. No provisional model
-claims are published. Returned evidence and tool traces retain their public shape.
+Policy and evidence answers use composition. Missing-scope clarifications,
+unresolved dealer names and portfolio discovery complete directly using
+application-owned responses, so asking for an account or period cannot fail
+because another composition call is unavailable. Malformed scope output may be
+repaired once; it must validate before any evidence read. Missing fields never
+authorize an invented account or period. Repaired evidence requests also preserve
+the original independently validated account/name, periods, filter and request
+kind; changed or untrustworthy bounds yield clarification. Scope repair, provider retry and narrative
+repair share one recovery allowance and the original deadline. No provisional
+model claims are published. Returned evidence and tool traces retain their public shape.
+Scope diagnostics record request ID, stage, reason category and repair count;
+they exclude model payloads. Buffered operational failures carry a sanitized
+`error` code, matching the streamed distinction between failure and completion.
 Historical latency measurements describe their recorded protocol, not a guarantee
 for this additional generation step.
 

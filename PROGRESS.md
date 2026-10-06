@@ -3,6 +3,34 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-10-06 (Atlas demo reliability)
+
+- Missing account/period scope now completes a clarification without another
+  composition call. Malformed scope gets at most one repair, sharing the same
+  recovery allowance and deadline with provider retry and narrative repair.
+  Repaired evidence requests must preserve independently validated original
+  account/name, periods, filter and request kind before tools execute.
+- All-account zero-commission discovery uses one existing dealer-summary read,
+  full matching counts and bounded pages (20 default, 100 maximum), ranked by
+  zero-record count then exact account code. Missing evidence stays unavailable;
+  discovery does not classify causes or load detailed evidence per dealer.
+- Commission offers exact-account selection from discovery while retaining
+  period/comparison and isolated chat history. The investigation question is
+  prepared for explicit Send. Clarifications render as complete answers;
+  operational errors appear once with Retry. Narrow selectors show account code first.
+- Standards review passed. Spec review caught repair-time account broadening;
+  the scope-preservation guard and public regressions fixed it, and re-review
+  passed. Final backend suite: **1,106 passed, 37 skipped**. All **17 frontend
+  transport tests**, production build and browser checks passed, including
+  keyboard selection and 320–1440 px layouts. Detailed backend and
+  UI verification is recorded in `docs/ATLAS_DEMO_RELIABILITY.md`.
+- The prepared four-turn real-provider rehearsal remains unrun: automatic
+  approval review rejected transmission of internal prompts, KB and sample
+  evidence to Anthropic. Explicit approval is the remaining acceptance step;
+  offline tests do not establish natural-language provider reliability.
+- Preserved existing presentation and PaymentDetail edits. No deployment,
+  push, production data read or write-back.
+
 ## Session — 2026-10-04 (Commission rate-card terminology)
 
 - Adopted “Product not matched to commission rate card” and the calculation-month

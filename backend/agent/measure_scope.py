@@ -20,7 +20,7 @@ Measure = Literal[
     'inventory_recorded_purchases', 'financial_revenue', 'financial_net_profit',
     'financial_statements', 'financial_kpis', 'investigation_priority',
     'dealer_statement', 'verification_outcome', 'commission_variance', 'data_coverage',
-    'activation_exceptions', 'payment_exceptions', 'investigation_queue', 'dealer_investigation',
+    'activation_exceptions', 'payment_exceptions', 'investigation_queue', 'dealer_investigation', 'portfolio_discovery',
 ]
 # Each answers from one dealer-month evidence read: alone, one dealer, one month.
 DEALER_MONTH_MEASURES = frozenset({'investigation_priority', 'dealer_statement', 'verification_outcome'})
@@ -77,6 +77,7 @@ class MeasureScope(BaseModel):
     investigation_family: Literal['zero_commission', 'commission_variance', 'payment'] | None = Field(
         default=None, description="Only with measures=['dealer_investigation']. Never set alongside the commission_variance measure.")
     presentation: Literal['explanation', 'records', 'actions', 'dealer_draft'] = 'explanation'
+    discovery_offset: int = Field(default=0, ge=0)
     record_offset: int = Field(default=0, ge=0)
 
     @model_validator(mode='after')
@@ -94,6 +95,14 @@ class MeasureScope(BaseModel):
                 self.dealer_id is not None or not self.dealer_name.strip()):
             raise ValueError('A measure dealer is a code or a recorded name, not both')
         dealer = self.dealer_id or self.dealer_name
+        discovery = self.measures == ['portfolio_discovery']
+        if discovery and (self.kind != 'measure' or dealer or len(self.periods) != 1
+                or self.operation != 'total' or self.filter != 'all'):
+            raise ValueError('Discovery requires one month and all accounts')
+        if 'portfolio_discovery' in self.measures and not discovery:
+            raise ValueError('Discovery stands alone')
+        if self.discovery_offset and not discovery:
+            raise ValueError('Discovery paging requires discovery')
         investigation = self.measures == ['dealer_investigation']
         if 'dealer_investigation' in self.measures and not investigation:
             raise ValueError('Investigations stand alone')
@@ -115,7 +124,7 @@ class MeasureScope(BaseModel):
         commission_ranking = (self.kind == 'measure' and self.measures == ['activation_commission']
             and len(self.periods) == 1 and not dealer and self.operation == 'breakdown'
             and self.breakdown == 'dealer' and self.filter == 'all')
-        if self.limit is not None and self.measures != ['investigation_queue'] and not commission_ranking and not investigation:
+        if self.limit is not None and self.measures != ['investigation_queue'] and not commission_ranking and not investigation and not discovery:
             raise ValueError('Limit requires an investigation queue or single-month activation commission ranking')
         if len(set(self.queue_modules)) != len(self.queue_modules):
             raise ValueError('Duplicate queue modules')
@@ -170,6 +179,11 @@ class MeasureScope(BaseModel):
 SCOPE_TOOL = {
     'name': 'resolve_measure_request',
     'description': (
+        'For portfolio/all-account zero-commission investigation or affected account discovery, use '
+        'measures [portfolio_discovery], kind measure, one reporting period, operation total, no dealer. '
+        'This lists affected accounts by zero-record count before exact-account investigation. '
+        'Use discovery_offset and limit (default 20, maximum 100) for subsequent discovery pages. '
+        'Never use discovery to resolve an ambiguous dealer name; clarify or resolve that name. '
         'Interpret the latest question, using active dealer/period context and the conversation. '
         'Return only the requested measures, never suggested proxies or unrelated workspace metrics. '
         'This is an interpretation contract, not a query: do not supply numbers, answers, or tool names. '
@@ -348,3 +362,57 @@ def unsupported_response(scope: MeasureScope, kb: str) -> str:
         if paragraph.startswith(marker + ' — '):
             return paragraph[len(marker + ' — '):].strip()
     raise ValueError('Unsupported capability boundary is missing from the core KB')
+
+def recover_missing_scope(candidate):
+    """Recover missing fields only after all remaining contract fields validate."""
+    if not isinstance(candidate, dict) or candidate.get('kind') != 'measure':
+        return None
+    if not isinstance(candidate.get('measures'), list) or not all(isinstance(item, str) for item in candidate['measures']):
+        return None
+    missing_period = candidate.get('periods', []) == []
+    needs_dealer = bool(set(candidate.get('measures') or []) & {
+        'dealer_investigation', 'investigation_priority', 'dealer_statement',
+        'verification_outcome', 'commission_variance'})
+    missing_dealer = needs_dealer and not candidate.get('dealer_id') and not candidate.get('dealer_name')
+    if not missing_period and not missing_dealer:
+        return None
+    probe = dict(candidate)
+    if missing_period:
+        comparison = candidate.get('investigation_family') == 'commission_variance' or candidate.get('measures') == ['commission_variance']
+        probe['periods'] = ['200001', '200002'] if comparison else ['200001']
+    if missing_dealer:
+        probe['dealer_id'] = 'scope-validation-only'
+    try:
+        MeasureScope.model_validate(probe)
+    except ValueError:
+        return None
+    if missing_period:
+        return MeasureScope(kind='clarification', clarification='period')
+    return MeasureScope(kind='clarification', clarification='dealer', periods=candidate['periods'])
+
+
+def repair_preserves_scope(original: object, repaired: MeasureScope) -> bool:
+    """A repair may fix syntax/intent, but cannot choose fresh evidence bounds.
+
+    Validate the original dimensions independently of its malformed measure.
+    Without those bounds only a response requiring no evidence reads is safe.
+    Name-to-code association remains the application's resolver's responsibility.
+    """
+    if repaired.kind in {'clarification', 'knowledge', 'unsupported'}:
+        return True
+    if not isinstance(original, dict) or original.get('kind') != repaired.kind:
+        return False
+    try:
+        bounds = MeasureScope.model_validate({
+            'kind': 'measure', 'measures': ['activation_count'],
+            'periods': original.get('periods'),
+            'dealer_id': original.get('dealer_id'),
+            'dealer_name': original.get('dealer_name'),
+            'filter': original.get('filter', 'all'),
+        })
+    except ValueError:
+        return False
+    return (bounds.periods == repaired.periods
+            and bounds.dealer_id == repaired.dealer_id
+            and bounds.dealer_name == repaired.dealer_name
+            and bounds.filter == repaired.filter)

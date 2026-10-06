@@ -16,9 +16,9 @@ from typing import Any
 from backend import config
 from backend.agent import prompts, tool_executor
 from backend.agent.measure_scope import (
-    MeasureScope, SCOPE_TOOL, clarification_response, knowledge_response, unsupported_response,
+    MeasureScope, SCOPE_TOOL, clarification_response, knowledge_response, unsupported_response, recover_missing_scope, repair_preserves_scope,
 )
-from backend.agent.measure_response import render_measure_response, render_dealer_codes, render_affiliation
+from backend.agent.measure_response import render_measure_response, render_dealer_codes, render_affiliation, render_discovery
 from backend.agent.dealer_resolution import resolve_dealer_name
 from backend.agent.inference import InferenceRun, cached_system, new_client
 from backend.agent.narrative import compose_answer, NarrativeGroundingError, NARRATIVE_FALLBACK
@@ -55,7 +55,7 @@ async def run_agent(user_message: str, conversation_history: list | None = None,
         raise
     except Exception as exc:
         run.log("inference_failure", error_type=type(exc).__name__)
-        return _error_response()
+        return {**_error_response(), 'error': 'deadline_exceeded' if isinstance(exc, TimeoutError) else 'chat_failed'}
     finally:
         run.finish(status)
         if client is not None:
@@ -160,17 +160,39 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
         run.remaining()
 
     generate = run.create if emit is None else run.create_streamed
-    response = await generate(
-        client, **({'emit': discard_draft} if emit is not None else {}),
-        model=MODEL_NAME, max_tokens=MAX_TOKENS,
-        system=cached_system(prompts.get_measure_system_prompt()),
-        tools=[SCOPE_TOOL], tool_choice={'type': 'tool', 'name': SCOPE_TOOL['name']},
-        messages=messages,
-    )
-    blocks = [block for block in response.content if block.type == 'tool_use']
-    if response.stop_reason != 'tool_use' or len(blocks) != 1 or blocks[0].name != SCOPE_TOOL['name']:
-        raise ValueError('Provider did not return one complete scope contract')
-    scope = MeasureScope.model_validate(blocks[0].input)
+    scope = None
+    original_candidate = None
+    for attempt in range(2):
+        response = await generate(
+            client, **({'emit': discard_draft} if emit is not None else {}),
+            model=MODEL_NAME, max_tokens=MAX_TOKENS,
+            system=cached_system(prompts.get_measure_system_prompt()),
+            tools=[SCOPE_TOOL], tool_choice={'type': 'tool', 'name': SCOPE_TOOL['name']},
+            messages=messages,
+        )
+        blocks = [block for block in response.content if block.type == 'tool_use']
+        candidate = (blocks[0].input if response.stop_reason == 'tool_use' and len(blocks) == 1
+                     and blocks[0].name == SCOPE_TOOL['name'] else None)
+        if attempt == 0:
+            original_candidate = candidate
+        try:
+            scope = MeasureScope.model_validate(candidate)
+            if attempt and not repair_preserves_scope(original_candidate, scope):
+                run.log('scope_validation', stage='scope', reason='repair_scope_changed', repair_count=attempt)
+                scope = MeasureScope(kind='clarification', clarification='request')
+        except ValueError:
+            scope = recover_missing_scope(candidate)
+            reason = 'missing_scope' if scope is not None else 'invalid_contract'
+            run.log('scope_validation', stage='scope', reason=reason, repair_count=attempt)
+            if scope is None:
+                if attempt or not run.claim_recovery('scope_repair'):
+                    scope = MeasureScope(kind='clarification', clarification='request')
+                else:
+                    messages.append({'role': 'user', 'content':
+                        'Return one valid scope contract for the original request. If information is missing, '
+                        'use clarification. Do not invent an account, period, or broaden scope.'})
+                    continue
+        break
     request = scope.model_dump()
     tools_called, raw_data = [], {}
 
@@ -194,10 +216,27 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
             answer = NARRATIVE_FALLBACK
         if emit is not None and answer != NARRATIVE_FALLBACK:
             await emit({'type': 'text', 'text': answer})
-        return {'response': answer, 'tools_called': tools_called, 'raw_data': raw_data}
+        return {'response': answer, 'tools_called': tools_called, 'raw_data': raw_data,
+                'error': 'composition_failed' if answer == NARRATIVE_FALLBACK else None}
 
     if scope.kind == 'clarification':
         answer = clarification_response(scope)
+        if emit is not None:
+            await emit({'type': 'text', 'text': answer})
+        return {'response': answer, 'tools_called': [], 'raw_data': {}}
+    elif scope.measures == ['portfolio_discovery']:
+        if emit is not None:
+            await emit({'type': 'status', 'phase': 'tool_start', 'reset': True, 'tool': MEASURE_STATUS_TOOL})
+        discovery = await asyncio.to_thread(tool_executor.execute_portfolio_discovery, request)
+        run.remaining()
+        answer = render_discovery(discovery)
+        result = {'response': answer, 'tools_called': discovery['tools'],
+                  'raw_data': {'portfolio_discovery': discovery}}
+        if emit is not None:
+            await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
+                        'tool': MEASURE_STATUS_TOOL, 'tools_called': result['tools_called'], 'raw_data': result['raw_data']})
+            await emit({'type': 'text', 'text': answer})
+        return result
     elif scope.kind == 'unsupported':
         answer = unsupported_response(scope, prompts.KB_CONTENT)
     elif scope.kind == 'knowledge':
@@ -231,7 +270,9 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
                 if emit is not None:
                     await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
                                 'tool': MEASURE_STATUS_TOOL, 'tools_called': tools_called, 'raw_data': raw_data})
-                return await finish_answer(resolution.text)
+                if emit is not None:
+                    await emit({'type': 'text', 'text': resolution.text})
+                return {'response': resolution.text, 'tools_called': tools_called, 'raw_data': raw_data}
             request = {**request, 'dealer_id': resolution.dealer_id, 'dealer_name': None}
         evidence = await asyncio.to_thread(tool_executor.execute_measure_request, request)
         run.remaining()

@@ -128,19 +128,19 @@ async def chat(request: ChatRequest) -> ChatResponse:
             investigation_context=request.investigation_context,
         )
     except Exception as exc:  # noqa: BLE001 — never 500 on /chat
-        logger.exception("POST /chat: run_agent raised")
+        logger.error("POST /chat: run_agent raised (%s)", type(exc).__name__)
         return ChatResponse(
             response=CHAT_FAILURE_MESSAGE,
             tools_called=[],
             raw_data={},
-            error=f"{type(exc).__name__}: {exc}",
+            error="chat_failed",
         )
 
     return ChatResponse(
         response=result.get("response", ""),
         tools_called=list(result.get("tools_called", [])),
         raw_data=dict(result.get("raw_data", {})),
-        error=None,
+        error=result.get("error"),
     )
 
 
