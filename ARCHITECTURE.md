@@ -119,6 +119,9 @@ exact account code ascending, and returns the complete matching count with a
 bounded page (default 20, maximum 100). It does not load each dealer's detailed
 evidence. Missing source coverage or unreadable evidence remains unavailable,
 with a null count. Counts alone establish neither causes nor financial exposure.
+The discovery contract accepts `all` and `zero_commission` as equivalent filter
+values because the affected-account selection is intrinsic to this measure;
+other filters remain invalid.
 The response keeps the bounded account table in conversation history; Commission
 provides an explicit exact-account selection action preserving reporting context.
 See `docs/ATLAS_DEMO_RELIABILITY.md` for acceptance evidence and limitations.

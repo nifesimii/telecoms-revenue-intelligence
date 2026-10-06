@@ -222,3 +222,20 @@ def test_legacy_assistant_history_is_presented_without_rewriting_user_or_origina
     assert calls[0]['messages'][1]['content'] == (
         '48 Product not matched to commission rate card. Source quote: "First line\nUSP snapshot miss". Code: ``first ` USP snapshot miss``.')
     assert history == original
+
+
+def test_mixed_supported_causes_need_additional_evidence_only_for_unresolved_records():
+    scope = {**request(), 'dealer_id': '74050'}
+    evidence = execute_measure_request(scope)
+    investigation = evidence['investigation']
+    assert investigation['total_records'] == 104
+    assert investigation['unresolved_count'] == 1
+    assert {cause['cause']: cause['count'] for cause in investigation['causes']} == {
+        'USP_SNAPSHOT_MISS': 23, 'OUTSIDE_6_MONTH_WINDOW': 50,
+        'NULL_PROFILE_CLASS': 3, 'HYNEX_DENOMINATION_SPLIT': 27,
+    }
+    text = render_measure_response(scope, evidence)
+    assert 'Additional calculation evidence is needed for the 1 unresolved record.' in text
+    assert 'The other 103 records have supported cause attributions.' in text
+    assert 'eligibility alone does not establish entitlement' in text.lower()
+    assert 'Inside-window records still require supporting calculation evidence' not in text

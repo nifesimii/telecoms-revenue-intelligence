@@ -50,7 +50,11 @@ def render_investigation(result, presentation='explanation'):
         if result['unresolved_count']:
             actions.append(f"Revenue Assurance: obtain calculation evidence for the {result['unresolved_count']:,} unresolved records; no cause has been assigned to them.")
         if result['unresolved_count']:
-            parts.append('Inside-window records still require supporting calculation evidence; eligibility alone does not establish entitlement.')
+            unresolved = result['unresolved_count']
+            record_label = 'record' if unresolved == 1 else 'records'
+            parts.append(f'Additional calculation evidence is needed for the {unresolved:,} unresolved {record_label}. '
+                         f'The other {explained:,} records have supported cause attributions. '
+                         'Eligibility alone does not establish entitlement.')
     elif family == 'commission_variance':
         variance = result['variance']
         totals = variance['totals']

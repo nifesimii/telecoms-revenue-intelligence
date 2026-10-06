@@ -37,7 +37,7 @@ Observed offline results:
 - `USE_SAMPLE_DATA=true PAYMENT_SOURCE=simulated .venv/bin/python -m pytest backend/tests/test_atlas_demo_acceptance.py -q`: **22 passed** (17 shortcut contracts and five cross-stage budget/telemetry checks).
 - Focused scope/inference/investigation run before the final five added checks: **58 passed**.
 - `... pytest backend/tests/test_chat_stream.py backend/tests/test_portfolio_discovery.py -q`: **42 passed**.
-- Final full backend suite against the reviewed source: **1,106 passed, 37 skipped** in 397.71 s (`/private/tmp/atlas-reliability-final-tests.log`). Command: `USE_SAMPLE_DATA=true PAYMENT_SOURCE=simulated FBB_AUDIT_PG_HOST=127.0.0.1 FBB_AUDIT_PG_PORT=1 .venv/bin/python -m pytest -q --durations=10`. The skips are existing opt-in checks. Compilation and diff checks passed.
+- Full backend suite after the live-discovered filter fix: **1,117 passed, 37 skipped** in 277.29 s (`/private/tmp/atlas-reliability-approved-final-tests.log`). Command: `USE_SAMPLE_DATA=true PAYMENT_SOURCE=simulated FBB_AUDIT_PG_HOST=127.0.0.1 FBB_AUDIT_PG_PORT=1 .venv/bin/python -m pytest -q`. The skips are existing opt-in checks. The subsequent wording-only evidence caveat correction passed **43 focused investigation/narrative tests** and the targeted live recheck below. Compilation and diff checks passed.
 - Frontend: `node --test frontend/tests/*.test.mjs` **17 passed**; production build passed. No separate typechecking command is configured.
 - Production Commission browser regression `atlas-discovery.mjs` passed at **320, 768, 1024 and 1440 px**: keyboard selection, exact account and separate reporting/comparison context, explicit Send without duplicate submission, bounded paging, completed clarification, one operational error with exact Retry, unavailable evidence and stale-period isolation. Screenshots were inspected; account codes appear first in native selector labels so they remain visible at narrow widths.
 - Existing `chat-streaming.mjs` and all four `payment-explanation.mjs` browser cases passed, covering Stop, disconnect, successful-history exclusion and scoped conversation behavior. These browser checks intercept provider transport; they are not live-provider evidence.
@@ -64,25 +64,54 @@ Independent Standards review found no actionable findings. Spec review initially
 reproduced an exact-account request becoming portfolio discovery during repair.
 The deterministic scope-preservation guard fixed it; the same reproduction now
 returns clarification, no tools and empty evidence after two provider calls.
-Spec re-review found no remaining actionable findings; its independent scope and
-acceptance check passed 39 tests. Live-provider acceptance remains pending below.
+Spec re-review found no remaining scope findings; its independent scope and
+acceptance check passed 39 tests. The later filter-alias and evidence-wording
+changes also passed Standards review. Live findings and corrections are recorded below.
 
 ## Real-provider rehearsal
 
-**Not run: automatic approval review rejected the provider command before execution.** No real-provider calls or live latency measurements were produced in this implementation session.
+**Completed after the user's explicit approval.** The initial automatic review
+blocked external transmission; no call ran until the user replied “yes please
+you have all the approval you need.” Runs used sample/simulated guards and the
+configured Anthropic Messages client. Credentials were never printed. No approval
+remains pending for this rehearsal.
 
-The prepared rehearsal is `/private/tmp/atlas_reliability_live.py`, guarded by `USE_SAMPLE_DATA=true` and `PAYMENT_SOURCE=simulated`. It makes at most four streamed turns: the original portfolio question; a selected-account follow-up using the first discovery account (or explicitly known demo account 74050 after a clarification); a portfolio paraphrase; and an account-74050 paraphrase. It would send internal prompts, the KB and relevant sample evidence to Anthropic’s Messages API (`https://api.anthropic.com/v1/messages`) using the configured application client. Credentials are read by the existing application and are never printed. Full responses would be stored locally for factual review.
+The first four-turn run exposed an unnecessary clarification for the original
+wording (6.60 s); its other three turns succeeded. A local scope capture showed
+`portfolio_discovery` with `filter: zero_commission`, rejected twice despite being
+equivalent to discovery's intrinsic selection. The contract now accepts `all` or
+`zero_commission` for this measure only, with unrelated filters still rejected.
+The captured regression passed, and the original question completed in one call
+at 3.87 s. Scope-repair boundaries remain unchanged.
 
-Automatic review reason: “the user authorized implementation but not exporting this potentially sensitive payload to that destination.” The earlier diagnostic approval recorded in the handoff was not treated as unrestricted export permission. No alternate execution route or retry was attempted. Explicit approval for these four provider turns is required to complete this portion of the acceptance gate.
+The repeated four-turn rehearsal produced the results below. Factual review found
+one over-broad caveat in the selected follow-up: it implied supported causes still
+lacked evidence. The response-builder caveat was narrowed to unresolved records;
+the subsequent exact-question recheck explicitly reported 103 explained records
+and only one requiring additional calculation evidence. The earlier wording
+issue is retained here rather than counted as a clean pass.
 
-| Live case | Exact intended question | Outcome |
+| Live case | Exact question | Outcome |
 | --- | --- | --- |
-| Original portfolio | Investigate zero-commission records using only documented KB causes. State what remains unverified. | Not run — approval review blocked provider rehearsal. |
-| Selected-account follow-up | Investigate account {selected exact code}’s zero-commission records. What does the evidence support? | Not run — same blocked rehearsal. The selected code comes from the first result, or explicit known demo account 74050 after clarification. |
-| Typed portfolio paraphrase | Which accounts have activations earning no commission this month? Show the most affected first so I can pick one. | Not run — same blocked rehearsal. |
-| Typed selected-account paraphrase | For this account, why were some activations recorded without commission, and what still needs checking? | Not run — same blocked rehearsal. Exact context: account 74050, June 2026. |
+| Original portfolio | Investigate zero-commission records using only documented KB causes. State what remains unverified. | Pass, **2.73 s**: 575 affected accounts, ranked first 20, no unsupported cause/exposure claim. |
+| Selected-account follow-up | Investigate account 74050’s zero-commission records. What does the evidence support? | Initial **16.18 s** answer had correct figures but the caveat issue above. After correction, exact-question recheck passed in **8.76 s**, distinguishing 103 explained from 1 unresolved. Account 74050 came from rank 1 of discovery. |
+| Typed portfolio paraphrase | Which accounts have activations earning no commission this month? Show the most affected first so I can pick one. | Pass, **3.21 s**: same correct bounded discovery. |
+| Typed selected-account paraphrase | For this account, why were some activations recorded without commission, and what still needs checking? | Pass, **15.42 s**: exact account 74050/June, supported counts, one unresolved, appropriate review actions. |
 
-An independent **offline** sample read establishes the expected June discovery baseline: 575 affected accounts; rank 1 is Stone Light Networks, exact account 74050, with 104 zero-commission records out of 887 activations and NGN 1,267,922.85 recorded activation commission. Its investigation evidence contains 23 rate-card misses, 50 outside-window records, 3 null-profile records, 27 denomination-split records and 1 unresolved record. These are sample evidence checks, **not observed provider answers**.
+Independent review compared every raw payload against fresh local sample reads.
+Discovery had 575 affected accounts and rank 1 account 74050 with 104 zero records.
+Detailed answers retained counts 23 rate-card misses, 50 outside-window records,
+3 null-profile records, 27 denomination-split records and 1 unresolved. The date
+classification was 50 outside and 54 inside the 180-day window. The wider account's
+887 activations and NGN 1,267,922.85 recorded commission are offline context, not
+figures newly claimed in these provider answers.
+
+Local artifacts: initial run `/private/tmp/atlas-reliability-live-results.json`;
+repeated four turns `/private/tmp/atlas-reliability-final-live-results.json`;
+scope captures `/private/tmp/atlas-original-scope-before.json` and
+`/private/tmp/atlas-original-scope-after.json`; corrected follow-up
+`/private/tmp/atlas-selected-evidence-recheck.json`. This is a finite sample-mode
+rehearsal plus targeted rechecks, not a guarantee for every model phrasing.
 
 ## Presentation comparison and limits
 

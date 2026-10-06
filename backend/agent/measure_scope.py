@@ -97,8 +97,8 @@ class MeasureScope(BaseModel):
         dealer = self.dealer_id or self.dealer_name
         discovery = self.measures == ['portfolio_discovery']
         if discovery and (self.kind != 'measure' or dealer or len(self.periods) != 1
-                or self.operation != 'total' or self.filter != 'all'):
-            raise ValueError('Discovery requires one month and all accounts')
+                or self.operation != 'total' or self.filter not in {'all', 'zero_commission'}):
+            raise ValueError('Discovery requires one month and all accounts with the zero-commission selection')
         if 'portfolio_discovery' in self.measures and not discovery:
             raise ValueError('Discovery stands alone')
         if self.discovery_offset and not discovery:
@@ -182,6 +182,9 @@ SCOPE_TOOL = {
         'For portfolio/all-account zero-commission investigation or affected account discovery, use '
         'measures [portfolio_discovery], kind measure, one reporting period, operation total, no dealer. '
         'This lists affected accounts by zero-record count before exact-account investigation. '
+        'Discovery intrinsically selects accounts with zero-commission records: filter all (default) '
+        'and zero_commission are equivalent for this measure only; omit investigation_family and '
+        'dealer_id/dealer_name. Other investigation options are not discovery options. '
         'Use discovery_offset and limit (default 20, maximum 100) for subsequent discovery pages. '
         'Never use discovery to resolve an ambiguous dealer name; clarify or resolve that name. '
         'Interpret the latest question, using active dealer/period context and the conversation. '
@@ -297,11 +300,12 @@ SCOPE_TOOL = {
         'When a measure question names a dealer instead of giving its code, set dealer_name '
         'to the name exactly as the user wrote it and omit dealer_id; never guess a code, and '
         'never send both. A named dealer counts as named wherever a dealer is required. '
-        'Investigation requests use dealer_investigation alone with investigation_family: '
+        'Exact-account investigation requests use dealer_investigation alone with investigation_family: '
         'zero_commission for explaining zero commissions; commission_variance for WHY activation '
         'commission changed (exactly two months); payment for explaining earned-versus-paid '
         'differences, shortfalls, payment delays or why recorded owed has not been paid. '
-        'Use the active dealer and reporting month; variance uses the comparison month or previous '
+        'Portfolio-level zero-commission investigation instead uses portfolio_discovery as above. '
+        'For exact-account investigation use the active dealer and reporting month; variance uses the comparison month or previous '
         'month. Do not route ordinary why questions to saved verification audits. Explicit requests '
         'for a saved audit still use verification_outcome. '
         'Investigation follow-ups such as show affected records, what should Finance do next, '
@@ -315,7 +319,10 @@ SCOPE_TOOL = {
         'Contract examples (substitute the actual active dealer and months): '
         '"I need customer sales value, not activations" => kind measure, measures '
         '[retail_sales_value], no clarification. Evidence unavailable does NOT mean unclear intent. '
-        '"Why zero commission?" => kind measure, measures [dealer_investigation], '
+        '"Investigate zero-commission records" in All accounts => kind measure, measures '
+        '[portfolio_discovery], one reporting period, operation total, filter all or zero_commission; '
+        'no dealer and no investigation_family. '
+        '"Why zero commission?" for an exact dealer => kind measure, measures [dealer_investigation], '
         'investigation_family zero_commission, dealer_id and one period. '
         '"Why did their commission change compared with May?" => kind measure, measures '
         '[dealer_investigation], investigation_family commission_variance, presentation explanation, '

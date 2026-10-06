@@ -157,3 +157,29 @@ def test_scope_repair_cannot_invent_missing_account_or_period(monkeypatch, origi
     assert result['type'] == 'complete'
     assert result['tools_called'] == [] and result['raw_data'] == {}
     assert len(fake.calls) == 2
+
+
+def test_captured_discovery_zero_filter_completes_without_repair(monkeypatch):
+    fake = provider(monkeypatch, Stream('', tool=scope_tool(
+        measures=['portfolio_discovery'], dealer_id=None, periods=['202606'],
+        filter='zero_commission'), stop='tool_use'))
+    async def exercise():
+        return [event async for event in agent.run_agent_stream(
+            'Investigate zero-commission records using only documented KB causes. State what remains unverified.',
+            reporting_period='202606', investigation_context='Portfolio-level investigation. Activation commission.')]
+    result = asyncio.run(exercise())[-1]
+    assert result['type'] == 'complete'
+    assert result['raw_data']['portfolio_discovery']['status'] == 'available'
+    assert result['raw_data']['portfolio_discovery']['period'] == '202606'
+    assert result['tools_called'] == ['get_dealer_summary']
+    assert len(fake.calls) == 1
+
+
+@pytest.mark.parametrize('filter_value', ['disputed', 'unpaid', 'low_qualification'])
+def test_discovery_rejects_unrelated_filters(monkeypatch, filter_value):
+    fake = provider(monkeypatch, *[Stream('', tool=scope_tool(
+        measures=['portfolio_discovery'], dealer_id=None, filter=filter_value), stop='tool_use') for _ in range(2)])
+    result = asyncio.run(_events())[-1]
+    assert result['type'] == 'complete'
+    assert result['tools_called'] == [] and result['raw_data'] == {}
+    assert len(fake.calls) == 2

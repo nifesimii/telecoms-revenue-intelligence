@@ -20,14 +20,22 @@ end of each work session. Newest session on top.
   operational errors appear once with Retry. Narrow selectors show account code first.
 - Standards review passed. Spec review caught repair-time account broadening;
   the scope-preservation guard and public regressions fixed it, and re-review
-  passed. Final backend suite: **1,106 passed, 37 skipped**. All **17 frontend
+  passed. Latest backend suite: **1,117 passed, 37 skipped**; the subsequent
+  wording-only evidence caveat fix passed **43 focused tests**. All **17 frontend
   transport tests**, production build and browser checks passed, including
   keyboard selection and 320–1440 px layouts. Detailed backend and
   UI verification is recorded in `docs/ATLAS_DEMO_RELIABILITY.md`.
-- The prepared four-turn real-provider rehearsal remains unrun: automatic
-  approval review rejected transmission of internal prompts, KB and sample
-  evidence to Anthropic. Explicit approval is the remaining acceptance step;
-  offline tests do not establish natural-language provider reliability.
+- After explicit user approval, the live rehearsal exposed a redundant
+  `zero_commission` discovery filter rejection. Discovery now accepts that alias
+  without loosening account scope or other filters. Repeated original/paraphrase
+  discovery returned 575 accounts, first 20, in **2.73/3.21 s**.
+- Detailed live answers retained account 74050's 104 records and one unresolved.
+  Independent review found an over-broad missing-evidence caveat; the builder now
+  limits it to unresolved records. Exact-question recheck passed in **8.76 s**,
+  explicitly distinguishing 103 explained records from one unresolved. Full
+  outcomes and earlier defects remain in the acceptance report; this finite
+  sample rehearsal does not guarantee all future model responses. No approval
+  remains pending for this work.
 - Preserved existing presentation and PaymentDetail edits. No deployment,
   push, production data read or write-back.
 
