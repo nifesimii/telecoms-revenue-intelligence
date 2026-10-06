@@ -39,7 +39,6 @@ export default function PaymentDetail({ dealerId, period, comparison, onBack, on
         <dl className="grid sm:grid-cols-3 gap-5 mt-5 text-sm">{[['Commission owed', money(account.commission_owed)], ['Amount settled', money(account.amount_paid)], ['Payment status', statusLabel(account.payment_status)]].map(([label, value]) => <div key={label}><dt className="text-gray-600">{label}</dt><dd className="font-semibold mt-2">{value}</dd></div>)}</dl>
         <p className="text-sm mt-5">{findingLabel(account.exception_flag)}. Source observation; review supporting evidence.</p>
         {account.reconciliation_status && <p className="text-sm mt-3">Source reconciliation status: {account.reconciliation_status.replaceAll('_', ' ').toLowerCase()} · Sales captured {money(account.total_sales_ngn)} · Settled minus owed {money(account.payment_variance_ngn)}</p>}
-        <p className="text-xs text-gray-500 mt-4">{query.data.data_source} · Retrieved {new Date(query.data.generated_at).toLocaleString()}. Retrieval time does not establish source freshness.</p>
         <div className="flex flex-wrap gap-3 mt-5">
           <button className="overview-button" onClick={() => navigate('commission')}>View commission</button><button className="overview-button" onClick={() => navigate('activation')}>View activations</button>
           <button className="overview-button" aria-expanded={assistantScope === scope} onClick={openAssistant}>Ask Atlas about this payment</button>
