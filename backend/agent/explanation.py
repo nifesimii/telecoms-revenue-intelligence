@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import time
 from threading import Event
 
 from backend import config
-from backend.agent import prompts, tool_executor
-from backend.agent.agent import MAX_TOKENS, MODEL_NAME
-from backend.agent.inference import InferenceRun, cached_system, new_client
+from backend.agent import tool_executor
+from backend.agent.agent import MODEL_NAME
+from backend.agent.inference import InferenceRun, new_client
+from backend.agent.narrative import compose_answer
 
 
 async def explain_finding(request: dict):
@@ -36,21 +38,39 @@ async def explain_finding(request: dict):
             run.log('evidence_complete', duration_ms=round((time.monotonic() - started) * 1000))
             for timing in evidence.pop('timings', []):
                 run.log('tool_complete', **timing)
-            prompt = prompts.build_finding_explanation(evidence)
-            parts = []
+            projected = deepcopy(evidence['raw_data'])
+            selected = projected['explanation_scope']
+            scope = {'kind': 'finding', 'presentation': 'summary',
+                     'dealer_id': selected['dealer_id'],
+                     'periods': [selected['mon_period']],
+                     'finding': selected['finding']}
+            caveats = list(selected['caveats'])
+            # Assurance metadata covers the whole dealer or reporting period.
+            # It is provenance, never evidence for the selected inventory product.
+            for envelope in projected.values():
+                if isinstance(envelope, dict):
+                    metadata = envelope.pop('metadata', {})
+                    for key in ('coverage_note', 'synthetic_note'):
+                        if metadata.get(key) and metadata[key] not in caveats:
+                            caveats.append(metadata[key])
+            projected['mandatory_disclosures'] = caveats
+            context = ('Explain the server-verified finding using its exact account, period and product. '
+                       'Only the retrieved investigation establishes population-level causes. '
+                       'Payment exception flags do not establish causation.\n\n'
+                       '### Verification evidence\n\n' + '\n\n'.join(caveats))
             async with new_client(config.ANTHROPIC_API_KEY) as client:
-                async for text in run.stream_text(
-                    client, model=MODEL_NAME, max_tokens=MAX_TOKENS,
-                    system=cached_system(prompts.get_system_prompt()),
-                    messages=[{'role': 'user', 'content': prompt}],
-                ):
-                    if text:
-                        parts.append(text)
-                        yield {'type': 'text', 'text': text}
-            if not ''.join(parts).strip():
-                raise ValueError('empty generation')
+                yield {'type': 'status', 'phase': 'thinking', 'reset': False}
+                answer = await compose_answer(
+                    client, run, question='Explain this verified finding.', history=[],
+                    scope=scope, evidence=projected, tools_called=evidence['tools_called'],
+                    validated_context=context, sample_mode=config.USE_SAMPLE_DATA,
+                    model=MODEL_NAME,
+                )
+            # Nothing authored by the model crosses the transport until the
+            # shared composer has validated the complete answer and attachments.
+            yield {'type': 'text', 'text': answer}
             status = 'complete'
-            yield {'type': 'complete', 'response': ''.join(parts),
+            yield {'type': 'complete', 'response': answer,
                    'tools_called': evidence['tools_called'],
                    'raw_data': evidence['raw_data'], 'error': None}
     except (asyncio.CancelledError, GeneratorExit):
