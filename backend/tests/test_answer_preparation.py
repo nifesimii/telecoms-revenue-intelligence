@@ -68,3 +68,20 @@ def test_product_population_and_page_facts_precede_narrative_bounding():
     assert result['variance']['largest_positive_product_contribution'] == {'product': 'P19', 'change_ngn': Decimal(20)}
     assert result['variance']['all_product_commissions_increased'] is True
     assert result['record_page'] == {'first': 21, 'last': 40, 'shown': 20, 'total': 50, 'has_more': True}
+
+
+def test_measure_evidence_envelope_prepares_inner_measure_arithmetic():
+    request = {'periods': ['202601', '202602']}
+    evidence = {'measure_evidence': {'measures': [{'measure': 'paid', 'unit': 'ngn', 'periods': [
+        {'period': '202601', 'status': 'available', 'total': 0.1, 'rows': []},
+        {'period': '202602', 'status': 'available', 'total': 0.2, 'rows': []}]}]}}
+    assert prepare_evidence(evidence, request)['measure_evidence']['measures'][0]['prepared']['total'] == Decimal('0.3')
+
+
+def test_partial_evidence_does_not_manufacture_missing_counts_or_require_render_schema():
+    evidence = {'measures': [{'measure': 'paid', 'periods': []}],
+                'investigation': {'status': 'available', 'family': 'zero_commission'}}
+    result = prepare_evidence(evidence)
+    assert result['measures'][0]['prepared']['total'] is None
+    assert result['investigation']['prepared'].get('explained_count') is None
+    assert result['investigation']['prepared'].get('page_count') is None

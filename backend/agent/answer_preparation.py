@@ -42,22 +42,30 @@ def _variance(variance: dict) -> None:
 def _investigation(result: dict) -> None:
     if result.get('status') != 'available':
         return
-    rows = result.get('records', [])
-    page = result.get('pagination', {})
-    derived: dict[str, Any] = {'page_count': len(rows), 'page_start': page.get('offset', 0) + 1 if rows else 0,
-               'page_end': page.get('offset', 0) + len(rows)}
-    if result['family'] == 'zero_commission':
-        derived['explained_count'] = sum(c['count'] for c in result['causes'])
-    elif result['family'] == 'commission_variance':
-        _variance(result['variance'])
-        totals = result['variance']['totals']
-        shown = sum((_decimal(p['change_ngn']) for p in rows), Decimal(0))
-        derived['shown_change_ngn'] = shown
-        derived['outside_page_change_ngn'] = _decimal(totals['change_ngn']) - shown
-        zeros = result['zero_investigations']
+    rows = result.get('records')
+    page = result.get('pagination')
+    derived: dict[str, Any] = {}
+    if isinstance(rows, list) and isinstance(page, dict) and 'offset' in page:
+        derived.update(page_count=len(rows), page_start=page['offset'] + 1 if rows else 0,
+                       page_end=page['offset'] + len(rows))
+    if result.get('family') == 'zero_commission':
+        causes = result.get('causes')
+        if isinstance(causes, list) and all('count' in cause for cause in causes):
+            derived['explained_count'] = sum(c['count'] for c in causes)
+    elif result.get('family') == 'commission_variance':
+        variance = result.get('variance')
+        if isinstance(variance, dict):
+            _variance(variance)
+        totals = variance.get('totals', {}) if isinstance(variance, dict) else {}
+        if isinstance(rows, list) and 'change_ngn' in totals and all('change_ngn' in p for p in rows):
+            shown = sum((_decimal(p['change_ngn']) for p in rows), Decimal(0))
+            derived['shown_change_ngn'] = shown
+            derived['outside_page_change_ngn'] = _decimal(totals['change_ngn']) - shown
+        zeros = result.get('zero_investigations', [])
         for zero in zeros:
             _investigation(zero)
-        if len(zeros) == 2 and all(z['status'] == 'available' for z in zeros):
+        if (len(zeros) == 2 and all(z.get('status') == 'available' and 'total_records' in z for z in zeros)
+                and all(key in totals for key in ('earlier_activations', 'later_activations'))):
             derived['earlier_nonzero_activations'] = totals['earlier_activations'] - zeros[0]['total_records']
             derived['later_nonzero_activations'] = totals['later_activations'] - zeros[1]['total_records']
     result['prepared'] = derived
@@ -100,6 +108,8 @@ def _population_and_pages(value: object) -> None:
 def prepare_evidence(evidence: dict, request: dict | None = None) -> dict:
     """Return a detached evidence tree with deterministic derived values."""
     result = deepcopy(evidence)
+    if isinstance(result.get('measure_evidence'), dict):
+        result['measure_evidence'] = prepare_evidence(result['measure_evidence'], request)
     _money_fields(result)
     _population_and_pages(result)
     if 'investigation' in result:
@@ -110,7 +120,7 @@ def prepare_evidence(evidence: dict, request: dict | None = None) -> dict:
     for measure in result.get('measures', []):
         periods = measure['periods']
         for period in periods:
-            if measure['unit'] == 'ngn':
+            if measure.get('unit') == 'ngn':
                 if period.get('total') is not None:
                     period['total'] = _decimal(period['total'])
                 for row in period['rows']:
@@ -127,7 +137,7 @@ def prepare_evidence(evidence: dict, request: dict | None = None) -> dict:
                                                              for status in ('verified', 'no_subject', 'unavailable')}}
                 for module in modules:
                     module['prepared'] = {'withheld_count': sum(t.get('withheld', 0) for t in module.get('trails', []))}
-        row_only = measure['unit'] == 'text' or measure.get('aggregation') == 'none'
+        row_only = measure.get('unit') == 'text' or measure.get('aggregation') == 'none'
         available = [p for p in periods if p['status'] == 'available' and (
             any(r.get('value') is not None for r in p['rows']) if row_only else p.get('total') is not None)]
         covered = [p['period'] for p in available]
