@@ -23,6 +23,8 @@ def _money(value):
 def render_investigation(result, presentation='explanation'):
     if presentation not in {'explanation', 'records', 'actions', 'dealer_draft'}:
         raise ValueError('Invalid investigation presentation')
+    from backend.agent.answer_preparation import prepare_evidence
+    result = prepare_evidence({'investigation': result})['investigation']
     account = _text(result['dealer_id'])
     period = ', '.join(result['periods'])
     if result['status'] != 'available':
@@ -31,7 +33,7 @@ def render_investigation(result, presentation='explanation'):
     parts, actions = [], []
     if family == 'zero_commission':
         total = result['total_records']
-        explained = sum(c['count'] for c in result['causes'])
+        explained = result['prepared']['explained_count']
         if explained + result['unresolved_count'] != total:
             raise ValueError('Cause counts must reconcile to the affected population')
         parts.append(f"**{total:,} zero-commission activations: {explained:,} explained"
@@ -66,17 +68,16 @@ def render_investigation(result, presentation='explanation'):
             for p in result['records']))
         zeros = result['zero_investigations']
         if all(z['status'] == 'available' for z in zeros):
-            parts.append(f"Non-zero commission activations changed from {totals['earlier_activations'] - zeros[0]['total_records']:,} "
-                         f"to {totals['later_activations'] - zeros[1]['total_records']:,}.")
+            parts.append(f"Non-zero commission activations changed from {result['prepared']['earlier_nonzero_activations']:,} "
+                         f"to {result['prepared']['later_nonzero_activations']:,}.")
         for zero in zeros:
             parts.append(f"{zero['periods'][0]}: {zero['total_records']:,} zero-commission records — " +
                          '; '.join(f"{c['count']:,} {LABELS[c['cause']]}" for c in zero['causes']) +
                          (f"; {zero['unresolved_count']:,} unresolved." if zero['unresolved_count'] else '.'))
         page = result['pagination']
         if len(result['records']) < page['total']:
-            shown = sum(p['change_ngn'] for p in result['records'])
             parts.append(f"Showing {len(result['records'])} of {page['total']} products at offset {page['offset']}. "
-                         f"Products outside this page contribute {_money(round(totals['change_ngn'] - shown, 2))}. Ask for the next page for more detail.")
+                         f"Products outside this page contribute {_money(result['prepared']['outside_page_change_ngn'])}. Ask for the next page for more detail.")
         parts.append('The complete product contributions reconcile the recorded change; zero-record causes explain exclusions, not a recalculated loss of commission.')
         actions = ['Finance: review the largest product contributions first, then inspect the affected zero-commission records in each month before proposing an adjustment.']
     else:
