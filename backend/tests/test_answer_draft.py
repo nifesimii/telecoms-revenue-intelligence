@@ -59,3 +59,42 @@ def test_subscription_revenue_cannot_be_described_as_commission_owed():
     from backend.agent.narrative import _validate_text
     with pytest.raises(NarrativeGroundingError):
         _validate_text('Commission owed is {{f0}}.', prepared.facts, prepared.scope, '', prepared.evidence)
+
+
+@pytest.mark.parametrize('text', ['Finance can release the payment now.',
+                                 'I recommend issuing immediate payment.'])
+def test_action_modalities_cannot_bypass_permitted_actions(text):
+    with pytest.raises(NarrativeGroundingError):
+        run_draft(lambda payload: draft(payload, text))
+
+
+def test_missing_settlement_cannot_be_called_zero_in_plain_prose():
+    prepared = prepare_answer(scope={'kind': 'measure'}, evidence={'payment': {'payment_found': False, 'paid': 0, 'balance': 0}}, tools_called=[])
+    from backend.agent.narrative import _validate_text
+    with pytest.raises(NarrativeGroundingError):
+        _validate_text('There is no outstanding balance.', prepared.facts, prepared.scope, '', prepared.evidence)
+
+
+def test_subscription_commission_cannot_be_relabelled_as_revenue():
+    prepared = prepare_answer(scope={'kind': 'measure'}, evidence={'measure': 'subscription_commission', 'unit': 'ngn', 'total': 100}, tools_called=[])
+    from backend.agent.narrative import _validate_text
+    fact = next(f for f in prepared.facts if f['path'].endswith('.total'))
+    with pytest.raises(NarrativeGroundingError):
+        _validate_text('Subscription revenue is {{' + fact['id'] + '}}.', prepared.facts, prepared.scope, '', prepared.evidence)
+
+
+def test_repair_cannot_push_model_input_past_byte_limit():
+    prepared = prepare_answer(scope={}, evidence={}, tools_called=[])
+    payload = {**prepared.model_payload(), 'question': '', 'history': [], 'sample_mode': False}
+    question = 'x' * (180000 - len(json.dumps(payload, ensure_ascii=False).encode('utf-8')) - 5)
+    calls = []
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(stop_reason='tool_use', content=[SimpleNamespace(
+            type='tool_use', name='compose_grounded_answer',
+            input={'headline': None, 'explanation_blocks': [{'text': 'There are 999 records.', 'claim_ids': []}], 'next_step_ids': []})])
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    with pytest.raises(NarrativeGroundingError, match='capacity'):
+        asyncio.run(compose_answer(client, InferenceRun('test'), prepared=prepared,
+                                  question=question, history=[], sample_mode=False, model='test'))
+    assert len(calls) == 1

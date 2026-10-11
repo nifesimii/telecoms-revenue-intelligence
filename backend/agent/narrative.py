@@ -271,9 +271,10 @@ def _validate_text(answer, facts, scope, context, evidence):
             if field not in {'distinct_product_code_count', 'unique_product_code_count', 'distinct_product_count'}:
                 raise NarrativeGroundingError('Activation-record counts cannot establish distinct product-code counts')
     plain = _TOKEN.sub('', answer)
-    if _asserted(r'\b(?:should|must|recommend|please)\b.{0,65}\b(?:pay|release|approve|adjust|correct|reconcile|review|escalate|contact|send|obtain|request)\b|'
+    action_prose = plain.replace(_TOKEN.sub('', _reference_known_labels(context, facts)), '') if context else plain
+    if _asserted(r'\brecommend\w*\b|\b(?:should|must|can|may|could|please)\b.{0,65}\b(?:pay|release|approve|adjust|correct|reconcile|review|escalate|contact|send|obtain|request)\b|'
                  r'(?:^|[.!?;\n]|:\s*)\s*(?:pay|release|approve|adjust|correct|reconcile|review|escalate|contact|send|obtain|request)\b|'
-                 r'\b(?:will|shall)\s+(?:pay|release|approve|adjust|correct)\b', plain):
+                 r'\b(?:will|shall)\s+(?:pay|release|approve|adjust|correct)\b', action_prose):
         raise NarrativeGroundingError('Next steps must use permitted action IDs, not model-authored instructions')
 
     _check_population_claims(answer, evidence, facts)
@@ -287,6 +288,10 @@ def _validate_text(answer, facts, scope, context, evidence):
             r'(?:records?|activations?|dealers?|naira|percent|days?|months?|units?)\b', plain, re.I):
         raise NarrativeGroundingError('Spelled factual quantities must use supplied placeholders')
     availability = _availability(evidence)
+    unknown_balance = any(fact['availability'] == 'unavailable' and fact.get('meaning') in {'paid', 'balance'} for fact in facts)
+    if unknown_balance and _asserted(r'\b(?:fully paid|fully settled|all settled|no outstanding|no balance)\b|'
+                                    r'\b(?:paid|outstanding|balance)\b.{0,25}\b(?:zero|nil|nothing)\b', plain):
+        raise NarrativeGroundingError('Unavailable settlement evidence cannot establish a zero balance')
     if 'unavailable' in availability and re.search(
             r'\bnothing is missing\b|\bno (?:data |source )?gaps\b|\bfully (?:verified|complete)\b', plain, re.I):
         raise NarrativeGroundingError('Unavailable evidence cannot establish completeness')
@@ -388,9 +393,9 @@ async def compose_answer(client, run, *, question, history, prepared: PreparedAn
         payload['answer_constraints'] = (
             'Explain only the documented capability boundary. No records were retrieved. '
             'Do not invent capabilities, alternatives or requests for unsupported operations.')
-    if len(json.dumps(payload, ensure_ascii=False, default=str).encode('utf-8')) > 180000:
-        raise NarrativeGroundingError('Evidence exceeds bounded narrative capacity')
     for attempt in range(2):
+        if len(json.dumps(payload, ensure_ascii=False, default=str).encode('utf-8')) > 180000:
+            raise NarrativeGroundingError('Evidence exceeds bounded narrative capacity')
         run.remaining()
         response = await run.create(client, model=model, max_tokens=2400,
             system=cached_system(prompts.get_narrative_system_prompt()),

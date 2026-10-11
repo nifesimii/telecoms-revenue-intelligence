@@ -15,7 +15,7 @@ def test_agent_payment_summary_question(monkeypatch):
     assert evidence_period(result, 1)["total"] == 552486.95
     assert evidence_period(result, 2)["rows"][0]["value"] == "DISPUTED"
     assert "NGN 368,324.63" in result["response"] and "Source: Payment records" in result["response"]
-    assert "simulated" not in result["response"].lower()
+    assert "simulated" in result["response"].lower()
     assert "disputed" in result["response"].lower()
     assert result["tools_called"] == ["get_payment_summary"]
 
@@ -27,7 +27,7 @@ def test_agent_payment_exceptions_question(monkeypatch):
     statuses = evidence_period(result, 0)["rows"]
     assert statuses and all(row["value"] == "DISPUTED" for row in statuses)
     assert next(row for row in evidence_period(result, 1)["rows"] if row["dealer_id"] == "296065")["value"] == 552486.95
-    assert "simulated" not in result["response"].lower() and "DISPUTED" in result["response"]
+    assert "simulated" in result["response"].lower() and "DISPUTED" in result["response"]
     assert "CONFIRMED" not in result["response"]  # Payment status does not establish a causal finding.
 
 

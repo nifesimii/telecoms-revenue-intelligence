@@ -10,6 +10,10 @@ from decimal import Decimal
 from typing import Any
 
 
+MONEY_FIELDS = {'owed', 'paid', 'balance', 'outstanding', 'commission_owed',
+                'amount_paid', 'amount_outstanding', 'amount_unpaid', 'unit_selling_price'}
+
+
 def _decimal(value: object) -> Decimal:
     return Decimal(str(value))
 
@@ -17,7 +21,7 @@ def _decimal(value: object) -> Decimal:
 def _money_fields(value: object) -> None:
     if isinstance(value, dict):
         for key, child in value.items():
-            if (key.endswith('_ngn') or key in {'owed', 'paid', 'balance', 'amount_outstanding', 'amount_unpaid'}) and isinstance(child, (int, float, Decimal)) and not isinstance(child, bool):
+            if (key.endswith('_ngn') or key in MONEY_FIELDS) and isinstance(child, (int, float, Decimal)) and not isinstance(child, bool):
                 value[key] = _decimal(child)
             else:
                 _money_fields(child)

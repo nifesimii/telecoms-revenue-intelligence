@@ -9,10 +9,12 @@ import calendar
 from copy import deepcopy
 from dataclasses import dataclass
 from decimal import Decimal
+from html import escape
 import re
 from typing import Any
 
 from backend.terminology import RATE_CARD_MISS_LABEL
+from backend.agent.answer_preparation import MONEY_FIELDS
 
 IDENTIFIERS = {'dealer_id', 'dealer_name', 'dealer_code', 'distributor_code', 'account_code',
                'period', 'periods', 'mon_period', 'imei', 'product_code', 'product',
@@ -28,11 +30,11 @@ def financial_meaning(label: str) -> str | None:
     words = set(re.findall(r'[a-z]+', label.lower()))
     for terms, meaning in [({'change', 'delta'}, 'change'), ({'earlier', 'prior'}, 'prior_level'),
                            ({'later', 'current'}, 'current_level'),
-                           ({'outstanding', 'balance'}, 'balance'),
+                           ({'outstanding', 'balance', 'unpaid'}, 'balance'),
                            ({'paid', 'settled', 'settlement'}, 'paid'),
                            ({'owed', 'payable', 'entitlement'}, 'owed'),
-                           ({'subscription'}, 'subscription_revenue'),
-                           ({'commission'}, 'commission'), ({'revenue'}, 'revenue')]:
+                           ({'commission'}, 'commission'),
+                           ({'subscription'}, 'subscription_revenue'), ({'revenue'}, 'revenue')]:
         if words & terms:
             return meaning
     return None
@@ -113,7 +115,7 @@ def build_facts(evidence: dict, scope: dict, context: str = '', sources=()) -> l
             for i, item in enumerate(value):
                 walk(item, f'{path}[{i}]', key, unit, meaning, status, source, coverage)
         elif (isinstance(value, (int, float, Decimal)) and not isinstance(value, bool)) or value is None:
-            monetary = ('ngn' in key or key in {'owed', 'paid', 'balance', 'outstanding'}
+            monetary = ('ngn' in key or key in MONEY_FIELDS
                         or unit == 'ngn' and key in {'total', 'value', 'available_total', 'ranked_total', 'delta'})
             percent = key.endswith(('_pct', '_percent', '_percentage'))
             if value is None and not monetary:
@@ -213,6 +215,19 @@ def _preserve_unknowns(value: Any) -> None:
             _preserve_unknowns(child)
 
 
+def _disclosure_text(text: str) -> str:
+    from backend.agent.measure_response import _STATEMENT_POSITIONS
+    from backend.terminology import normalize_generated_prose
+    if re.search(r'```(?:sql|presto)|\bSELECT\b[\s\S]*?\bFROM\b|https?://|www\.', text, re.I):
+        raise ValueError('Unsafe source disclosure')
+    text = normalize_generated_prose(text)
+    for code, label in _STATEMENT_POSITIONS.items():
+        text = re.sub(r'\b' + code + r'\b', label, text)
+    text = re.sub(r'\b[A-Z]+(?:_[A-Z]+)+\b', lambda match: match[0].replace('_', ' ').lower(), text)
+    # Source strings may describe evidence; they cannot supply active markup.
+    return escape(text, quote=False).replace('[', r'\[').replace(']', r'\]')
+
+
 def prepare_answer(*, scope: dict, evidence: dict, tools_called: list[str],
                    validated_context: str = '', mandatory_caveats=(), attachments=None) -> PreparedAnswer:
     _check_scope(scope, evidence)
@@ -241,7 +256,7 @@ def prepare_answer(*, scope: dict, evidence: dict, tools_called: list[str],
             policy_caveats.append(eligibility_policy(prompts.KB_CONTENT, config.USE_SAMPLE_DATA))
     elif scope.get('kind') == 'unsupported':
         context = validated_context
-    claims = []
+    claims: list[dict[str, Any]] = []
     groups: dict[str, list[dict]] = {}
     for fact in facts:
         groups.setdefault(fact['path'].rsplit('.', 1)[0], []).append(fact)
@@ -268,7 +283,7 @@ def prepare_answer(*, scope: dict, evidence: dict, tools_called: list[str],
             source = value.get('source') or value.get('tool') or value.get('measure') or 'Evidence'
             if value.get('payment_found') is False:
                 caveats.append(f'{source}: no payment record is available; paid and outstanding amounts are unknown, not zero.')
-            if value.get('data_source') == 'simulated' or value.get('payment_source') == 'simulated' or source == 'simulated':
+            if str(value.get('data_source', '')).lower() == 'simulated' or value.get('payment_source') == 'simulated' or str(source).lower() == 'simulated':
                 caveats.append('Settlement amounts use simulated payment evidence; they do not establish live payments.')
             if value.get('status') == 'unavailable':
                 caveats.append(f'{source}: evidence is unavailable; missing evidence is not zero.')
@@ -277,7 +292,13 @@ def prepare_answer(*, scope: dict, evidence: dict, tools_called: list[str],
                     caveats.extend(str(item) for item in value[key])
             for key in ('note', 'association_note', 'coverage_note'):
                 if isinstance(value.get(key), str) and value[key].strip():
-                    caveats.append(f'{source}: {value[key]}')
+                    # A record's diagnostic note is not itself a mandatory
+                    # disclosure. Preserve source limitations, not extra prose.
+                    if (key != 'note' or value.get('status') == 'unavailable' or re.search(
+                            r'coverage|unavailable|incomplete|supplied|simulat|synthetic|unverified|unconfirmed|'
+                            r'missing|partial|bounded|limited|not establish|policy|demo|no (?:matching )?records?',
+                            value[key], re.I)):
+                        caveats.append(f'{source}: {value[key]}')
             if value.get('coverage_complete') is False:
                 caveats.append(f'{source}: coverage is incomplete; normalized zero amounts do not establish zero entitlement or non-payment.')
             if value.get('truncated') or value.get('_narrative_omitted_records'):
@@ -309,4 +330,4 @@ def prepare_answer(*, scope: dict, evidence: dict, tools_called: list[str],
     if scope.get('presentation') not in {'actions', 'dealer_draft'}:
         actions = []
     return PreparedAnswer(deepcopy(scope), generation_evidence, facts, claims, actions,
-                          list(dict.fromkeys(caveats)), attachments, list(tools_called), context)
+                          list(dict.fromkeys(_disclosure_text(text) for text in caveats)), attachments, list(tools_called), context)

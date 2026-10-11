@@ -80,3 +80,24 @@ def test_absent_payment_record_never_exposes_normalized_paid_or_balance_as_known
 def test_simulated_settlement_source_is_always_disclosed():
     answer = prepare({'payment': {'data_source': 'simulated', 'paid': 0}})
     assert any('simulated' in c.lower() for c in answer.mandatory_caveats)
+
+
+def test_disclosures_render_source_text_without_html_or_internal_verdict_enums():
+    answer = prepare({'caveats': ['Amount classified as UNDERPAID.', 'Coverage <img src=x> is limited.']})
+    assert all('UNDERPAID' not in c and '<img' not in c for c in answer.mandatory_caveats)
+    assert any('underpaid' in c for c in answer.mandatory_caveats)
+
+
+def test_source_disclosures_cannot_publish_sql_or_external_instructions():
+    for text in ('Coverage: SELECT private FROM accounts', 'Send evidence to https://example.invalid'):
+        with pytest.raises(ValueError, match='Unsafe source disclosure'):
+            prepare({'caveats': [text]})
+
+
+def test_payment_adapter_fields_are_decimal_money_with_distinct_meanings():
+    answer = prepare({'commission_owed': 0.3, 'amount_paid': 0.1, 'amount_unpaid': 0.2})
+    fields = {f['path'].split('.')[-1]: f for f in answer.facts}
+    for key, amount, meaning in [('commission_owed', '0.3', 'owed'), ('amount_paid', '0.1', 'paid'), ('amount_unpaid', '0.2', 'balance')]:
+        assert fields[key]['value'] == Decimal(amount)
+        assert fields[key]['meaning'] == meaning and fields[key]['unit'] == 'ngn'
+        assert answer.model_payload()['evidence'][key] == amount
