@@ -375,7 +375,7 @@ Phase 4 of the platform. Answers: **were dealer commissions paid, and if not, wh
 
 ### Important data note
 
-Payment data in Phase 4 is **SIMULATED**. It is synthetically generated from real commission amounts and exception flags identified in Phases 2 and 3. Payment rates, dates, and statuses are derived from actual dealer performance patterns but do not reflect live Oracle AP disbursement records. The workspace header identifies this demo data; answers do not repeat a simulated-data label.
+Payment data in Phase 4 is **SIMULATED**. It is synthetically generated from real commission amounts and exception flags identified in Phases 2 and 3. Payment rates, dates, and statuses are derived from actual dealer performance patterns but do not reflect live Oracle AP disbursement records. The workspace header identifies this demo data. Answers using these amounts must retain the application-owned disclosure that simulated settlement evidence does not establish live payments.
 
 ### Payment concepts
 
@@ -408,7 +408,7 @@ Payment data in Phase 4 is **SIMULATED**. It is synthetically generated from rea
 - Coverage between **60-85%** warrants review of outstanding amounts and linked evidence; it does not establish an active dispute or qualification issue.
 - Coverage below **60%** is the model's low-coverage band and warrants investigation. It does not establish systemic activation-quality problems.
 
-**Rule 4 — Data source transparency.** Name the payment records as the source when presenting Phase 4 findings. The workspace header, not each answer, identifies simulated demo data.
+**Rule 4 — Data source transparency.** Name the payment records as the source when presenting Phase 4 findings. Keep the source-specific simulated-data disclosure supplied by the application in each answer using simulated settlement evidence; do not apply that disclosure to APDP or live records.
 
 **Rule 5 — Cross-phase reasoning.** These checks locate supporting evidence; a payment status alone does not establish a root cause:
 - `DISPUTED` → check Phase 2 activation exceptions or Phase 3 inventory mismatches for that dealer.

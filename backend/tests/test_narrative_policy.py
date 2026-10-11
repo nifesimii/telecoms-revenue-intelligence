@@ -13,7 +13,7 @@ def test_kb_currency_is_formatted_as_ngn_without_changing_percentages(quote):
     scope = MeasureScope(kind='knowledge', knowledge_quote=quote)
     context = knowledge_response(scope, prompts.KB_CONTENT, sample_mode=True)
     def answer(payload, attempt):
-        rate = next(f for f in payload['facts'] if '8,215.81' in str(f['value']))
+        rate = next(f for f in payload['facts'] if f['value'] == '8215.81')
         assert rate['display'] == 'NGN 8,215.81'
         if '12%' in context:
             percent = next(f for f in payload['facts'] if f['value'] == '12%')
@@ -27,14 +27,15 @@ def test_kb_currency_is_formatted_as_ngn_without_changing_percentages(quote):
     assert len(calls) == 1
 
 
-def test_currency_table_units_do_not_change_adjacent_counts_or_identifiers():
+def test_currency_table_units_do_not_change_adjacent_counts_or_identifiers(monkeypatch):
     context = '| Product code | Unit selling price (₦) | Commission (NGN) | Count |\n| --- | --- | --- | --- |\n| 1283280 | 50,000 | 5,000 | 20 |'
+    monkeypatch.setattr(prompts, 'KB_CONTENT', context)
     def answer(payload, attempt):
         facts = payload['facts']
-        assert next(f for f in facts if f['value'] == '50,000')['display'] == 'NGN 50,000.00'
-        assert next(f for f in facts if f['value'] == '5,000')['display'] == 'NGN 5,000.00'
+        assert next(f for f in facts if f['value'] == '50000')['display'] == 'NGN 50,000.00'
+        assert next(f for f in facts if f['value'] == '5000')['display'] == 'NGN 5,000.00'
         assert next(f for f in facts if f['value'] == '20')['display'] == '20'
         assert next(f for f in facts if f['value'] == '1283280')['display'] == '1283280'
         return 'The table distinguishes recorded currency amounts from quantities.'
     client, _ = provider(answer)
-    assert compose(client, scope={'kind':'knowledge'}, evidence={}, tools_called=[], validated_context=context)
+    assert compose(client, scope={'kind':'knowledge', 'knowledge_quote':context}, evidence={}, tools_called=[], validated_context=context)

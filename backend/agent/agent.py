@@ -20,7 +20,8 @@ from backend.agent.measure_scope import (
 )
 from backend.agent.measure_response import render_measure_response, render_dealer_codes, render_affiliation, render_discovery
 from backend.agent.dealer_resolution import resolve_dealer_name
-from backend.agent.inference import InferenceRun, cached_system, new_client
+from backend.agent.inference import InferenceRun, cached_system, new_client, strict_tool
+from backend.agent.answer_evidence import prepare_answer
 from backend.agent.narrative import compose_answer, NarrativeGroundingError, NARRATIVE_FALLBACK
 
 # --- Model config ---
@@ -167,7 +168,7 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
             client, **({'emit': discard_draft} if emit is not None else {}),
             model=MODEL_NAME, max_tokens=MAX_TOKENS,
             system=cached_system(prompts.get_measure_system_prompt()),
-            tools=[SCOPE_TOOL], tool_choice={'type': 'tool', 'name': SCOPE_TOOL['name']},
+            tools=[strict_tool(SCOPE_TOOL)], tool_choice={'type': 'tool', 'name': SCOPE_TOOL['name']},
             messages=messages,
         )
         blocks = [block for block in response.content if block.type == 'tool_use']
@@ -197,13 +198,13 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
     tools_called, raw_data = [], {}
 
     async def finish_answer(validated_context):
-        # Existing response builders validate evidence and compute derived values.
-        # Their prose is supplemental context, never the sole generation input.
+        # Prepare source facts before generation. Rendered prose supplies only
+        # application-owned attachments, never additional model facts.
         try:
             answer = await compose_answer(
                 client, run, question=user_message, history=conversation_history,
-                scope=request, evidence=raw_data, tools_called=tools_called,
-                validated_context=validated_context, sample_mode=config.USE_SAMPLE_DATA,
+                prepared=prepare_answer(scope=request, evidence=raw_data, tools_called=tools_called,
+                                        validated_context=validated_context), sample_mode=config.USE_SAMPLE_DATA,
                 model=MODEL_NAME,
             )
         except NarrativeGroundingError:

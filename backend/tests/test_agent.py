@@ -15,7 +15,7 @@ import pytest
 
 from backend.agent import agent as agent_module, prompts
 from backend.agent.agent import FALLBACK_RESPONSE, run_agent
-from backend.tests.narrative_provider import final_response, is_final_call
+from backend.tests.narrative_provider import final_response, is_final_call, draft_payload
 
 
 def _run(coroutine):
@@ -192,7 +192,8 @@ def test_final_model_receives_structured_evidence_and_authors_public_answer(monk
     assert len(calls) == 2
     payload = json.loads(calls[1]['messages'][-1]['content'])
     assert payload['evidence']['measure_evidence']['measures'][0]['periods'][0]['total'] == 806
-    assert result['raw_data'] == payload['evidence']
+    assert result['raw_data']['measure_evidence']['measures'][0]['periods'] == payload['evidence']['measure_evidence']['measures'][0]['periods']
+    assert 'prepared' not in result['raw_data']['measure_evidence']['measures'][0]
 
 
 @pytest.mark.parametrize('candidate', [
@@ -270,7 +271,7 @@ def test_payment_paid_fact_cannot_be_relabelled_as_outstanding(monkeypatch):
         seen.append(paid)
         return SimpleNamespace(stop_reason='tool_use', content=[SimpleNamespace(
             type='tool_use', name='compose_grounded_answer',
-            input={'answer': 'The outstanding balance is {{' + paid['id'] + '}}.'})])
+            input=draft_payload(payload, 'The outstanding balance is {{' + paid['id'] + '}}.'))])
     calls, _ = install_scope_provider(monkeypatch,
         measure_scope('dealer_statement', dealer_id='296065', periods=['202606']), answer=invalid_answer)
     result = _run(run_agent('What was paid and what remains outstanding?'))
@@ -296,7 +297,7 @@ def test_untrusted_dealer_name_token_cannot_be_published_as_a_cause(monkeypatch)
         name = next(fact for fact in payload['facts'] if fact['value'] == 'fraud')
         return SimpleNamespace(stop_reason='tool_use', content=[SimpleNamespace(
             type='tool_use', name='compose_grounded_answer',
-            input={'answer': 'The cause was {{' + name['id'] + '}}.'})])
+            input=draft_payload(payload, 'The cause was {{' + name['id'] + '}}.'))])
     install_scope_provider(monkeypatch, measure_scope('activation_count'), answer=invalid_answer)
     result = _run(run_agent('How many activations?'))
     assert 'The cause was fraud' not in result['response']

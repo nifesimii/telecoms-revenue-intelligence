@@ -9,6 +9,7 @@ os.environ['PAYMENT_SOURCE'] = 'simulated'
 
 from fastapi.testclient import TestClient
 from backend.main import app
+from backend.tests.narrative_provider import draft_payload
 
 
 def test_rejects_invalid_finding_scope_before_inference():
@@ -41,7 +42,8 @@ class Provider:
             raise self.failure
         return SimpleNamespace(stop_reason='tool_use', usage=None, content=[
             SimpleNamespace(type='tool_use', name='compose_grounded_answer',
-                            input={'answer': 'The retrieved evidence supports this finding.'})])
+                            input=draft_payload(json.loads(kwargs['messages'][-1]['content']),
+                                                'The retrieved evidence supports this finding.'))])
 
 
 def submit(monkeypatch, payload, provider=None):
@@ -348,7 +350,8 @@ def test_rejected_prose_never_reaches_findings_transport(monkeypatch):
         provider.calls.append(kwargs)
         return SimpleNamespace(stop_reason='tool_use', usage=None, content=[
             SimpleNamespace(type='tool_use', name='compose_grounded_answer',
-                            input={'answer': 'Unsupported NGN 999.00.'})])
+                            input=draft_payload(json.loads(kwargs['messages'][-1]['content']),
+                                                'Unsupported NGN 999.00.'))])
     provider.create = create
     events, _ = submit(monkeypatch, COMMISSION, provider)
     assert [event['type'] for event in events] == ['status', 'error']
@@ -364,3 +367,25 @@ def test_inventory_model_input_excludes_broader_metadata_counts(monkeypatch):
     assert 'high_count' not in json.dumps(payload['evidence'])
     assert 'synthetic_scenarios' not in json.dumps(payload['evidence'])
     assert 'high_count' in events[-1]['raw_data']['get_inventory_comparison']['metadata']
+
+
+def test_mandatory_findings_caveats_survive_model_omission(monkeypatch):
+    events, _ = submit(monkeypatch, COMMISSION)
+    response = events[-1]['response']
+    assert 'Absence of evidence does not establish a zero amount or a root cause.' in response
+    assert 'bounded sample' in response
+
+
+@pytest.mark.parametrize('field,value', [('product_code', 'another-product'),
+                                         ('dealer_id', 'another-account')])
+def test_inventory_rejects_evidence_outside_selected_identity(monkeypatch, field, value):
+    from backend.agent import tool_executor
+    request = {'dealer_id': '98052', 'mon_period': '202606',
+               'finding': {'module': 'inventory', 'type': 'INVENTORY_MISMATCH',
+                           'product_code': '1186254'}}
+    evidence = tool_executor.execute_explanation_evidence(request)
+    evidence['raw_data']['get_inventory_comparison']['rows'][0][field] = value
+    monkeypatch.setattr(tool_executor, 'execute_explanation_evidence', lambda *a, **kw: evidence)
+    events, provider = submit(monkeypatch, request)
+    assert events[-1]['error'] == 'invalid_evidence'
+    assert not provider.calls

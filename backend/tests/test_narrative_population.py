@@ -147,7 +147,7 @@ def test_final_model_receives_computed_largest_positive_product_without_changing
     payload = json.loads(calls[1]['messages'][-1]['content'])
     variance = payload['evidence']['measure_evidence']['measures'][0]['periods'][0]['variance']
     assert variance['largest_positive_product_contribution'] == {
-        'product': '5G ROUTER', 'change_ngn': 16431.62}
+        'product': '5G ROUTER', 'change_ngn': '16431.62'}
     raw_variance = evidence_period(result)['variance']
     assert 'largest_positive_product_contribution' not in raw_variance
     assert len(raw_variance['products']) == len(variance['products'])
@@ -203,7 +203,9 @@ def test_model_receives_complete_product_growth_flags_without_changing_raw_evide
     raw = evidence_period(result)['variance']
     assert 'all_product_commissions_increased' not in raw
     assert 'all_product_activation_counts_increased' not in raw
-    assert raw['products'] == variance['products']
+    from decimal import Decimal
+    assert [(p['product'], Decimal(str(p['change_ngn']))) for p in raw['products']] == [(p['product'], Decimal(p['change_ngn'])) for p in variance['products']]
+    assert all('prepared' not in p for p in raw['products'])
     assert result['response'].startswith('MIFI_1 contributed NGN 33,906.87, while HYNETFLEX_1 remained flat.')
 
 

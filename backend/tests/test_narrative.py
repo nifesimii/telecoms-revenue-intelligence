@@ -1,3 +1,4 @@
+from backend.tests.narrative_provider import draft_payload
 """Final-answer seam: provider authors prose, application owns facts."""
 import asyncio
 import json
@@ -14,7 +15,7 @@ def provider(answer_factory):
         payload = json.loads(kwargs['messages'][-1]['content'])
         answer = answer_factory(payload, len(calls))
         return SimpleNamespace(stop_reason='tool_use', content=[SimpleNamespace(
-            type='tool_use', name='compose_grounded_answer', input={'answer': answer})])
+            type='tool_use', name='compose_grounded_answer', input=draft_payload(payload, answer))])
     return SimpleNamespace(messages=SimpleNamespace(create=create)), calls
 
 
@@ -27,7 +28,9 @@ def compose(client, **options):
                 validated_context='50 zero-commission records; 48 USP snapshot misses.',
                 sample_mode=True, model='test-model')
     args.update(options)
-    return asyncio.run(compose_answer(client, InferenceRun('test'), **args))
+    from backend.agent.answer_evidence import prepare_answer
+    prepared = prepare_answer(**{key: args.pop(key) for key in ('scope', 'evidence', 'tools_called', 'validated_context')})
+    return asyncio.run(compose_answer(client, InferenceRun('test'), prepared=prepared, **args))
 
 
 def test_provider_writes_answer_from_structured_facts():

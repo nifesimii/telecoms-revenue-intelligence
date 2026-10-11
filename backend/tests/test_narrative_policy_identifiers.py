@@ -1,9 +1,11 @@
+from backend.tests.narrative_provider import draft_payload
 """Final generation can reference numeric KB identifiers without inventing facts."""
 import asyncio
 import json
 from types import SimpleNamespace
 
 from backend.agent.inference import InferenceRun
+from backend.agent.answer_evidence import prepare_answer
 from backend.agent.narrative import compose_answer
 
 
@@ -13,13 +15,14 @@ def test_documented_denomination_identifier_has_a_grounded_reference():
         identifier = next(f for f in payload['facts'] if f['value'] == 'Hynex_1')
         text = 'The documented denomination split is Hynex / {{' + identifier['id'] + '}}.'
         return SimpleNamespace(stop_reason='tool_use', content=[SimpleNamespace(
-            type='tool_use', name='compose_grounded_answer', input={'answer': text})])
+            type='tool_use', name='compose_grounded_answer', input=draft_payload(payload, text))])
     client = SimpleNamespace(messages=SimpleNamespace(create=create))
     result = asyncio.run(compose_answer(client, InferenceRun('test'), question='What causes are documented?',
-        history=[], scope={'kind': 'knowledge', 'knowledge_topic': 'zero_commission_causes'}, evidence={},
-        tools_called=[], validated_context='Known denomination split: Hynex / Hynex_1.',
+        history=[], prepared=prepare_answer(scope={'kind': 'knowledge', 'knowledge_topic': 'zero_commission_causes'}, evidence={},
+        tools_called=[], validated_context='Known denomination split: Hynex / Hynex_1.'),
         sample_mode=True, model='test'))
-    assert result == 'The documented denomination split is Hynex / Hynex_1.'
+    assert result.startswith('The documented denomination split is Hynex / Hynex_1.')
+    assert 'entitlement' in result
 
 
 def test_unsupported_question_identifiers_do_not_become_financial_evidence():
@@ -28,13 +31,12 @@ def test_unsupported_question_identifiers_do_not_become_financial_evidence():
         assert payload['evidence'] == {}
         assert not any(str(f['value']) == '74050' for f in payload['facts'])
         return SimpleNamespace(stop_reason='tool_use', content=[SimpleNamespace(
-            type='tool_use', name='compose_grounded_answer', input={
-                'answer': 'I cannot perform semantic similarity searches across dealers.'})])
+            type='tool_use', name='compose_grounded_answer', input=draft_payload(payload, 'I cannot perform semantic similarity searches across dealers.'))])
     client = SimpleNamespace(messages=SimpleNamespace(create=create))
     result = asyncio.run(compose_answer(client, InferenceRun('test'),
         question='Find dealers similar to 74050.', history=[],
-        scope={'kind': 'unsupported', 'unsupported_reason': 'capability'}, evidence={}, tools_called=[],
-        validated_context='Semantic similarity search is unavailable.', sample_mode=True, model='test'))
+        prepared=prepare_answer(scope={'kind': 'unsupported', 'unsupported_reason': 'capability'}, evidence={}, tools_called=[],
+        validated_context='Semantic similarity search is unavailable.'), sample_mode=True, model='test'))
     assert result == 'I cannot perform semantic similarity searches across dealers.'
 
 

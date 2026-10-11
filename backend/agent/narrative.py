@@ -9,14 +9,16 @@ from __future__ import annotations
 import json
 import calendar
 from backend.terminology import RATE_CARD_MISS_LABEL, normalize_generated_prose
-import math
 import re
 from decimal import Decimal
 from html import escape
 from typing import Any
+from pydantic import BaseModel, ConfigDict, Field
+
+from backend.agent.answer_evidence import PreparedAnswer, bounded as _bounded, build_facts as _facts
 
 from backend.agent import prompts
-from backend.agent.inference import cached_system
+from backend.agent.inference import cached_system, strict_tool
 
 NARRATIVE_FALLBACK = 'I could not complete a reliable answer. Please retry.'
 
@@ -25,12 +27,23 @@ class NarrativeGroundingError(ValueError):
     """No publishable narrative after the bounded repair attempt."""
 
 
+class ExplanationBlock(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    text: str = Field(min_length=1, max_length=12000)
+    claim_ids: list[str] = Field(max_length=2000)
+
+
+class AnswerDraft(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    headline: ExplanationBlock | None
+    explanation_blocks: list[ExplanationBlock] = Field(max_length=40)
+    next_step_ids: list[str] = Field(max_length=30)
+
+
 ANSWER_TOOL = {
     'name': 'compose_grounded_answer',
-    'description': 'Write the final conversational answer, using supplied fact placeholders for factual values.',
-    'input_schema': {'type': 'object', 'properties': {
-        'answer': {'type': 'string', 'minLength': 1, 'maxLength': 12000},
-    }, 'required': ['answer'], 'additionalProperties': False},
+    'description': 'Compose supported explanation blocks and select application-owned next steps.',
+    'input_schema': AnswerDraft.model_json_schema(),
 }
 _TOKEN = re.compile(r'\{\{(f\d+)\}\}')
 _NUMBER = re.compile(r'(?<![\w])(?:(?:NGN|₦)\s*)?-?\d[\d,]*(?:\.\d+)?%?')
@@ -54,157 +67,6 @@ _IDENTIFIERS = {'dealer_id', 'dealer_name', 'dealer_code', 'distributor_code', '
                 'period', 'periods', 'mon_period', 'imei', 'product_code', 'product',
                 'product_name', 'batch_reference', 'evidence_ref', 'reference',
                 'invoice_date', 'first_activation_date', 'activation_date', 'process_state'}
-
-
-def _bounded(value: Any, key: str = '', *, presentation=None) -> Any:
-    """Narrative sees a short record sample; original attachments retain their page."""
-    if isinstance(value, dict):
-        result = {k: _bounded(v, k, presentation=presentation) for k, v in value.items()}
-        products = value.get('products')
-        if (isinstance(products, list) and products and all(
-                isinstance(product, dict) and isinstance(product.get('change_ngn'), (int, float, Decimal))
-                and isinstance(product.get('product'), str) for product in products)):
-            largest = max(products, key=lambda product: product['change_ngn'])
-            result['all_product_commissions_increased'] = all(product['change_ngn'] > 0 for product in products)
-            if all(isinstance(product.get(key), (int, float)) for product in products
-                   for key in ('earlier_activations', 'later_activations')):
-                result['all_product_activation_counts_increased'] = all(
-                    product['later_activations'] > product['earlier_activations'] for product in products)
-            if largest['change_ngn'] > 0:
-                result['largest_positive_product_contribution'] = {
-                    'product': largest['product'], 'change_ngn': largest['change_ngn']}
-        if (presentation == 'records' and value.get('status') == 'available'
-                and isinstance(value.get('records'), list) and isinstance(value.get('pagination'), dict)):
-            page = value['pagination']
-            offset, total, shown = page['offset'], page['total'], len(value['records'])
-            if (any(isinstance(n, bool) or not isinstance(n, int) or n < 0 for n in (offset, total, shown))
-                    or shown and offset + shown > total):
-                raise ValueError('Invalid record page bounds')
-            result['record_page'] = {'first': offset + 1 if shown else None,
-                                     'last': offset + shown if shown else None,
-                                     'shown': shown, 'total': total,
-                                     'has_more': bool(page.get('has_more'))}
-        omitted = {k: len(v) if k == 'records' and presentation == 'records' else len(v) - 12
-                   for k, v in value.items()
-                   if k in {'rows', 'records', 'steps'} and isinstance(v, list)
-                   and (len(v) > 12 or k == 'records' and presentation == 'records' and v)}
-        if omitted:
-            result['_narrative_omitted_records'] = omitted
-        return result
-    if isinstance(value, list):
-        if key == 'records' and presentation == 'records':
-            return []
-        selected = value[:12] if key in {'rows', 'records', 'steps'} else value
-        return [_bounded(v, key, presentation=presentation) for v in selected]
-    if isinstance(value, Decimal):
-        return float(value)
-    return value
-
-
-def _financial_meaning(value):
-    words = set(re.findall(r'[a-z]+', value.lower()))
-    if words & {'change', 'delta'}:
-        return 'change'
-    if words & {'earlier', 'prior'}:
-        return 'prior_level'
-    if words & {'later', 'current'}:
-        return 'current_level'
-    if words & {'outstanding', 'balance'}:
-        return 'balance'
-    if words & {'paid', 'settled', 'settlement'}:
-        return 'paid'
-    if words & {'owed', 'payable', 'entitlement'}:
-        return 'owed'
-    return None
-
-
-def _currency_table_cells(context: str) -> list[tuple[int, int]]:
-    """Locate cells whose own source table header explicitly supplies NGN units."""
-    cells = []
-    lines = context.splitlines(keepends=True)
-    columns: set[int] = set()
-    offset = 0
-    for index, line in enumerate(lines):
-        if not line.lstrip().startswith('|'):
-            columns = set()
-        elif index + 1 < len(lines) and re.fullmatch(
-                r'\s*\|(?:\s*:?-+:?\s*\|)+\s*', lines[index + 1]):
-            columns = {column for column, cell in enumerate(line.split('|'))
-                       if re.search(r'\bNGN\b|₦', cell)}
-        elif columns:
-            cursor = offset
-            for column, cell in enumerate(line.split('|')):
-                if column in columns and re.fullmatch(r'\s*-?\d[\d,]*(?:\.\d+)?\s*', cell):
-                    cells.append((cursor, cursor + len(cell)))
-                cursor += len(cell) + 1
-        offset += len(line)
-    return cells
-
-
-def _facts(evidence: dict, scope: dict, context: str) -> list[dict]:
-    facts: list[dict] = []
-
-    def add(path, value, display, meaning=None):
-        facts.append({'id': f'f{len(facts)}', 'path': path, 'value': value, 'display': display, 'meaning': meaning})
-
-    def walk(value, path, unit=None, key='', meaning=None):
-        if isinstance(value, dict):
-            unit = value.get('unit', unit)
-            meaning = _financial_meaning(value.get('measure', '')) or meaning
-            for child, item in value.items():
-                if child in {'offset', 'limit', 'record_offset', 'page', 'page_size'} and scope.get('presentation') != 'records':
-                    continue
-                walk(item, path + '.' + child, unit, child, _financial_meaning(child) or meaning)
-        elif isinstance(value, list):
-            for i, item in enumerate(value):
-                walk(item, f'{path}[{i}]', unit, key, meaning)
-        elif isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
-            if not math.isfinite(float(value)):
-                raise ValueError('Non-finite narrative evidence')
-            monetary = ('ngn' in key or key in {'owed', 'paid', 'balance', 'outstanding'}
-                        or unit == 'ngn' and key in {'total', 'value'})
-            display = f'NGN {value:,.2f}' if monetary else f'{value:,}'
-            count_meaning = ('total_activation_count' if '.totals.' in path
-                             and key in {'earlier_activations', 'later_activations'} else None)
-            add(path, value, display, meaning if monetary else count_meaning)
-        elif isinstance(value, str) and (key in _IDENTIFIERS or key == 'cause'):
-            # A source label is data, never a new instruction or executable HTML.
-            display = _CAUSES.get(value, value)
-            if key in {'period', 'periods', 'mon_period'} and re.fullmatch(r'\d{4}(0[1-9]|1[0-2])', value):
-                display = f'{calendar.month_name[int(value[4:])]} {value[:4]}'
-            display = re.sub(r'[<>\r\n|]', ' ', display)
-            add(path, value, display)
-
-    walk(evidence, 'evidence')
-    walk({key: scope[key] for key in ('dealer_id', 'dealer_name', 'periods') if key in scope}, 'scope')
-    if scope.get('kind') == 'knowledge':
-        # Exact identifiers in the validated policy excerpt are source facts too.
-        # Hynex_1 and 5G cannot otherwise cross the numeric-literal guard, even
-        # though their digits are part of documented names rather than quantities.
-        for identifier in dict.fromkeys(re.findall(r'\b[A-Za-z0-9][A-Za-z0-9_-]*\b', context)):
-            if (any(c.isdigit() for c in identifier) and any(c.isalpha() for c in identifier)
-                    and not any(f['value'] == identifier for f in facts)):
-                add('validated_context.identifier', identifier, identifier)
-    # Legacy validated rendering currently owns cross-period arithmetic and
-    # ranking subtotals. Retain these as explicitly labelled supplemental facts.
-    currency_cells = _currency_table_cells(context)
-    for match in _NUMBER.finditer(context):
-        start, end = max(0, match.start() - 65), min(len(context), match.end() + 65)
-        if match.group() in scope.get('periods', []):
-            continue
-        monetary = (match.group().startswith(('NGN', '₦')) or
-                    any(start <= match.start() < end for start, end in currency_cells))
-        display = match.group()
-        if monetary:
-            amount = re.sub(r'^(?:NGN|₦)\s*', '', match.group()).replace(',', '')
-            display = f'NGN {Decimal(amount):,.2f}'
-        if monetary and any(f['display'] == display for f in facts):
-            continue
-        prefix = re.split(r'[;\n.!?]', context[:match.start()])[-1][-70:]
-        meaning = _financial_meaning(prefix) if monetary else None
-        add('validated_context.derived', match.group(), display, meaning)
-        facts[-1]['context'] = context[start:end]
-    return facts
 
 
 def _attachments(scope, context, tools_called, *, evidence=None):
@@ -373,7 +235,7 @@ def _reference_known_labels(answer, facts):
             labels = [value]
         elif 'period' in path and re.fullmatch(r'\d{4}(0[1-9]|1[0-2])', value):
             labels = [fact['display'], calendar.month_name[int(value[4:])]]
-        elif path == 'validated_context.identifier':
+        elif path == 'policy.identifier':
             labels = [value]
         for label in labels:
             aliases.setdefault(label, {})[value] = fact['id']
@@ -385,16 +247,7 @@ def _reference_known_labels(answer, facts):
                    for part in re.split(r'(\{\{f\d+\}\})', answer))
 
 
-def _candidate(response, facts, scope, context, evidence):
-    blocks = [b for b in response.content if b.type == 'tool_use']
-    if response.stop_reason != 'tool_use' or len(blocks) != 1 or blocks[0].name != ANSWER_TOOL['name']:
-        raise NarrativeGroundingError('Expected one complete answer contract')
-    value = blocks[0].input
-    if not isinstance(value, dict) or set(value) != {'answer'}:
-        raise NarrativeGroundingError('Invalid answer shape')
-    answer = value['answer']
-    if not isinstance(answer, str) or not 0 < len(answer.strip()) <= 12000:
-        raise NarrativeGroundingError('Empty or oversized answer')
+def _validate_text(answer, facts, scope, context, evidence):
     answer = _reference_known_labels(answer, facts)
     if re.search(r'^\s*\||^\s*:?-{2,}\s*\|', answer, re.M):
         raise NarrativeGroundingError('Tables are application-owned; provide narrative only')
@@ -418,6 +271,11 @@ def _candidate(response, facts, scope, context, evidence):
             if field not in {'distinct_product_code_count', 'unique_product_code_count', 'distinct_product_count'}:
                 raise NarrativeGroundingError('Activation-record counts cannot establish distinct product-code counts')
     plain = _TOKEN.sub('', answer)
+    if _asserted(r'\b(?:should|must|recommend|please)\b.{0,65}\b(?:pay|release|approve|adjust|correct|reconcile|review|escalate|contact|send|obtain|request)\b|'
+                 r'(?:^|[.!?;\n]|:\s*)\s*(?:pay|release|approve|adjust|correct|reconcile|review|escalate|contact|send|obtain|request)\b|'
+                 r'\b(?:will|shall)\s+(?:pay|release|approve|adjust|correct)\b', plain):
+        raise NarrativeGroundingError('Next steps must use permitted action IDs, not model-authored instructions')
+
     _check_population_claims(answer, evidence, facts)
     if '{{' in plain or '}}' in plain or re.search(r'\d|[₦$€£]', plain):
         raise NarrativeGroundingError('Factual values must use supplied placeholders')
@@ -446,8 +304,13 @@ def _candidate(response, facts, scope, context, evidence):
         fact = ledger[match['id']]
         field = fact.get('meaning')
         meaning = 'balance' if match['label'].lower().startswith('outstanding') else match['label'].lower()
-        if field in {'paid', 'owed', 'balance', 'outstanding'} and field != meaning and {field, meaning} != {'balance', 'outstanding'}:
+        if field in {'paid', 'owed', 'balance', 'outstanding', 'subscription_revenue', 'revenue'} and field != meaning and {field, meaning} != {'balance', 'outstanding'}:
             raise NarrativeGroundingError('Payment amount has the wrong meaning')
+    for match in re.finditer(r'(?P<label>commission|subscription revenue)\s*(?:owed|is|was|:|of)?\s*(?:is\s+)?\{\{(?P<id>f\d+)\}\}', answer, re.I):
+        field = ledger[match['id']].get('meaning')
+        if ((match['label'].lower() == 'commission' and field == 'subscription_revenue')
+                or (match['label'].lower() == 'subscription revenue' and field in {'commission', 'owed', 'paid', 'balance'})):
+            raise NarrativeGroundingError('Subscription revenue and commission have different financial meanings')
     _check_cause_support(plain, facts, scope, context)
     # Block novel references and month names: use scope/reference tokens instead.
     if re.search(r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\b', plain):
@@ -463,75 +326,89 @@ def _candidate(response, facts, scope, context, evidence):
     return rendered
 
 
-async def compose_answer(client, run, *, question, history, scope, evidence,
-                         tools_called, validated_context, sample_mode, model) -> str:
-    """Compose, check, and at most once repair without publishing a draft."""
-    projected = _bounded(evidence, presentation=scope.get('presentation'))
-    context = (validated_context if scope.get('kind') == 'knowledge' else
-               validated_context.partition('### Verification evidence')[0])
-    # Tables are application-owned attachments, not a second narrative source.
-    if scope.get('kind') != 'knowledge':
-        context = re.sub(r'(?:^\|.*(?:\n|$))+', '', context, flags=re.M)
-        if scope.get('presentation') not in {'actions', 'dealer_draft'}:
-            context = context.partition('**Next steps**')[0].rstrip()
-    generation_evidence = projected
-    if scope.get('presentation') == 'records':
-        # The model introduces the page; the application alone presents its
-        # exact bounds and rows. Do not offer numeric page facts it must not use.
-        envelope = projected.get('measure_evidence', projected)
-        investigation = envelope.get('investigation', {})
-        generation_evidence = {'investigation': {
-            'status': investigation.get('status', 'unavailable'),
-            'family': investigation.get('family'),
-        }}
-        context = ('The application appends the requested record table and exact page range.'
-                   if investigation.get('status') == 'available' else 'Record evidence is unavailable.')
-    facts = _facts(generation_evidence, scope, context)
-    payload = {'question': question, 'history': history[-12:], 'scope': scope,
-               'evidence': generation_evidence, 'facts': facts, 'validated_context': context,
-               'tools_called': tools_called, 'sample_mode': sample_mode}
-    if scope.get('presentation') == 'records':
-        # Interpretation already resolved the next page using the full history.
-        # Old assistant tables/provenance are not material for this introduction
-        # and otherwise invite the model to reproduce application-owned output.
+def _candidate(response, prepared: PreparedAnswer):
+    blocks = [b for b in response.content if b.type == 'tool_use']
+    if response.stop_reason != 'tool_use' or len(blocks) != 1 or blocks[0].name != ANSWER_TOOL['name']:
+        raise NarrativeGroundingError('Expected one complete answer contract')
+    try:
+        draft = AnswerDraft.model_validate(blocks[0].input)
+    except ValueError:
+        raise NarrativeGroundingError('Invalid answer shape') from None
+    explanation = ([draft.headline] if draft.headline is not None else []) + draft.explanation_blocks
+    if not explanation or not any(block.text.strip() for block in explanation):
+        raise NarrativeGroundingError('Empty or oversized answer')
+    if sum(len(block.text) for block in explanation) > 12000:
+        raise NarrativeGroundingError('Empty or oversized answer')
+    claims = {claim['id']: claim for claim in prepared.claims}
+    facts = {fact['id']: fact for fact in prepared.facts}
+    actions = {action['id']: action['text'] for action in prepared.permitted_actions}
+    rendered = []
+    for block in explanation:
+        if any(claim_id not in claims for claim_id in block.claim_ids):
+            raise NarrativeGroundingError('Unknown claim reference')
+        text = _reference_known_labels(block.text, prepared.facts)
+        ids = _TOKEN.findall(text)
+        if any(fact_id not in facts for fact_id in ids):
+            raise NarrativeGroundingError('Unknown fact reference')
+        allowed = {fact_id for claim_id in block.claim_ids for fact_id in claims[claim_id]['fact_ids']}
+        if any(fact_id not in allowed for fact_id in ids):
+            raise NarrativeGroundingError('Fact reference is not supported by a cited claim')
+        if not block.claim_ids and prepared.claims:
+            raise NarrativeGroundingError('Explanation requires a supported claim')
+        # Citations are necessary, not sufficient. Keep semantic guards on both
+        # the placeholders and substituted source values.
+        rendered.append(_validate_text(text, prepared.facts, prepared.scope,
+                                       prepared.source_context, prepared.evidence))
+    if any(action_id not in actions for action_id in draft.next_step_ids):
+        raise NarrativeGroundingError('Unknown or unsupported action reference')
+    if draft.next_step_ids:
+        rendered.append('**Next steps**\n\n' + '\n'.join('- ' + actions[key] for key in dict.fromkeys(draft.next_step_ids)))
+    return '\n\n'.join(rendered)
+
+
+async def compose_answer(client, run, *, question, history, prepared: PreparedAnswer,
+                         sample_mode, model) -> str:
+    """Generate and validate a complete draft before rendering owned attachments."""
+    if not isinstance(prepared, PreparedAnswer):
+        raise TypeError('Composition requires application-prepared evidence')
+    payload = {**prepared.model_payload(), 'question': question, 'history': history[-12:],
+               'sample_mode': sample_mode}
+    if prepared.scope.get('presentation') == 'records':
         payload['history'] = []
-        payload['scope'] = {key: value for key, value in scope.items()
-                            if key not in {'record_offset', 'limit'}}
+        payload['scope'] = {k: v for k, v in payload['scope'].items() if k not in {'record_offset', 'limit'}}
         payload['answer_constraints'] = (
-            'Write one brief introductory sentence only. The application adds the complete record table, '
-            'exact page range and evidence disclosure. Do not repeat tables, quantities, ranges, '
-            'provenance or previous answers. Use the supplied dealer and period placeholders if useful.')
-    identifier_placeholders = {fact['value']: '{{' + fact['id'] + '}}' for fact in facts
+            'Write a brief introduction without numbers. The application appends exact page ranges and records.')
+    identifier_placeholders = {fact['value']: '{{' + fact['id'] + '}}' for fact in prepared.facts
                                if isinstance(fact['value'], str) and re.search(r'\d', fact['value'])
-                               and (fact['path'] == 'validated_context.identifier'
+                               and (fact['path'] == 'policy.identifier'
                                     or fact['path'].rsplit('.', 1)[-1] in _IDENTIFIERS)}
     if identifier_placeholders:
         payload['identifier_placeholders'] = identifier_placeholders
-        payload['identifier_instruction'] = ('These documented names contain digits. Use their supplied '
-            'placeholders instead of spelling their literal names in the answer, including on the first attempt.')
-    if scope.get('kind') == 'unsupported':
+    if prepared.scope.get('kind') == 'unsupported':
         payload['answer_constraints'] = (
-            'Explain this capability boundary directly. Do not repeat numbers or identifiers from the '
-            'question unless supplied as scope facts. No records were retrieved. Do not invent another '
-            'capability, add unsolicited alternatives, or ask for scope for an operation Atlas cannot perform.')
-    if len(json.dumps(payload, ensure_ascii=False, default=str)) > 180000:
+            'Explain only the documented capability boundary. No records were retrieved. '
+            'Do not invent capabilities, alternatives or requests for unsupported operations.')
+    if len(json.dumps(payload, ensure_ascii=False, default=str).encode('utf-8')) > 180000:
         raise NarrativeGroundingError('Evidence exceeds bounded narrative capacity')
     for attempt in range(2):
         run.remaining()
         response = await run.create(client, model=model, max_tokens=2400,
             system=cached_system(prompts.get_narrative_system_prompt()),
-            tools=[ANSWER_TOOL], tool_choice={'type': 'tool', 'name': ANSWER_TOOL['name']},
+            tools=[strict_tool(ANSWER_TOOL)], tool_choice={'type': 'tool', 'name': ANSWER_TOOL['name']},
             messages=[{'role': 'user', 'content': json.dumps(payload, ensure_ascii=False, default=str, allow_nan=False)}])
         try:
-            answer = _candidate(response, facts, scope, context, projected)
+            answer = _candidate(response, prepared)
         except NarrativeGroundingError as exc:
-            run.log('narrative_rejected', attempt=attempt + 1, reason=str(exc))  # raises take string literals only (AST-tested)
+            run.log('narrative_rejected', attempt=attempt + 1, reason=str(exc))
             if attempt or not run.claim_recovery('narrative_repair'):
                 raise
-            payload['repair'] = str(exc) + '. Compose a fresh answer using the supplied facts.'
-            if identifier_placeholders:
-                payload['repair'] += ' Replace digit-containing source names using identifier_placeholders.'
+            payload['repair'] = str(exc) + '. Compose a fresh draft using the supplied supported claims.'
             continue
-        attachments = _attachments(scope, validated_context, tools_called, evidence=projected)
-        return answer + ('\n\n' + attachments if attachments else '')
+        run.remaining()
+        parts = [answer, *prepared.mandatory_caveats,
+                 *(attachment['text'] for attachment in prepared.attachments if attachment.get('text'))]
+        rendered = '\n\n'.join(dict.fromkeys(part for part in parts if part))
+        if len(rendered) > 12000:
+            raise NarrativeGroundingError('Empty or oversized answer')
+        return rendered
     raise NarrativeGroundingError('No publishable answer')

@@ -11,6 +11,7 @@ from backend.agent import tool_executor
 from backend.agent.agent import MODEL_NAME
 from backend.agent.inference import InferenceRun, new_client
 from backend.agent.narrative import compose_answer
+from backend.agent.answer_evidence import prepare_answer
 
 
 async def explain_finding(request: dict):
@@ -40,10 +41,23 @@ async def explain_finding(request: dict):
                 run.log('tool_complete', **timing)
             projected = deepcopy(evidence['raw_data'])
             selected = projected['explanation_scope']
+            if (selected['dealer_id'] != request['dealer_id']
+                    or selected['mon_period'] != request['mon_period']
+                    or selected['finding'] != request['finding']):
+                raise tool_executor.FindingEvidenceUnavailable()
             scope = {'kind': 'finding', 'presentation': 'summary',
                      'dealer_id': selected['dealer_id'],
                      'periods': [selected['mon_period']],
                      'finding': selected['finding']}
+            if selected['finding']['module'] == 'inventory':
+                rows = projected['get_inventory_comparison']['rows']
+                product = selected['finding']['product_code']
+                if not rows or any(str(row.get('product_code')) != product
+                                   or str(row.get('dealer_id')) != selected['dealer_id']
+                                   for row in rows):
+                    raise tool_executor.FindingEvidenceUnavailable()
+                scope['product_code'] = product
+                scope['product_name'] = rows[0].get('product_name')
             caveats = list(selected['caveats'])
             # Assurance metadata covers the whole dealer or reporting period.
             # It is provenance, never evidence for the selected inventory product.
@@ -56,14 +70,16 @@ async def explain_finding(request: dict):
             projected['mandatory_disclosures'] = caveats
             context = ('Explain the server-verified finding using its exact account, period and product. '
                        'Only the retrieved investigation establishes population-level causes. '
-                       'Payment exception flags do not establish causation.\n\n'
-                       '### Verification evidence\n\n' + '\n\n'.join(caveats))
+                       'Payment exception flags do not establish causation.')
+            prepared = prepare_answer(
+                scope=scope, evidence=projected, tools_called=evidence['tools_called'],
+                validated_context=context, mandatory_caveats=caveats,
+            )
             async with new_client(config.ANTHROPIC_API_KEY) as client:
                 yield {'type': 'status', 'phase': 'thinking', 'reset': False}
                 answer = await compose_answer(
                     client, run, question='Explain this verified finding.', history=[],
-                    scope=scope, evidence=projected, tools_called=evidence['tools_called'],
-                    validated_context=context, sample_mode=config.USE_SAMPLE_DATA,
+                    prepared=prepared, sample_mode=config.USE_SAMPLE_DATA,
                     model=MODEL_NAME,
                 )
             # Nothing authored by the model crosses the transport until the
