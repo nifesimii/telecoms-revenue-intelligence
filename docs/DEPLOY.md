@@ -46,6 +46,14 @@ Save. Render redeploys automatically.
 **If either `DEMO_*` is blank the gate is disabled and the app is public.**
 Both must be set.
 
+The Blueprint also links `FBB_AUDIT_PG_*` and `APDP_PG_*` to the managed
+`fbb-audit-pg` database automatically. If the web service was created manually
+instead of through the Blueprint, verify those variables under **Environment**.
+An Audit Trails error mentioning `localhost:5544` means the database binding
+is missing—not that Postgres should be running inside the web container.
+For the demo, the backend can fall back from missing `FBB_AUDIT_PG_*` values to
+explicit `APDP_PG_*` values because both schemas intentionally share one DB.
+
 ## 4. Smoke test
 
 Once the deploy shows **Live**:
@@ -53,12 +61,20 @@ Once the deploy shows **Live**:
 ```bash
 # Health probe — no auth required, confirms the process is up.
 curl -i https://fbb-preview.onrender.com/health
-# → 200 {"status":"ok","sample_data_mode":true,"payment_source":"simulated"}
+# → 200 {"status":"ok","sample_data_mode":true,"payment_source":"simulated",...}
+# The Render preview intentionally matches localhost and reads the packaged
+# payment_simulation.csv fixture. Use PAYMENT_SOURCE=apdp only in a dedicated
+# APDP integration environment.
 
 # Anything else — 401 without creds, 200 with them.
 curl -i https://fbb-preview.onrender.com/
 curl -i -u "mtn-gm:<password>" https://fbb-preview.onrender.com/periods
 ```
+
+The application also enforces `simulated` when Render identifies the service
+as `fbb-preview`. This guards against a stale dashboard-level
+`PAYMENT_SOURCE=apdp` override. Use a separately named service for APDP
+integration testing.
 
 In a browser: open the site, browser prompts for the basic-auth credentials,
 enter them once, the SPA loads. Click **Audit Trails** → **Run** → confirm
@@ -82,14 +98,35 @@ true` in `render.yaml` picks it up. Or dashboard → **Manual Deploy**.
 **Reset the audit DB.** Dashboard → Postgres → **Reset**. Next time
 someone opens the Audit Trails tab, `ensure_schema()` recreates the tables
 from `infra/postgres/audit_init.sql`; running an audit repopulates them.
+Note: this also empties `normalized.transactions`. The next backend boot
+does not reload APDP while the preview uses `PAYMENT_SOURCE=simulated`.
+If a dedicated APDP environment is enabled later, its next boot will
+re-apply `infra/postgres/apdp_seed.sql` automatically (~60s).
+
+**Reload the APDP seed manually.** Delete the rows and restart the
+backend service, e.g. from a psql shell:
+```sql
+TRUNCATE normalized.transactions;
+```
+Render → **Manual Deploy** on the web service — the lifespan hook
+notices the empty table and re-applies the seed. Useful if you've been
+poking at data and want a fresh known-good state.
 
 **Downgrade to free.** Change `plan: starter` → `plan: free` in
 `render.yaml`. Accept ~30s cold starts on the first request after idle.
 
 ## Known limits (deliberately not fixed)
 
-- **Sample data only.** `USE_SAMPLE_DATA=true`, `PAYMENT_SOURCE=simulated`.
-  Live Presto still `NotImplementedError`; APDP stack not deployed.
+- **Sample data only on the FBB side.** `USE_SAMPLE_DATA=true`. Live
+  Presto still `NotImplementedError` (the query strings in
+  `backend/db/queries.py` exist for that future path). Payment also uses
+  the deterministic simulated CSV so Render matches localhost.
+- **APDP data comes from a packaged seed, not live ingestion.**
+  `infra/postgres/apdp_seed.sql` is a fixture pg_dump baked into the
+  Docker image (~23 MB). The backend applies it on first boot via
+  `main.py`'s lifespan hook when `normalized.transactions` is empty.
+  Real streaming ingestion via Kafka/Flink is out of scope for the
+  demo (the Flink Docker build is broken — see `apdp/CLAUDE.md`).
 - **One shared credential.** Basic Auth is a gate, not a user system. Anyone
   with the URL + password gets full access to every endpoint.
 - **Frankfurt region.** Latency from Lagos is ~150–200 ms; acceptable for a

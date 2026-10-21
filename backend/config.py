@@ -37,26 +37,57 @@ USE_SAMPLE_DATA: bool = os.getenv("USE_SAMPLE_DATA", "true").lower() == "true"
 # "simulated" (default) → read from backend/data/samples/payment_simulation.csv
 # "apdp"                → read from APDP Postgres normalized.partner_settlements
 # Anything else is treated as "simulated" for safety.
-PAYMENT_SOURCE: str = os.getenv("PAYMENT_SOURCE", "simulated").lower()
-if PAYMENT_SOURCE not in ("simulated", "apdp"):
-    PAYMENT_SOURCE = "simulated"
+def _resolve_payment_source(requested: str, render_service_name: str) -> str:
+    source = requested.lower()
+    if source not in ("simulated", "apdp"):
+        source = "simulated"
+    # fbb-preview is the deterministic GM environment. Render dashboard
+    # variables can drift from render.yaml, so enforce the preview contract at
+    # the application boundary. A separately named Render service can still
+    # opt into APDP for integration testing.
+    if render_service_name == "fbb-preview":
+        return "simulated"
+    return source
+
+
+PAYMENT_SOURCE: str = _resolve_payment_source(
+    os.getenv("PAYMENT_SOURCE", "simulated"),
+    os.getenv("RENDER_SERVICE_NAME", ""),
+)
 
 # --- APDP Postgres (only used when PAYMENT_SOURCE=apdp) ---
-APDP_PG_HOST: str = os.getenv("APDP_PG_HOST", "localhost")
-APDP_PG_PORT: int = int(os.getenv("APDP_PG_PORT", "5432"))
-APDP_PG_DB: str = os.getenv("APDP_PG_DB", "payment_platform")
-APDP_PG_USER: str = os.getenv("APDP_PG_USER", "platform_user")
-APDP_PG_PASSWORD: str = os.getenv("APDP_PG_PASSWORD", "platform_pass")
+# Keep the raw explicit values so the audit connection can distinguish a real
+# deployment binding from the local APDP defaults below.
+_APDP_PG_HOST_ENV = os.getenv("APDP_PG_HOST")
+_APDP_PG_PORT_ENV = os.getenv("APDP_PG_PORT")
+_APDP_PG_DB_ENV = os.getenv("APDP_PG_DB")
+_APDP_PG_USER_ENV = os.getenv("APDP_PG_USER")
+_APDP_PG_PASSWORD_ENV = os.getenv("APDP_PG_PASSWORD")
+
+APDP_PG_HOST: str = _APDP_PG_HOST_ENV or "localhost"
+APDP_PG_PORT: int = int(_APDP_PG_PORT_ENV or "5432")
+APDP_PG_DB: str = _APDP_PG_DB_ENV or "payment_platform"
+APDP_PG_USER: str = _APDP_PG_USER_ENV or "platform_user"
+APDP_PG_PASSWORD: str = _APDP_PG_PASSWORD_ENV or "platform_pass"
 
 # --- FBB audit Postgres (dedicated, separate from APDP) ---
 # Holds the zero-commission verification trails. See docker-compose.yml
 # (fbb-postgres) and infra/postgres/audit_init.sql. Host port defaults to
 # 5544 to avoid clashing with APDP's 5432 / a local Postgres.
-FBB_AUDIT_PG_HOST: str = os.getenv("FBB_AUDIT_PG_HOST", "localhost")
-FBB_AUDIT_PG_PORT: int = int(os.getenv("FBB_AUDIT_PG_PORT", "5544"))
-FBB_AUDIT_PG_DB: str = os.getenv("FBB_AUDIT_PG_DB", "fbb_audit")
-FBB_AUDIT_PG_USER: str = os.getenv("FBB_AUDIT_PG_USER", "fbb_audit")
-FBB_AUDIT_PG_PASSWORD: str = os.getenv("FBB_AUDIT_PG_PASSWORD", "fbb_audit_pass")
+# Render's demo intentionally stores the ``audit`` and ``normalized`` schemas
+# in one managed database. A service created outside the Blueprint may have
+# only APDP_PG_* linked; in that case reuse those *explicit* bindings instead
+# of silently trying the container's localhost:5544. With no explicit APDP
+# binding, local development retains the dedicated Docker defaults.
+FBB_AUDIT_PG_HOST: str = os.getenv("FBB_AUDIT_PG_HOST") or _APDP_PG_HOST_ENV or "localhost"
+FBB_AUDIT_PG_PORT: int = int(os.getenv("FBB_AUDIT_PG_PORT") or _APDP_PG_PORT_ENV or "5544")
+FBB_AUDIT_PG_DB: str = os.getenv("FBB_AUDIT_PG_DB") or _APDP_PG_DB_ENV or "fbb_audit"
+FBB_AUDIT_PG_USER: str = os.getenv("FBB_AUDIT_PG_USER") or _APDP_PG_USER_ENV or "fbb_audit"
+FBB_AUDIT_PG_PASSWORD: str = (
+    os.getenv("FBB_AUDIT_PG_PASSWORD")
+    or _APDP_PG_PASSWORD_ENV
+    or "fbb_audit_pass"
+)
 
 # --- CORS ---
 CORS_ORIGINS: list[str] = [
@@ -73,16 +104,29 @@ CORS_ORIGINS: list[str] = [
 # transparently via its ``_load_csv`` helper.
 SAMPLE_DATA_PATHS: dict[str, Path | dict[str, Path]] = {
     "fbb_comm_dev_act": {
+        "202601": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202601.csv",
+        "202604": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202604.csv",
+        "202605": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202605.csv",
+        "202606": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202606.csv",
         "202603": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202603.csv",
         "202602": PROJECT_ROOT / "data" / "samples" / "fbb_comm_dev_act_202602.csv",
     },
     "fbb_comm_orsc": {
+        "202601": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202601.csv",
+        "202604": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202604.csv",
+        "202605": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202605.csv",
+        "202606": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202606.csv",
+        # Synthetic March demo fixture; see data/samples/README.md.
+        "202603": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_202603.csv",
         "202602": PROJECT_ROOT / "data" / "samples" / "fbb_comm_orsc_sample.csv",
     },
     "usp_dimension": PROJECT_ROOT / "data" / "samples" / "usp_dimension_sample.csv",
     # Phase 3 — Inventory Assurance source: IFS invoice history with implied units.
     "ifs_invoice_history": PROJECT_ROOT / "data" / "samples" / "ifs_invoice_history.csv",
+    # Fictional shared purchase snapshots; never source invoices or live data.
+    "inventory_demo_scenarios": PROJECT_ROOT / "data" / "samples" / "inventory_demo_scenarios.csv",
     # Phase 4 — Payment Intelligence: simulated payment dataset generated by
     # backend/data/generate_payment_simulation.py.
+    "subscription_commission_demo": PROJECT_ROOT / "data" / "samples" / "subscription_commission_demo.csv",
     "payment_simulation": PROJECT_ROOT / "data" / "samples" / "payment_simulation.csv",
 }

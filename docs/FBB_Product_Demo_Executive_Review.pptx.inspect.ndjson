@@ -1,0 +1,219 @@
+{"kind":"deck","id":"pr/5nrjmn","name":"Deck"}
+{"kind":"layout","layoutId":"7152fc8b-b1e8-4205-b5c8-3ba8ce7a7d49","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"06a22f22-064c-4f34-8af0-e2ad2369f498","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/wwd2jf","slide":1,"title":"EXECUTIVE PRODUCT REVIEW","textShapes":5}
+{"kind":"shape","id":"sh/ux03upsn","slide":1,"bbox":[0,0,20,720]}
+{"kind":"textbox","id":"sh/h0r25kre","slide":1,"text":"EXECUTIVE PRODUCT REVIEW","textPreview":"EXECUTIVE PRODUCT REVIEW","textChars":24,"textLines":1,"bbox":[72,72,500,24]}
+{"kind":"textbox","id":"sh/wzilwfat","slide":1,"text":"FBB Trade Partner\nIntelligence","textPreview":"FBB Trade Partner | Intelligence","textChars":30,"textLines":2,"bbox":[72,126,760,170]}
+{"kind":"textbox","id":"sh/7apkza9c","slide":1,"text":"From commission questions to evidence-backed decisions","textPreview":"From commission questions to evidence-backed decisions","textChars":54,"textLines":1,"bbox":[74,326,760,50]}
+{"kind":"shape","id":"sh/m9g3q5sr","slide":1,"bbox":[74,426,430,74]}
+{"kind":"textbox","id":"sh/9wr21kr2","slide":1,"text":"PRODUCT DEMO","textPreview":"PRODUCT DEMO","textChars":12,"textLines":1,"bbox":[96,443,386,38]}
+{"kind":"textbox","id":"sh/8bilsfax","slide":1,"text":"Finance · Revenue Assurance · FBB Operations","textPreview":"Finance · Revenue Assurance · FBB Operations","textChars":44,"textLines":1,"bbox":[74,614,700,30]}
+{"kind":"notes","id":"nt/wwd2jf","slide":1,"text":"Open with the decision: this is not another reporting dashboard. It is a finance investigation workflow that links what we owe, what was paid, why a variance exists, and the evidence behind the conclusion.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/illa9n","slide":2,"title":"WHY THIS MATTERS","textShapes":13}
+{"kind":"textbox","id":"sh/hwzmpwzq","slide":2,"text":"WHY THIS MATTERS","textPreview":"WHY THIS MATTERS","textChars":16,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/a9o3e10f","slide":2,"text":"The cost is not calculating commission—it is proving it","textPreview":"The cost is not calculating commission—it is proving it","textChars":55,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/vax4nmhk","slide":2,"bbox":[72,154,1136,2]}
+{"kind":"textbox","id":"sh/876lcri9","slide":2,"text":"Finance teams can see numbers. The hard part is answering the next question with confidence:","textPreview":"Finance teams can see numbers. The hard part is answering the next question with confidence:","textChars":92,"textLines":1,"bbox":[72,185,1000,44]}
+{"kind":"textbox","id":"sh/98f2lwzu","slide":2,"text":"What do we owe?","textPreview":"What do we owe?","textChars":15,"textLines":1,"bbox":[92,263,360,32]}
+{"kind":"textbox","id":"sh/m5o3ah03","slide":2,"text":"Ranked dealer totals and denomination-level commission evidence.","textPreview":"Ranked dealer totals and denomination-level commission evidence.","textChars":64,"textLines":1,"bbox":[470,261,670,56]}
+{"kind":"textbox","id":"sh/n6xkjmho","slide":2,"text":"Why did it change?","textPreview":"Why did it change?","textChars":18,"textLines":1,"bbox":[92,344,360,32]}
+{"kind":"textbox","id":"sh/036l87ix","slide":2,"text":"Month-on-month movements explained against the documented business rules.","textPreview":"Month-on-month movements explained against the documented business rules.","textChars":73,"textLines":1,"bbox":[470,342,670,56]}
+{"kind":"textbox","id":"sh/l4f2hczi","slide":2,"text":"Why was it zero?","textPreview":"Why was it zero?","textChars":16,"textLines":1,"bbox":[92,425,360,32]}
+{"kind":"textbox","id":"sh/9c7ihobu","slide":2,"text":"Root-cause classification restricted to four approved causes—no speculation.","textPreview":"Root-cause classification restricted to four approved causes—no speculation.","textChars":76,"textLines":1,"bbox":[470,423,670,56]}
+{"kind":"textbox","id":"sh/8byh8ju9","slide":2,"text":"Was it settled correctly?","textPreview":"Was it settled correctly?","textChars":25,"textLines":1,"bbox":[92,506,360,32]}
+{"kind":"textbox","id":"sh/nap0feto","slide":2,"text":"Owed, paid, outstanding, disputes, and audit evidence in one investigation path.","textPreview":"Owed, paid, outstanding, disputes, and audit evidence in one investigation path.","textChars":80,"textLines":1,"bbox":[470,504,670,56]}
+{"kind":"textbox","id":"sh/m9gz69c3","slide":2,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/l8nydobi","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"notes","id":"nt/illa9n","slide":2,"text":"Set up the pain before the product tour. Emphasize auditability and dispute turnaround—not only analytics.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/3davyd","slide":3,"title":"WHAT WE BUILT","textShapes":21}
+{"kind":"textbox","id":"sh/1ofexkj2","slide":3,"text":"WHAT WE BUILT","textPreview":"WHAT WE BUILT","textChars":13,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/e14fm50r","slide":3,"text":"One workflow now connects entitlement, settlement, and assurance","textPreview":"One workflow now connects entitlement, settlement, and assurance","textChars":64,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/f2dwva1c","slide":3,"bbox":[72,154,1136,2]}
+{"kind":"shape","id":"sh/szmdkfil","slide":3,"bbox":[72,230,210,180]}
+{"kind":"textbox","id":"sh/t0vetkj6","slide":3,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[90,246,50,28]}
+{"kind":"textbox","id":"sh/6x4vi50f","slide":3,"text":"Entitlement","textPreview":"Entitlement","textChars":11,"textLines":1,"bbox":[90,297,174,35]}
+{"kind":"textbox","id":"sh/rydwra10","slide":3,"text":"Commission + ORSC","textPreview":"Commission + ORSC","textChars":17,"textLines":1,"bbox":[90,348,174,58]}
+{"kind":"shape","id":"sh/4v2dgv2p","slide":3,"bbox":[315,230,210,180]}
+{"kind":"textbox","id":"sh/5wbep0ju","slide":3,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[333,246,50,28]}
+{"kind":"textbox","id":"sh/9grqhob6","slide":3,"text":"Qualification","textPreview":"Qualification","textChars":13,"textLines":1,"bbox":[333,297,174,35]}
+{"kind":"textbox","id":"sh/8fipojal","slide":3,"text":"Activation eligibility","textPreview":"Activation eligibility","textChars":22,"textLines":1,"bbox":[333,348,174,58]}
+{"kind":"shape","id":"sh/ne98fet0","slide":3,"bbox":[558,230,210,180]}
+{"kind":"textbox","id":"sh/md07m9sf","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[576,246,50,28]}
+{"kind":"textbox","id":"sh/lcrqd4bu","slide":3,"text":"Inventory","textPreview":"Inventory","textChars":9,"textLines":1,"bbox":[576,297,174,35]}
+{"kind":"textbox","id":"sh/0bypkza9","slide":3,"text":"Purchases vs activations","textPreview":"Purchases vs activations","textChars":24,"textLines":1,"bbox":[576,348,174,58]}
+{"kind":"shape","id":"sh/zap8but4","slide":3,"bbox":[801,230,210,180]}
+{"kind":"textbox","id":"sh/y9g7ipsj","slide":3,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[819,246,50,28]}
+{"kind":"textbox","id":"sh/d87q94by","slide":3,"text":"Settlement","textPreview":"Settlement","textChars":10,"textLines":1,"bbox":[819,297,174,35]}
+{"kind":"textbox","id":"sh/c7ypgzad","slide":3,"text":"Paid vs owed","textPreview":"Paid vs owed","textChars":12,"textLines":1,"bbox":[819,348,174,58]}
+{"kind":"shape","id":"sh/o3mhcj6l","slide":3,"bbox":[1044,230,164,180]}
+{"kind":"textbox","id":"sh/p4vylon6","slide":3,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1062,246,50,28]}
+{"kind":"textbox","id":"sh/21kzatof","slide":3,"text":"Evidence","textPreview":"Evidence","textChars":8,"textLines":1,"bbox":[1062,297,128,35]}
+{"kind":"textbox","id":"sh/32tgje50","slide":3,"text":"6-step audit trail","textPreview":"6-step audit trail","textChars":18,"textLines":1,"bbox":[1062,348,128,58]}
+{"kind":"textbox","id":"sh/gz2h8j69","slide":3,"text":"The same dealer-period can be followed end to end—without dynamic SQL or production write-back.","textPreview":"The same dealer-period can be followed end to end—without dynamic SQL or production write-back.","textChars":95,"textLines":1,"bbox":[72,494,1040,64]}
+{"kind":"textbox","id":"sh/10byhonu","slide":3,"text":"Read-only data access · parameterized queries · documented rule boundaries","textPreview":"Read-only data access · parameterized queries · documented rule boundaries","textChars":74,"textLines":1,"bbox":[72,584,1040,32]}
+{"kind":"textbox","id":"sh/exkz69oj","slide":3,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/fytgfe5o","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"notes","id":"nt/3davyd","slide":3,"text":"This is the product architecture in business language. The platform validates existing calculations; it does not replace the commission engine.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/0pzrnr","slide":4,"title":"CONTROL TOWER","textShapes":12}
+{"kind":"textbox","id":"sh/qd4zqt4j","slide":4,"text":"CONTROL TOWER","textPreview":"CONTROL TOWER","textChars":13,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/d0fil8na","slide":4,"text":"The overview turns a reporting month into a prioritized action list","textPreview":"The overview turns a reporting month into a prioritized action list","textChars":67,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/sf6hs3mp","slide":4,"bbox":[72,154,1136,2]}
+{"kind":"textbox","id":"sh/i94zmton","slide":4,"text":"MARCH 2026 SAMPLE","textPreview":"MARCH 2026 SAMPLE","textChars":17,"textLines":1,"bbox":[902,194,300,24]}
+{"kind":"textbox","id":"sh/5cvihone","slide":4,"text":"NGN 47.64m","textPreview":"NGN 47.64m","textChars":10,"textLines":1,"bbox":[902,240,300,54]}
+{"kind":"textbox","id":"sh/4bmhoj6t","slide":4,"text":"commission owed","textPreview":"commission owed","textChars":15,"textLines":1,"bbox":[902,292,260,28]}
+{"kind":"textbox","id":"sh/v6t0be5w","slide":4,"text":"NGN 7.11m","textPreview":"NGN 7.11m","textChars":9,"textLines":1,"bbox":[902,349,300,54]}
+{"kind":"textbox","id":"sh/u5kzi9ob","slide":4,"text":"outstanding","textPreview":"outstanding","textChars":11,"textLines":1,"bbox":[902,401,260,28]}
+{"kind":"textbox","id":"sh/4vi5kned","slide":4,"text":"35 dealers","textPreview":"35 dealers","textChars":10,"textLines":1,"bbox":[902,458,300,54]}
+{"kind":"textbox","id":"sh/5wrmdsfi","slide":4,"text":"flagged across multiple modules","textPreview":"flagged across multiple modules","textChars":31,"textLines":1,"bbox":[902,510,285,50]}
+{"kind":"textbox","id":"sh/i90nidw7","slide":4,"text":"Every headline links to the investigation surface that owns it.","textPreview":"Every headline links to the investigation surface that owns it.","textChars":63,"textLines":1,"bbox":[902,584,280,48]}
+{"kind":"textbox","id":"sh/3u94bixs","slide":4,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/g7i5g3e1","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"image","id":"im/qxkjidgz","slide":4,"name":"","alt":"Product interface screenshot","bbox":[72,184,790,444]}
+{"kind":"notes","id":"nt/0pzrnr","slide":4,"text":"Live demo: start here. Point out the synthetic badge, Current Position, exceptions deep-link, audit coverage, and dealers appearing across modules.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/gp08jl","slide":5,"title":"ACTIVATION ASSURANCE","textShapes":11}
+{"kind":"textbox","id":"sh/do3mhovq","slide":5,"text":"ACTIVATION ASSURANCE","textPreview":"ACTIVATION ASSURANCE","textChars":20,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/qls369wz","slide":5,"text":"Activation intelligence explains both volume and qualification","textPreview":"Activation intelligence explains both volume and qualification","textChars":62,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/bm14fedk","slide":5,"bbox":[72,154,1136,2]}
+{"kind":"textbox","id":"sh/pkjmd4ve","slide":5,"text":"Summary","textPreview":"Summary","textChars":7,"textLines":1,"bbox":[866,205,300,30]}
+{"kind":"textbox","id":"sh/2hs329w3","slide":5,"text":"Qualified vs unqualified, rates, and expected commission.","textPreview":"Qualified vs unqualified, rates, and expected commission.","textChars":57,"textLines":1,"bbox":[866,242,310,62]}
+{"kind":"textbox","id":"sh/3i14bedo","slide":5,"text":"Variance","textPreview":"Variance","textChars":8,"textLines":1,"bbox":[866,322,300,30]}
+{"kind":"textbox","id":"sh/gfql0zex","slide":5,"text":"Period-over-period movement by dealer for targeted follow-up.","textPreview":"Period-over-period movement by dealer for targeted follow-up.","textChars":61,"textLines":1,"bbox":[866,359,310,62]}
+{"kind":"textbox","id":"sh/1gzm94vi","slide":5,"text":"Exceptions","textPreview":"Exceptions","textChars":10,"textLines":1,"bbox":[866,439,300,30]}
+{"kind":"textbox","id":"sh/d0faxori","slide":5,"text":"All-unqualified, low-rate, zero-commission, and material drops.","textPreview":"All-unqualified, low-rate, zero-commission, and material drops.","textChars":63,"textLines":1,"bbox":[866,476,310,62]}
+{"kind":"textbox","id":"sh/sf694jqx","slide":5,"text":"Search persists across tabs; export matches the visible view.","textPreview":"Search persists across tabs; export matches the visible view.","textChars":61,"textLines":1,"bbox":[866,570,310,45]}
+{"kind":"textbox","id":"sh/redsve9c","slide":5,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/qd4r29sr","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"image","id":"im/h43qtove","slide":5,"name":"","alt":"Product interface screenshot","bbox":[72,205,755,405]}
+{"kind":"notes","id":"nt/gp08jl","slide":5,"text":"Live demo: show Summary, Variance, and Exceptions. Search for one dealer and export the current view.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/omln1g","slide":6,"title":"INVENTORY ASSURANCE","textShapes":12}
+{"kind":"textbox","id":"sh/wb29obi5","slide":6,"text":"INVENTORY ASSURANCE","textPreview":"INVENTORY ASSURANCE","textChars":19,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/vat8f6hk","slide":6,"text":"Inventory checks distinguish leakage risk from missing evidence","textPreview":"Inventory checks distinguish leakage risk from missing evidence","textChars":63,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/a9krm10z","slide":6,"bbox":[72,154,1136,2]}
+{"kind":"textbox","id":"sh/kfm9sbi1","slide":6,"text":"Three outcomes","textPreview":"Three outcomes","textChars":14,"textLines":1,"bbox":[72,202,310,36]}
+{"kind":"textbox","id":"sh/jedsjqhg","slide":6,"text":"Confirmed mismatch","textPreview":"Confirmed mismatch","textChars":18,"textLines":1,"bbox":[92,270,300,30]}
+{"kind":"textbox","id":"sh/idkrql0b","slide":6,"text":"Activations exceed invoiced purchases after supported checks.","textPreview":"Activations exceed invoiced purchases after supported checks.","textChars":61,"textLines":1,"bbox":[92,306,300,56]}
+{"kind":"textbox","id":"sh/l4rq9wji","slide":6,"text":"No invoice record","textPreview":"No invoice record","textChars":17,"textLines":1,"bbox":[92,382,300,30]}
+{"kind":"textbox","id":"sh/0ji9grix","slide":6,"text":"A data-coverage gap—not automatically a mismatch.","textPreview":"A data-coverage gap—not automatically a mismatch.","textChars":49,"textLines":1,"bbox":[92,418,300,56]}
+{"kind":"textbox","id":"sh/69oru1cf","slide":6,"text":"Within allocation","textPreview":"Within allocation","textChars":17,"textLines":1,"bbox":[92,494,300,30]}
+{"kind":"textbox","id":"sh/7axs36t0","slide":6,"text":"Available purchase evidence supports the activation volume.","textPreview":"Available purchase evidence supports the activation volume.","textChars":59,"textLines":1,"bbox":[92,530,300,56]}
+{"kind":"textbox","id":"sh/8b69wbu5","slide":6,"text":"Server-owned search, filtering, sorting, totals, and pagination keep the table bounded.","textPreview":"Server-owned search, filtering, sorting, totals, and pagination keep the table bounded.","textChars":87,"textLines":1,"bbox":[72,584,330,60]}
+{"kind":"textbox","id":"sh/tcfa5gbq","slide":6,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/ud8rylcb","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"image","id":"im/43m1wza1","slide":6,"name":"","alt":"Product interface screenshot","bbox":[448,184,760,428]}
+{"kind":"notes","id":"nt/omln1g","slide":6,"text":"Live demo: search Hynex to show the known SKU alias pattern. Expand Verify on a mismatch. Mention ServiceNow-ready data-coverage ticket drafting.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/87jbwt","slide":7,"title":"SETTLEMENT ASSURANCE","textShapes":9}
+{"kind":"textbox","id":"sh/4bux8765","slide":7,"text":"SETTLEMENT ASSURANCE","textPreview":"SETTLEMENT ASSURANCE","textChars":20,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/3algfm5k","slide":7,"text":"Payment intelligence closes the loop from owed to settled","textPreview":"Payment intelligence closes the loop from owed to settled","textChars":57,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/29cf6hoz","slide":7,"bbox":[72,154,1136,2]}
+{"kind":"textbox","id":"sh/cfexcr61","slide":7,"text":"One bounded collection","textPreview":"One bounded collection","textChars":22,"textLines":1,"bbox":[866,202,320,36]}
+{"kind":"textbox","id":"sh/relgjm5g","slide":7,"text":"Exceptions and All Payments are filtered views of the same source—avoiding duplicate reads and hidden rendering.","textPreview":"Exceptions and All Payments are filtered views of the same source—avoiding duplicate reads and hidden rendering.","textChars":112,"textLines":1,"bbox":[866,250,310,96]}
+{"kind":"textbox","id":"sh/qdcfahov","slide":7,"text":"Dealer statement","textPreview":"Dealer statement","textChars":16,"textLines":1,"bbox":[866,382,320,36]}
+{"kind":"textbox","id":"sh/14nypwni","slide":7,"text":"Combines commission entitlement, payment settlement, ORSC context, position, and linked audit trails.","textPreview":"Combines commission entitlement, payment settlement, ORSC context, position, and linked audit trails.","textChars":101,"textLines":1,"bbox":[866,430,310,92]}
+{"kind":"textbox","id":"sh/03exgr6d","slide":7,"text":"Exports: Markdown · CSV · XLSX · XLSB","textPreview":"Exports: Markdown · CSV · XLSX · XLSB","textChars":37,"textLines":1,"bbox":[866,557,320,42]}
+{"kind":"textbox","id":"sh/qlc3mx0f","slide":7,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/rml4v210","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"image","id":"im/czmdcrmh","slide":7,"name":"","alt":"Product interface screenshot","bbox":[72,184,760,428]}
+{"kind":"notes","id":"nt/87jbwt","slide":7,"text":"Live demo: Payment Intelligence → All Payments → Statement. Walk owed, settled, variance, position, linked trails, and export options. Then return to Exceptions and open a dispute draft.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/jn0beh","slide":8,"title":"COMMISSION INTELLIGENCE","textShapes":10}
+{"kind":"textbox","id":"sh/be1832x4","slide":8,"text":"COMMISSION INTELLIGENCE","textPreview":"COMMISSION INTELLIGENCE","textChars":23,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/cza9w7yp","slide":8,"text":"The finance assistant turns a finding into a grounded explanation","textPreview":"The finance assistant turns a finding into a grounded explanation","textChars":65,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/x0jq5cfa","slide":8,"bbox":[72,154,1136,2]}
+{"kind":"textbox","id":"sh/nah8z2x8","slide":8,"text":"Ask in business language","textPreview":"Ask in business language","textChars":24,"textLines":1,"bbox":[72,203,410,36]}
+{"kind":"textbox","id":"sh/oba987yt","slide":8,"text":"“Summarise dealer commissions for March”","textPreview":"“Summarise dealer commissions for March”","textChars":40,"textLines":1,"bbox":[88,263,390,55]}
+{"kind":"textbox","id":"sh/pcjq1cfe","slide":8,"text":"“Why did this dealer change vs February?”","textPreview":"“Why did this dealer change vs February?”","textChars":41,"textLines":1,"bbox":[88,339,390,55]}
+{"kind":"textbox","id":"sh/e58r2dgr","slide":8,"text":"“Classify the zero-commission records”","textPreview":"“Classify the zero-commission records”","textChars":38,"textLines":1,"bbox":[88,415,390,55]}
+{"kind":"textbox","id":"sh/f6h8vixw","slide":8,"text":"“Show the ORSC summary for the period”","textPreview":"“Show the ORSC summary for the period”","textChars":38,"textLines":1,"bbox":[88,491,390,55]}
+{"kind":"shape","id":"sh/vm9wbud0","slide":8,"bbox":[72,586,410,2]}
+{"kind":"textbox","id":"sh/al0vipwf","slide":8,"text":"Answers identify the tools called and stay inside the knowledge base.","textPreview":"Answers identify the tools called and stay inside the knowledge base.","textChars":69,"textLines":1,"bbox":[72,603,410,44]}
+{"kind":"textbox","id":"sh/x8bed4vq","slide":8,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/w72dkzel","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"image","id":"im/jmt8b6ls","slide":8,"name":"","alt":"Product interface screenshot","bbox":[530,184,678,428]}
+{"kind":"notes","id":"nt/jn0beh","slide":8,"text":"Live demo only if the Anthropic key is healthy. Use a templated Ask Claude action from Overview or a row. Multi-tool responses may take 20–30 seconds.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/8oyk4x","slide":9,"title":"VERIFICATION CHAINS","textShapes":17}
+{"kind":"textbox","id":"sh/d87618ju","slide":9,"text":"VERIFICATION CHAINS","textPreview":"VERIFICATION CHAINS","textChars":19,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/q5wn6tk3","slide":9,"text":"Four audit modules make conclusions challengeable—not opaque","textPreview":"Four audit modules make conclusions challengeable—not opaque","textChars":60,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/r65ozy1o","slide":9,"bbox":[72,154,1136,2]}
+{"kind":"shape","id":"sh/4je5432x","slide":9,"bbox":[72,190,1136,82]}
+{"kind":"textbox","id":"sh/54n6xoji","slide":9,"text":"Zero-Commission","textPreview":"Zero-Commission","textChars":15,"textLines":1,"bbox":[92,203,260,28]}
+{"kind":"textbox","id":"sh/ihwn2tk7","slide":9,"text":"Was a partner paid for zero-commission activity?","textPreview":"Was a partner paid for zero-commission activity?","textChars":48,"textLines":1,"bbox":[365,200,405,32]}
+{"kind":"textbox","id":"sh/3i5ovy1s","slide":9,"text":"PAID · NOT_PAID · INSUFFICIENT_DATA","textPreview":"PAID · NOT_PAID · INSUFFICIENT_DATA","textChars":35,"textLines":1,"bbox":[365,235,800,24]}
+{"kind":"shape","id":"sh/gfu50j21","slide":9,"bbox":[72,291,1136,82]}
+{"kind":"textbox","id":"sh/hgn6tojm","slide":9,"text":"Inventory Mismatch","textPreview":"Inventory Mismatch","textChars":18,"textLines":1,"bbox":[92,304,260,28]}
+{"kind":"textbox","id":"sh/5cnq9g7i","slide":9,"text":"Do activations exceed supported purchases?","textPreview":"Do activations exceed supported purchases?","textChars":42,"textLines":1,"bbox":[365,301,405,32]}
+{"kind":"textbox","id":"sh/kbe9gb6x","slide":9,"text":"RECONCILED · EXCESS_ACTIVATION · INSUFFICIENT_DATA","textPreview":"RECONCILED · EXCESS_ACTIVATION · INSUFFICIENT_DATA","textChars":50,"textLines":1,"bbox":[365,336,800,24]}
+{"kind":"shape","id":"sh/jal876ps","slide":9,"bbox":[72,392,1136,82]}
+{"kind":"textbox","id":"sh/y9cre1o7","slide":9,"text":"Payment Reconciliation","textPreview":"Payment Reconciliation","textChars":22,"textLines":1,"bbox":[92,405,260,28]}
+{"kind":"textbox","id":"sh/x83q5w7m","slide":9,"text":"Was the partner paid the correct amount?","textPreview":"Was the partner paid the correct amount?","textChars":40,"textLines":1,"bbox":[365,402,405,32]}
+{"kind":"textbox","id":"sh/w7u9cr61","slide":9,"text":"PAID_IN_FULL · UNDERPAID · OVERPAID · ROUNDING","textPreview":"PAID_IN_FULL · UNDERPAID · OVERPAID · ROUNDING","textChars":46,"textLines":1,"bbox":[365,437,800,24]}
+{"kind":"shape","id":"sh/b6l83mpg","slide":9,"bbox":[72,493,1136,82]}
+{"kind":"textbox","id":"sh/a5crahov","slide":9,"text":"Eligibility Window","textPreview":"Eligibility Window","textChars":18,"textLines":1,"bbox":[92,506,260,28]}
+{"kind":"textbox","id":"sh/943q1w7a","slide":9,"text":"Is the six-month rule truly the cause?","textPreview":"Is the six-month rule truly the cause?","textChars":38,"textLines":1,"bbox":[365,503,405,32]}
+{"kind":"textbox","id":"sh/o3ap8r65","slide":9,"text":"POLICY_MET · POLICY_VIOLATED · MIXED_ATTRIBUTION","textPreview":"POLICY_MET · POLICY_VIOLATED · MIXED_ATTRIBUTION","textChars":48,"textLines":1,"bbox":[365,538,800,24]}
+{"kind":"textbox","id":"sh/0ne9orel","slide":9,"text":"Each persisted chain records what was checked, what was found, step-level caveats, and HIGH / MEDIUM / LOW confidence.","textPreview":"Each persisted chain records what was checked, what was found, step-level caveats, and HIGH / MEDIUM / LOW confidence.","textChars":118,"textLines":1,"bbox":[72,615,1100,44]}
+{"kind":"textbox","id":"sh/1onqhwf6","slide":9,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/elwrmhwv","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"notes","id":"nt/8oyk4x","slide":9,"text":"Audit Trails requires Postgres. In the local session Docker was not running, so use the hosted preview or start Docker before presenting. Pick Payment Reconciliation for the clearest business story.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/1xmw4t","slide":10,"title":"RECOMMENDED LIVE PATH","textShapes":20}
+{"kind":"textbox","id":"sh/1snmx4r6","slide":10,"text":"RECOMMENDED LIVE PATH","textPreview":"RECOMMENDED LIVE PATH","textChars":21,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/e5wnmpsv","slide":10,"text":"The demo should follow one dealer from signal to evidence","textPreview":"The demo should follow one dealer from signal to evidence","textChars":57,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/z654vu90","slide":10,"bbox":[72,154,1136,2]}
+{"kind":"textbox","id":"sh/c3e5kzap","slide":10,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[72,220,54,54]}
+{"kind":"shape","id":"sh/d4nmtkra","slide":10,"bbox":[72,294,196,150]}
+{"kind":"textbox","id":"sh/q1cnipsj","slide":10,"text":"Start with\nCurrent Position","textPreview":"Start with | Current Position","textChars":27,"textLines":2,"bbox":[90,319,160,96]}
+{"kind":"textbox","id":"sh/r254ru94","slide":10,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[267,340,30,40]}
+{"kind":"textbox","id":"sh/4zu5gfad","slide":10,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[298,220,54,54]}
+{"kind":"shape","id":"sh/p03mpkry","slide":10,"bbox":[298,294,196,150]}
+{"kind":"textbox","id":"sh/pwv2x87m","slide":10,"text":"Open a\npayment exception","textPreview":"Open a | payment exception","textChars":24,"textLines":2,"bbox":[316,319,160,96]}
+{"kind":"textbox","id":"sh/ovmlo3q1","slide":10,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[493,340,30,40]}
+{"kind":"textbox","id":"sh/nudkvypw","slide":10,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[524,220,54,54]}
+{"kind":"shape","id":"sh/2t4jmt8b","slide":10,"bbox":[524,294,196,150]}
+{"kind":"textbox","id":"sh/1sv2t87q","slide":10,"text":"Verify the\nactivation evidence","textPreview":"Verify the | activation evidence","textChars":30,"textLines":2,"bbox":[542,319,160,96]}
+{"kind":"textbox","id":"sh/0rm103q5","slide":10,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[719,340,30,40]}
+{"kind":"textbox","id":"sh/fqtkry9k","slide":10,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[750,220,54,54]}
+{"kind":"shape","id":"sh/epkjyt8z","slide":10,"bbox":[750,294,196,150]}
+{"kind":"textbox","id":"sh/dob2pore","slide":10,"text":"Open the\ndealer statement","textPreview":"Open the | dealer statement","textChars":25,"textLines":2,"bbox":[768,319,160,96]}
+{"kind":"textbox","id":"sh/sn21wjq9","slide":10,"text":"→","textPreview":"→","textChars":1,"textLines":1,"bbox":[945,340,30,40]}
+{"kind":"textbox","id":"sh/476lcjyp","slide":10,"text":"5","textPreview":"5","textChars":1,"textLines":1,"bbox":[976,220,54,54]}
+{"kind":"shape","id":"sh/58f25oza","slide":10,"bbox":[976,294,196,150]}
+{"kind":"textbox","id":"sh/i5o3atgz","slide":10,"text":"Walk the\naudit chain","textPreview":"Walk the | audit chain","textChars":20,"textLines":2,"bbox":[994,319,160,96]}
+{"kind":"textbox","id":"sh/j6xk3yhk","slide":10,"text":"Close the story with the decision the evidence supports—not with a tour of every tab.","textPreview":"Close the story with the decision the evidence supports—not with a tour of every tab.","textChars":85,"textLines":1,"bbox":[72,514,1000,52]}
+{"kind":"textbox","id":"sh/w3m18jyt","slide":10,"text":"Backup paths: activation exception · Hynex inventory pattern · dispute-response draft · CSV export","textPreview":"Backup paths: activation exception · Hynex inventory pattern · dispute-response draft · CSV export","textChars":98,"textLines":1,"bbox":[72,594,1080,32]}
+{"kind":"textbox","id":"sh/h4f21oze","slide":10,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/uh4j69gn","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"notes","id":"nt/1xmw4t","slide":10,"text":"Use this sequence as the live-demo spine. Aim for 6–8 minutes, then use the deck for architecture, readiness, and the approval ask.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/g743zz","slide":11,"title":"DELIVERY CONFIDENCE","textShapes":18}
+{"kind":"textbox","id":"sh/36ls7elo","slide":11,"text":"DELIVERY CONFIDENCE","textPreview":"DELIVERY CONFIDENCE","textChars":19,"textLines":1,"bbox":[72,44,450,24]}
+{"kind":"textbox","id":"sh/o7u90jm9","slide":11,"text":"The MVP is demo-ready, bounded, and tested","textPreview":"The MVP is demo-ready, bounded, and tested","textChars":42,"textLines":1,"bbox":[72,75,1136,72]}
+{"kind":"shape","id":"sh/p83a9o3u","slide":11,"bbox":[72,154,1136,2]}
+{"kind":"textbox","id":"sh/q9cr2tkz","slide":11,"text":"215","textPreview":"215","textChars":3,"textLines":1,"bbox":[72,211,230,70]}
+{"kind":"textbox","id":"sh/bulsbylk","slide":11,"text":"tests passing","textPreview":"tests passing","textChars":13,"textLines":1,"bbox":[72,280,230,48]}
+{"kind":"textbox","id":"sh/cvut4325","slide":11,"text":"28","textPreview":"28","textChars":2,"textLines":1,"bbox":[356,211,230,70]}
+{"kind":"textbox","id":"sh/dwnado3q","slide":11,"text":"live tests skipped by default","textPreview":"live tests skipped by default","textChars":29,"textLines":1,"bbox":[356,280,230,48]}
+{"kind":"textbox","id":"sh/6dsrqp4v","slide":11,"text":"100","textPreview":"100","textChars":3,"textLines":1,"bbox":[640,211,230,70]}
+{"kind":"textbox","id":"sh/ry1szulg","slide":11,"text":"maximum rows per page","textPreview":"maximum rows per page","textChars":21,"textLines":1,"bbox":[640,280,230,48]}
+{"kind":"textbox","id":"sh/balgbq58","slide":11,"text":"6","textPreview":"6","textChars":1,"textLines":1,"bbox":[924,211,230,70]}
+{"kind":"textbox","id":"sh/apsz2lon","slide":11,"text":"integrated product surfaces","textPreview":"integrated product surfaces","textChars":27,"textLines":1,"bbox":[924,280,230,48]}
+{"kind":"shape","id":"sh/xc3yd0ne","slide":11,"bbox":[72,368,1136,2]}
+{"kind":"textbox","id":"sh/cbuh4v6t","slide":11,"text":"Safe by design","textPreview":"Safe by design","textChars":14,"textLines":1,"bbox":[92,406,360,32]}
+{"kind":"textbox","id":"sh/nm1g7qpc","slide":11,"text":"Read-only development sources, parameterized queries, no write-back, no dynamic SQL.","textPreview":"Read-only development sources, parameterized queries, no write-back, no dynamic SQL.","textChars":84,"textLines":1,"bbox":[470,404,670,56]}
+{"kind":"textbox","id":"sh/2lszylor","slide":11,"text":"Honest demo mode","textPreview":"Honest demo mode","textChars":16,"textLines":1,"bbox":[92,480,360,32]}
+{"kind":"textbox","id":"sh/pojy9g72","slide":11,"text":"Synthetic FBB and simulated payment data are visibly labelled and deterministic.","textPreview":"Synthetic FBB and simulated payment data are visibly labelled and deterministic.","textChars":80,"textLines":1,"bbox":[470,478,670,56]}
+{"kind":"textbox","id":"sh/onah0b6x","slide":11,"text":"Production foundation","textPreview":"Production foundation","textChars":21,"textLines":1,"bbox":[92,554,360,32]}
+{"kind":"textbox","id":"sh/fihg36p0","slide":11,"text":"Bounded APIs, server-side filtering, lazy verification evidence, request timing, and query caching.","textPreview":"Bounded APIs, server-side filtering, lazy verification evidence, request timing, and query caching.","textChars":99,"textLines":1,"bbox":[470,552,670,56]}
+{"kind":"textbox","id":"sh/eh8fu1of","slide":11,"text":"FBB TRADE PARTNER INTELLIGENCE","textPreview":"FBB TRADE PARTNER INTELLIGENCE","textChars":30,"textLines":1,"bbox":[72,684,380,18]}
+{"kind":"textbox","id":"sh/id8z618n","slide":11,"text":"11","textPreview":"11","textChars":2,"textLines":1,"bbox":[1160,684,48,18]}
+{"kind":"notes","id":"nt/g743zz","slide":11,"text":"State the boundary plainly: native Presto/Postgres pagination and real MTN data connections are follow-up work after production access and query plans are available.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}
+{"kind":"slide","id":"sl/jg0t5b","slide":12,"title":"DECISION","textShapes":10}
+{"kind":"shape","id":"sh/qhc3e5wf","slide":12,"bbox":[0,0,20,720]}
+{"kind":"textbox","id":"sh/dk3m90v6","slide":12,"text":"DECISION","textPreview":"DECISION","textChars":8,"textLines":1,"bbox":[72,74,300,24]}
+{"kind":"textbox","id":"sh/sjulgvel","slide":12,"text":"Approve the next validation step","textPreview":"Approve the next validation step","textChars":32,"textLines":1,"bbox":[72,130,920,70]}
+{"kind":"textbox","id":"sh/3e14jqdo","slide":12,"text":"Move from a deterministic sample-data demo to a controlled pilot with Finance and Revenue Assurance.","textPreview":"Move from a deterministic sample-data demo to a controlled pilot with Finance and Revenue Assurance.","textChars":100,"textLines":1,"bbox":[72,224,960,72]}
+{"kind":"textbox","id":"sh/ids3alwj","slide":12,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[72,366,54,34]}
+{"kind":"textbox","id":"sh/5g3ml0vu","slide":12,"text":"Confirm Finance-facing terminology and audit conclusions","textPreview":"Confirm Finance-facing terminology and audit conclusions","textChars":56,"textLines":1,"bbox":[142,360,860,46]}
+{"kind":"textbox","id":"sh/4fulcve9","slide":12,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[72,438,54,34]}
+{"kind":"textbox","id":"sh/va14f6ds","slide":12,"text":"Select the first real data integration and pilot period","textPreview":"Select the first real data integration and pilot period","textChars":55,"textLines":1,"bbox":[142,432,860,46]}
+{"kind":"textbox","id":"sh/u9s36lw7","slide":12,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[72,510,54,34]}
+{"kind":"textbox","id":"sh/wnudcryh","slide":12,"text":"Nominate users to validate dispute and dealer-statement workflows","textPreview":"Nominate users to validate dispute and dealer-statement workflows","textChars":65,"textLines":1,"bbox":[142,504,860,46]}
+{"kind":"textbox","id":"sh/xo3elwf2","slide":12,"text":"The platform already demonstrates the control model. Approval unlocks validation on governed real data.","textPreview":"The platform already demonstrates the control model. Approval unlocks validation on governed real data.","textChars":103,"textLines":1,"bbox":[72,620,1060,40]}
+{"kind":"notes","id":"nt/jg0t5b","slide":12,"text":"End with a specific approval request. Ask for a controlled pilot—not blanket production deployment.\n\n[Sources]\n- Repository: PROGRESS.md, ARCHITECTURE.md, docs/GM_DEMO.md\n- Product screenshots captured from localhost in sample-data mode on 2026-09-08\n[/Sources]"}

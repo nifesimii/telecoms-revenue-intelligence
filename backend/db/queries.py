@@ -25,6 +25,10 @@ The four tables in scope (fully qualified for Presto):
 """
 from __future__ import annotations
 
+import csv
+import re
+from decimal import Decimal
+from math import isfinite
 from pathlib import Path
 from typing import Any, Callable
 
@@ -530,7 +534,38 @@ ORDER BY ABS(b.amount_paid - a.amount_paid) DESC
 """
 
 
+_SQL_GET_DEALER_CODES = """
+WITH observations AS (
+    SELECT distributor_code, distributor_name, mon_period,
+           'fbb_comm_dev_act' AS source
+    FROM hive5.development.fbb_comm_dev_act
+    WHERE mon_period BETWEEN %(start_period)s AND %(end_period)s
+      AND CASE WHEN %(match)s = 'contains'
+               THEN STRPOS(LOWER(TRIM(distributor_name)), LOWER(TRIM(%(dealer_name)s))) > 0
+               ELSE LOWER(TRIM(distributor_name)) = LOWER(TRIM(%(dealer_name)s)) END
+    UNION ALL
+    SELECT distributor_code, distributor_name, mon_period,
+           'fbb_comm_orsc' AS source
+    FROM hive5.development.fbb_comm_orsc
+    WHERE mon_period BETWEEN %(start_period)s AND %(end_period)s
+      AND CASE WHEN %(match)s = 'contains'
+               THEN STRPOS(LOWER(TRIM(distributor_name)), LOWER(TRIM(%(dealer_name)s))) > 0
+               ELSE LOWER(TRIM(distributor_name)) = LOWER(TRIM(%(dealer_name)s)) END
+)
+SELECT CAST(distributor_code AS VARCHAR) AS dealer_id,
+       ARRAY_SORT(ARRAY_AGG(DISTINCT distributor_name)) AS recorded_names,
+       MIN(mon_period) AS first_observed_period,
+       MAX(mon_period) AS last_observed_period,
+       ARRAY_SORT(ARRAY_AGG(DISTINCT source)) AS sources
+FROM observations
+WHERE distributor_code IS NOT NULL
+  AND TRIM(CAST(distributor_code AS VARCHAR)) <> ''
+GROUP BY distributor_code
+ORDER BY CAST(distributor_code AS VARCHAR)
+"""
+
 SQL: dict[str, str] = {
+    "get_dealer_codes": _SQL_GET_DEALER_CODES.strip(),
     "get_dealer_summary": _SQL_GET_DEALER_SUMMARY.strip(),
     "get_zero_commission_records": _SQL_GET_ZERO_COMMISSION_RECORDS.strip(),
     "get_month_on_month_variance": _SQL_GET_MONTH_ON_MONTH_VARIANCE.strip(),
@@ -574,29 +609,39 @@ def _sample_get_dealer_summary(params: dict) -> pd.DataFrame:
     df["commission_rate"] = df["commission_rate"].fillna(0).astype(float)
     df["product_denomination"] = df["product_denomination"].fillna("")
 
-    rows: list[dict[str, Any]] = []
-    for dist_code, group in df.groupby("distributor_code", sort=False):
-        denom_group = group[group["product_denomination"] != ""]
-        commission_by_denom = (
-            denom_group.groupby("product_denomination")["commission_rate"].sum().to_dict()
-            if not denom_group.empty
-            else {}
-        )
-        commission_by_denom = {k: float(v) for k, v in commission_by_denom.items()}
+    df["_zero_commission"] = df["commission_rate"].eq(0)
+    grouped = df.groupby("distributor_code", sort=False)
+    summary = grouped.agg(
+        total_activations=("commission_rate", "size"),
+        # Keep Series.sum's reduction order: GroupBy.sum can change the last
+        # float bits (and hence tied ordering) of existing financial results.
+        total_commission_ngn=("commission_rate", lambda values: values.sum()),
+        zero_commission_count=("_zero_commission", "sum"),
+    )
+    # first() skips nulls; the contract is the literal first source row.
+    first_rows = grouped.nth(0).set_index("distributor_code")
+    summary = summary.join(first_rows[["distributor_name", "account_profile_class"]])
 
+    denomination_totals = (
+        df.loc[df["product_denomination"] != ""]
+        .groupby(["distributor_code", "product_denomination"])["commission_rate"]
+        .sum()
+    )
+    denominations: dict[Any, dict[Any, float]] = {}
+    for (dist_code, denomination), amount in denomination_totals.items():
+        denominations.setdefault(dist_code, {})[denomination] = float(amount)
+
+    rows: list[dict[str, Any]] = []
+    for row in summary.itertuples():
         rows.append(
             {
-                # API convention: dealer_id / dealer_name in the response.
-                # Raw column in fbb_comm_dev_act is distributor_code — we
-                # keep that name inside the DataFrame and rename at the
-                # return boundary. See ARCHITECTURE.md "Naming conventions".
-                "dealer_id": _norm_str(dist_code),
-                "dealer_name": str(group["distributor_name"].iloc[0]),
-                "account_profile_class": str(group["account_profile_class"].iloc[0]),
-                "total_activations": int(len(group)),
-                "total_commission_ngn": float(group["commission_rate"].sum()),
-                "zero_commission_count": int((group["commission_rate"] == 0).sum()),
-                "commission_by_denomination": commission_by_denom,
+                "dealer_id": _norm_str(row.Index),
+                "dealer_name": str(row.distributor_name),
+                "account_profile_class": str(row.account_profile_class),
+                "total_activations": int(row.total_activations),
+                "total_commission_ngn": float(row.total_commission_ngn),
+                "zero_commission_count": int(row.zero_commission_count),
+                "commission_by_denomination": denominations.get(row.Index, {}),
             }
         )
 
@@ -1058,6 +1103,29 @@ def _sample_get_inventory_comparison(params: dict) -> pd.DataFrame:
     )
     ifs_aggr["total_units_purchased"] = ifs_aggr["total_units_purchased"].astype(float)
 
+    # Separate fictional purchase snapshots enrich sample comparisons without
+    # changing source CSVs or introducing a monthly invoice-window rule. Missing
+    # quantities are deliberate holdouts and remain unknown.
+    scenarios = _load_csv("inventory_demo_scenarios")
+    keys = ["dealer_id", "product_code"]
+    for key in keys:
+        scenarios[key] = scenarios[key].apply(_norm_str)
+    if scenarios.duplicated(keys).any():
+        raise ValueError("Inventory demo scenarios must have unique dealer-product pairs")
+    for field in ("scenario_id", "scenario_label"):
+        if scenarios[field].fillna("").astype(str).str.strip().eq("").any():
+            raise ValueError("Inventory demo scenarios must retain explicit provenance")
+    if not scenarios.merge(ifs_aggr[keys], on=keys, how="inner").empty:
+        raise ValueError("Inventory demo scenarios must not replace existing IFS evidence")
+    quantities = pd.to_numeric(scenarios["total_units_purchased"], errors="raise")
+    if not quantities.dropna().map(lambda value: isfinite(value) and value > 0).all():
+        raise ValueError("Recorded inventory demo purchase quantities must be finite and positive")
+    scenarios["total_units_purchased"] = quantities
+    ifs_aggr = pd.concat([
+        ifs_aggr,
+        scenarios.loc[quantities.notna(), [*keys, "total_units_purchased"]],
+    ], ignore_index=True)
+
     # ---- 7. Outer join ---------------------------------------------------
     merged = dev_aggr.merge(
         ifs_aggr,
@@ -1069,6 +1137,11 @@ def _sample_get_inventory_comparison(params: dict) -> pd.DataFrame:
     # Keep only records where there are activations — pure-purchase rows
     # (no activations) are not actionable.
     merged = merged[merged["activation_count"].fillna(0) > 0].copy()
+    merged = merged.merge(
+        scenarios[[*keys, "scenario_id", "scenario_label"]],
+        on=keys, how="left", validate="one_to_one",
+    )
+    merged[["scenario_id", "scenario_label"]] = merged[["scenario_id", "scenario_label"]].fillna("")
     merged["activation_count"] = merged["activation_count"].fillna(0).astype(int)
     merged["qualified_count"] = merged["qualified_count"].fillna(0).astype(int)
 
@@ -1111,7 +1184,16 @@ def _sample_get_inventory_comparison(params: dict) -> pd.DataFrame:
                 "inventory_gap": gap,
                 "gap_pct": gap_pct,
                 "finding_type": finding,
-                "data_coverage_note": _INVENTORY_NOTES[finding],
+                "scenario_id": r["scenario_id"],
+                "scenario_label": r["scenario_label"],
+                "data_coverage_note": (
+                    "Synthetic demo scenario. "
+                    + ("Fictional purchase evidence uses the same shared quantity across reporting months; "
+                       "it is not an IFS source invoice or evidence of stock carryover. "
+                       if has_invoice else "Missing invoice evidence is deliberately retained. ")
+                    + _INVENTORY_NOTES[finding].replace("Invoice records found.", "Demo purchase quantity supplied.")
+                    if r["scenario_id"] else _INVENTORY_NOTES[finding]
+                ),
             }
         )
 
@@ -1129,6 +1211,8 @@ def _sample_get_inventory_comparison(params: dict) -> pd.DataFrame:
                 "gap_pct",
                 "finding_type",
                 "data_coverage_note",
+                "scenario_id",
+                "scenario_label",
             ]
         )
 
@@ -1292,7 +1376,318 @@ def _sample_get_payment_variance(params: dict) -> pd.DataFrame:
     return result.reset_index(drop=True)
 
 
+def _sample_get_health_scorecard(params: dict) -> pd.DataFrame:
+    """Partner Financial Health Scorecard — composite ratios per dealer.
+
+    Joins payment_simulation (settlement data) with fbb_comm_dev_act (activation
+    data) for current_period and prior_period. Computes four ratios and a
+    weighted health score (0-100). Sorted worst-first so the most at-risk
+    partners surface immediately.
+
+    Health score:
+        settlement_rate (50 pts) + commission_consistency (30 pts) + clean_record (20 pts)
+    Bands: HEALTHY ≥80 · WATCH ≥60 · AT RISK <60
+    """
+    current = _norm_str(params.get("current_period", ""))
+    prior = _norm_str(params.get("prior_period", ""))
+
+    # --- payment data for both periods ---
+    # PAYMENT_SOURCE is independent from USE_SAMPLE_DATA: Render deliberately
+    # combines sample activation data with live APDP settlement data. Keep the
+    # scorecard aligned with the other payment endpoints in that deployment.
+    from backend import config
+    from backend.audit.payment_data import payment_lookup
+
+    payment_source = config.PAYMENT_SOURCE
+    pay_cur = payment_lookup(current, payment_source)
+    pay_pri = payment_lookup(prior, payment_source) if prior else pd.DataFrame()
+
+    if payment_source == "apdp":
+        payment_renames = {
+            "expected_commission_ngn": "commission_owed",
+            "total_settled_ngn": "amount_paid",
+            "reconciliation_status": "payment_status",
+        }
+        pay_cur = pay_cur.rename(columns=payment_renames)
+        pay_pri = pay_pri.rename(columns=payment_renames)
+    else:
+        pay_cur = pay_cur.rename(columns={"distributor_code": "dealer_id"})
+        pay_pri = pay_pri.rename(columns={"distributor_code": "dealer_id"})
+
+    required_payment_columns = ("dealer_id", "commission_owed", "amount_paid", "payment_status")
+    for df in (pay_cur, pay_pri):
+        for col in required_payment_columns:
+            if col not in df.columns:
+                df[col] = pd.Series(dtype="object")
+
+    # --- activation data for both periods ---
+    act_cur = _load_csv("fbb_comm_dev_act", period=current).copy()
+    act_pri = _load_csv("fbb_comm_dev_act", period=prior).copy() if prior else pd.DataFrame()
+
+    # Cast numeric columns in activation frames; normalise distributor_code to str.
+    for df in (act_cur, act_pri):
+        if df.empty:
+            continue
+        for col in ("unit_selling_price", "commission_rate"):
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        df["distributor_code"] = df["distributor_code"].astype(str)
+
+    # Normalise payment dealer IDs to strings for consistent merging.
+    for df in (pay_cur, pay_pri):
+        if df.empty:
+            continue
+        df["dealer_id"] = df["dealer_id"].astype(str)
+
+    def _act_metrics(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return pd.DataFrame(columns=[
+                "distributor_code", "dealer_name", "account_profile_class",
+                "gross_revenue", "commission_earned", "zero_count", "total_count",
+            ])
+        grp = df.groupby("distributor_code").agg(
+            dealer_name=("distributor_name", "first"),
+            account_profile_class=("account_profile_class", "first"),
+            gross_revenue=("unit_selling_price", "sum"),
+            commission_earned=("commission_rate", "sum"),
+            zero_count=("commission_rate", lambda x: (x == 0).sum()),
+            total_count=("commission_rate", "count"),
+        ).reset_index()
+        return grp
+
+    act_cur_m = _act_metrics(act_cur)
+    act_pri_m = _act_metrics(act_pri)
+
+    # --- merge current payment + activation ---
+    cur = pay_cur.copy()
+    cur = cur.merge(
+        act_cur_m.rename(columns={"distributor_code": "dealer_id"}),
+        on="dealer_id", how="left",
+    )
+    for col in ("gross_revenue", "commission_earned", "zero_count", "total_count"):
+        cur[col] = cur[col].fillna(0.0)
+
+    # --- prior period settlement rate per dealer for MoM delta ---
+    if not pay_pri.empty:
+        pri = pay_pri[["dealer_id", "commission_owed", "amount_paid"]].copy()
+        pri["settlement_rate_prior"] = pri.apply(
+            lambda r: (r["amount_paid"] / r["commission_owed"] * 100) if r["commission_owed"] > 0 else 0.0,
+            axis=1,
+        )
+        pri = pri[["dealer_id", "settlement_rate_prior"]]
+    else:
+        pri = pd.DataFrame(columns=["dealer_id", "settlement_rate_prior"])
+
+    cur = cur.merge(pri, on="dealer_id", how="left")
+    cur["settlement_rate_prior"] = cur["settlement_rate_prior"].fillna(float("nan"))
+
+    # --- compute ratios ---
+    rows: list[dict] = []
+    for _, r in cur.iterrows():
+        owed = float(r["commission_owed"])
+        paid = float(r["amount_paid"])
+        gross = float(r["gross_revenue"])
+        earned = float(r["commission_earned"])
+        zero_count = int(r["zero_count"])
+        total_count = int(r["total_count"])
+
+        settlement_rate = (paid / owed * 100) if owed > 0 else 0.0
+        commission_yield = (earned / gross * 100) if gross > 0 else 0.0
+        zero_rate = (zero_count / total_count * 100) if total_count > 0 else 0.0
+        outstanding = max(owed - paid, 0.0)
+        dispute_flag = str(r["payment_status"]) in ("DISPUTED", "PARTIALLY_PAID")
+
+        # MoM settlement rate delta
+        prior_rate = r["settlement_rate_prior"]
+        settlement_rate_delta = (
+            round(settlement_rate - float(prior_rate), 1)
+            if not (prior_rate != prior_rate)  # NaN check
+            else None
+        )
+
+        # Weighted health score
+        consistency_pts = (1 - zero_rate / 100) * 30
+        clean_pts = 0.0 if dispute_flag else 20.0
+        score = round((settlement_rate / 100 * 50) + consistency_pts + clean_pts, 1)
+        band = "HEALTHY" if score >= 80 else "WATCH" if score >= 60 else "AT RISK"
+
+        dealer_name = r.get("dealer_name")
+        profile_class = r.get("account_profile_class")
+        rows.append({
+            "dealer_id": str(r["dealer_id"]),
+            "dealer_name": (
+                str(dealer_name)
+                if dealer_name is not None and not pd.isna(dealer_name)
+                else str(r["dealer_id"])
+            ),
+            "account_profile_class": (
+                str(profile_class)
+                if profile_class is not None and not pd.isna(profile_class)
+                else ""
+            ),
+            "health_score": score,
+            "health_band": band,
+            "settlement_rate_pct": round(settlement_rate, 1),
+            "settlement_rate_delta": settlement_rate_delta,
+            "commission_yield_pct": round(commission_yield, 1),
+            "zero_commission_rate_pct": round(zero_rate, 1),
+            "outstanding_ngn": round(outstanding, 2),
+            "dispute_flag": dispute_flag,
+            "data_source": "APDP" if payment_source == "apdp" else "SIMULATED",
+        })
+
+    result = pd.DataFrame(rows) if rows else pd.DataFrame(columns=[
+        "dealer_id", "dealer_name", "account_profile_class",
+        "health_score", "health_band", "settlement_rate_pct",
+        "settlement_rate_delta", "commission_yield_pct",
+        "zero_commission_rate_pct", "outstanding_ngn", "dispute_flag",
+        "data_source",
+    ])
+    return result.sort_values("health_score", ascending=True).reset_index(drop=True)
+
+
+def _sample_get_subscription_demo_records(params: dict) -> pd.DataFrame:
+    """Internal sample-only device attribution plus raw fictional statement fields.
+
+    Not an agent tool or live query; callers guard sample mode before dispatch.
+    No commission policy is inferred here.
+    """
+    period = str(params['mon_period'])
+    dealer_id = params.get('distributor_code')
+    source_paths = config.SAMPLE_DATA_PATHS['fbb_comm_orsc']
+    source_path = source_paths.get(period) if isinstance(source_paths, dict) else source_paths
+    if source_path is None or not source_path.exists():
+        return pd.DataFrame()
+    source = {}
+    with source_path.open(newline='') as handle:
+        for row in csv.DictReader(handle):
+            if row['mon_period'] != period or (dealer_id and row['distributor_code'] != dealer_id):
+                continue
+            key = (row['distributor_code'], row['imei'])
+            record = source.setdefault(key, {'dealer_id': key[0], 'imei': key[1],
+                'subscription_revenue_ngn': Decimal(0), 'source_record_count': 0})
+            record['subscription_revenue_ngn'] += Decimal(row['data_subscription_amount'] or '0')
+            record['source_record_count'] += 1
+    statements = {}
+    fixture = config.SAMPLE_DATA_PATHS['subscription_commission_demo']
+    if fixture.exists():
+        with fixture.open(newline='') as handle:
+            for row in csv.DictReader(handle):
+                if row['mon_period'] != period:
+                    continue
+                key = (row['dealer_id'], row['imei'])
+                if key in statements:
+                    raise ValueError('Duplicate subscription statement device')
+                statements[key] = row
+    rows = []
+    for key, record in sorted(source.items()):
+        statement = statements.get(key, {})
+        rows.append({**record,
+            **{field: statement.get(field, '') for field in (
+                'subscription_commission_ngn', 'subscription_settled_ngn',
+                'statement_reference', 'settlement_reference')}})
+    return pd.DataFrame(rows)
+
+
+def _sample_get_dealer_codes(params: dict) -> pd.DataFrame:
+    """Normalized name associations (exact, or containing the name) across bounded months.
+
+    Metadata survives empty results via DataFrame.attrs and is included by the
+    tool executor. Codes are read as strings to preserve leading zeroes.
+    """
+    name = params.get("dealer_name")
+    if not isinstance(name, str) or not name.strip() or len(name) > 300:
+        raise ValueError("dealer_name must be a non-empty string of at most 300 characters")
+    normalized_name = name.strip().lower()
+    # 'exact' (default) matches the complete name; 'contains' matches any
+    # recorded name containing it, for resolving a partially written name.
+    match = params.get("match", "exact")
+    if match not in ("exact", "contains"):
+        raise ValueError("match must be 'exact' or 'contains'")
+    bounds: dict[str, str | None] = {}
+    for key in ("start_period", "end_period"):
+        value = params.get(key)
+        if value is not None and (
+            not isinstance(value, str)
+            or not re.fullmatch(r"[0-9]{4}(0[1-9]|1[0-2])", value)
+        ):
+            raise ValueError(f"{key} must be a valid YYYYMM string")
+        bounds[key] = value
+    start, end = bounds["start_period"], bounds["end_period"]
+    if start and end and start > end:
+        raise ValueError("start_period must not be later than end_period")
+    page = params.get("page", 1)
+    page_size = params.get("page_size", 100)
+    if type(page) is not int or page < 1:
+        raise ValueError("page must be a positive integer")
+    if type(page_size) is not int or not 1 <= page_size <= 100:
+        raise ValueError("page_size must be an integer between 1 and 100")
+
+    associations: dict[str, dict] = {}
+    coverage: dict[str, list[str]] = {}
+    for source in ("fbb_comm_dev_act", "fbb_comm_orsc"):
+        entry = config.SAMPLE_DATA_PATHS[source]
+        paths = (
+            [path for period, path in sorted(entry.items())
+             if (not start or period >= start) and (not end or period <= end)]
+            if isinstance(entry, dict) else [entry]
+        )
+        searched = set()
+        for path in paths:
+            # Do not silently skip missing configured evidence files.
+            with path.open(newline="") as handle:
+                for row in csv.DictReader(handle):
+                    period = row["mon_period"]
+                    if (start and period < start) or (end and period > end):
+                        continue
+                    searched.add(period)
+                    recorded_name = row["distributor_name"]
+                    code = row["distributor_code"]
+                    recorded = recorded_name.strip().lower()
+                    matched = (normalized_name in recorded if match == "contains"
+                               else recorded == normalized_name)
+                    if not matched or not code.strip():
+                        continue
+                    item = associations.setdefault(code, {
+                        "names": set(), "periods": set(), "sources": set(),
+                    })
+                    item["names"].add(recorded_name)
+                    item["periods"].add(period)
+                    item["sources"].add(source)
+        coverage[source] = sorted(searched)
+
+    codes = sorted(associations)
+    offset = (page - 1) * page_size
+    rows = []
+    for code in codes[offset:offset + page_size]:
+        item = associations[code]
+        rows.append({
+            "dealer_id": code,
+            "recorded_names": sorted(item["names"]),
+            "first_observed_period": min(item["periods"]),
+            "last_observed_period": max(item["periods"]),
+            "sources": sorted(item["sources"]),
+        })
+    result = pd.DataFrame(rows, columns=[
+        "dealer_id", "recorded_names", "first_observed_period",
+        "last_observed_period", "sources",
+    ])
+    result.attrs["lookup_metadata"] = {
+        "coverage_by_source": coverage,
+        "total_codes": len(codes), "page": page, "page_size": page_size,
+        "has_more": offset + page_size < len(codes),
+        "data_source": "SAMPLE",
+        "association_note": (
+            "Recorded name-code associations only; not verified branches or legal entities. "
+            "First/last observations are within searched months and do not prove continuity. "
+            "Coverage is limited to the source records available in this dataset."
+        ),
+    }
+    return result
+
+
 SAMPLE_HANDLERS: dict[str, Callable[[dict], pd.DataFrame]] = {
+    "get_dealer_codes": _sample_get_dealer_codes,
+    "get_subscription_demo_records": _sample_get_subscription_demo_records,
     "get_dealer_summary": _sample_get_dealer_summary,
     "get_zero_commission_records": _sample_get_zero_commission_records,
     "get_month_on_month_variance": _sample_get_month_on_month_variance,
@@ -1307,6 +1702,8 @@ SAMPLE_HANDLERS: dict[str, Callable[[dict], pd.DataFrame]] = {
     "get_payment_summary": _sample_get_payment_summary,
     "get_payment_exceptions": _sample_get_payment_exceptions,
     "get_payment_variance": _sample_get_payment_variance,
+    # --- Partner Health Scorecard ---
+    "get_health_scorecard": _sample_get_health_scorecard,
 }
 
 
@@ -1342,3 +1739,33 @@ def get_available_periods() -> list[str]:
         "get_available_periods is not implemented for live Presto mode yet "
         "— to be implemented when the service account is provisioned."
     )
+
+
+def has_source_period(source: str, period: str) -> bool:
+    """Verify actual source rows, not configured keys or another stream's dates."""
+    if not config.USE_SAMPLE_DATA:
+        return False  # Live queries have no implemented coverage contract yet.
+    entry = config.SAMPLE_DATA_PATHS.get(source)
+    path = entry.get(period) if isinstance(entry, dict) else entry
+    try:
+        if path is None or not path.is_file():
+            return False
+        with path.open(newline='') as handle:
+            return any(str(row.get('mon_period', row.get('report_month', ''))) == period
+                       for row in csv.DictReader(handle))
+    except (OSError, UnicodeError, csv.Error):
+        return False
+
+
+def investigation_support(period: str, dealer_id: str, source: str = 'calculation') -> pd.DataFrame:
+    """Sample source records for an exact account/month; never a live fallback."""
+    if not config.USE_SAMPLE_DATA:
+        raise NotImplementedError('Investigation evidence adapter is sample-only')
+    name = {'calculation': 'commission_calculation_evidence',
+            'settlement': 'settlement_process_evidence'}[source]
+    path = config.PROJECT_ROOT / 'data' / 'samples' / f'{name}.csv'
+    key = (name, None)
+    if key not in _CSV_CACHE:
+        _CSV_CACHE[key] = pd.read_csv(path, dtype=str, keep_default_na=False)
+    frame = _CSV_CACHE[key]
+    return frame[(frame['mon_period'] == period) & (frame['dealer_id'] == dealer_id)].copy()

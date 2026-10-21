@@ -51,7 +51,7 @@ from backend.db.connection import execute_query  # noqa: E402
 # Configuration
 # ---------------------------------------------------------------------------
 
-PERIODS: tuple[str, ...] = ("202602", "202603")
+PERIODS: tuple[str, ...] = ("202601", "202602", "202603", "202604", "202605", "202606")
 
 # Priority order — worst flag wins (top of list is worst).
 # Tuples are ``(rate, flag_name)`` so callers can unpack as ``rate, flag``.
@@ -163,14 +163,14 @@ def _payment_channel(account_profile_class: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
-def generate() -> pd.DataFrame:
+def generate(periods: tuple[str, ...] = PERIODS) -> pd.DataFrame:
     rows: list[dict] = []
-    for period in PERIODS:
+    for period in periods:
         all_unq, mismatch, high_unq = _dealer_flags(period)
         summary = execute_query("get_dealer_summary", {"mon_period": period})
 
         for _, dealer in summary.iterrows():
-            dealer_id = str(dealer["distributor_code"])
+            dealer_id = str(dealer["dealer_id"])
             commission_owed = float(dealer["total_commission_ngn"])
             rate, flag = _resolve_flag(dealer_id, all_unq, mismatch, high_unq)
             amount_paid = round(commission_owed * rate, 2)
@@ -182,7 +182,7 @@ def generate() -> pd.DataFrame:
             rows.append(
                 {
                     "distributor_code": dealer_id,
-                    "distributor_name": str(dealer["distributor_name"]),
+                    "distributor_name": str(dealer["dealer_name"]),
                     "account_profile_class": (
                         ""
                         if pd.isna(dealer.get("account_profile_class"))

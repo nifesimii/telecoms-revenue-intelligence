@@ -11,7 +11,7 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { getPeriods } from '../api/client.js';
 
-const PeriodContext = createContext(null);
+export const PeriodContext = createContext(null);
 
 // Read ?period=YYYYMM from the URL on mount. Returns null if absent or malformed.
 function _readPeriodFromUrl() {
@@ -27,7 +27,7 @@ function _writePeriodToUrl(period) {
   const url = new URL(window.location.href);
   if (url.searchParams.get('period') === period) return;
   url.searchParams.set('period', period);
-  window.history.replaceState({}, '', url.toString());
+  window.history.replaceState(window.history.state, '', url.toString());
 }
 
 export function PeriodProvider({ children }) {
@@ -63,6 +63,17 @@ export function PeriodProvider({ children }) {
       cancelled = true;
     };
   }, []);
+
+  // Browser navigation restores the month encoded in that workspace entry.
+  // Do not write the outgoing React state while handling popstate.
+  useEffect(() => {
+    const restorePeriod = () => {
+      const requested = _readPeriodFromUrl();
+      setPeriod(loading ? requested || '' : periods.includes(requested) ? requested : periods[0] || '');
+    };
+    window.addEventListener('popstate', restorePeriod);
+    return () => window.removeEventListener('popstate', restorePeriod);
+  }, [periods, loading]);
 
   // Mirror the current period to the URL so links are shareable.
   useEffect(() => {

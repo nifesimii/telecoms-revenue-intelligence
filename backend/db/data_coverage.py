@@ -1,13 +1,13 @@
 """Data coverage ticket compiler.
 
-Two distinct gap classes affect FBB commission accuracy and need to be
-escalated to the data / task team via ServiceNow:
+Two observed gap classes require source-coverage confirmation before any
+commission impact or remediation can be established:
 
   * **IFS missing**  — dealer has activations this period but no IFS invoice
     record (``NO_INVOICE_RECORD`` rows in the inventory comparison view).
     Affects inventory mismatch determination and may flag false positives.
 
-  * **USP missing** — dealer's ``account_profile_class`` is NULL in the
+  * **Missing partner classification** — dealer's ``account_profile_class`` is NULL in the
     dealer summary. One of the four KB-documented root causes for
     zero-commission records. Affects qualification and commission payout.
 
@@ -18,7 +18,7 @@ suitable for paste-into-the-portal (Stage 1 — no live ServiceNow API call).
 Severity rules (configurable later):
     1-3 dealers   → LOW    ("data-window verify")
     4-10 dealers  → MEDIUM ("investigate snapshot")
-    10+ dealers   → HIGH   ("USP refresh / IFS reload likely needed")
+    11+ dealers   → HIGH   ("prioritize source-coverage confirmation")
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from backend import config
 from backend.db.connection import execute_query
 
 Source = Literal["ifs", "usp", "both"]
@@ -37,13 +38,13 @@ _SEVERITY_MEDIUM = 10
 def _severity_for(total_dealers: int) -> tuple[str, str]:
     """Return (label, recommended_action)."""
     if total_dealers <= _SEVERITY_LOW:
-        return "LOW", "Verify whether the affected dealers' data falls outside the IFS / USP snapshot window."
+        return "LOW", "Verify whether the affected dealers' data falls outside the IFS / partner-classification snapshot window."
     if total_dealers <= _SEVERITY_MEDIUM:
-        return "MEDIUM", "Investigate the source snapshot — partial refresh may be needed for the affected dealers."
-    return "HIGH", "Full USP dimension refresh and/or IFS reload likely required for this period."
+        return "MEDIUM", "Confirm source coverage and the IFS / partner-classification snapshot window for the affected dealers before proposing remediation."
+    return "HIGH", "Prioritize confirmation of source coverage and the IFS / partner-classification snapshot window across the affected dealers; dealer count alone does not diagnose a source fault."
 
 
-def _collect_ifs_missing(mon_period: str) -> list[dict[str, Any]]:
+def collect_ifs_missing(mon_period: str) -> list[dict[str, Any]]:
     """Group NO_INVOICE_RECORD rows from the inventory comparison by dealer."""
     df = execute_query(
         "get_inventory_comparison",
@@ -67,13 +68,13 @@ def _collect_ifs_missing(mon_period: str) -> list[dict[str, Any]]:
     return rows
 
 
-def _collect_usp_missing(mon_period: str) -> list[dict[str, Any]]:
+def collect_profile_class_missing(mon_period: str) -> list[dict[str, Any]]:
     """Dealers whose ``account_profile_class`` is NULL or empty.
 
     Per KB: a missing account_profile_class is one of the four documented
     root causes for zero-commission records. We surface ALL such dealers
     (not only those with zero-comm records this period) so the data team
-    can fix the upstream USP snapshot before next month's commission run.
+    can fix the upstream partner-classification snapshot before next month's commission run.
     """
     df = execute_query("get_dealer_summary", {"mon_period": mon_period})
     if df.empty:
@@ -115,15 +116,23 @@ def _format_ticket_body(
         "",
         f"**Period:** {mon_period}",
         "**Source:** FBB Revenue Intelligence Platform",
-        f"**Severity:** {severity}",
+        *([
+            "**Demo disclosure:** Sample mode includes synthetic comparison scenarios "
+            "with shared purchase evidence and retained invoice gaps. These are not "
+            "authentic IFS invoices or verified operational issues. The reporting month "
+            "selects activations; no monthly purchase window or carryover rule is "
+            "established. Counts may reflect synthetic scenarios. This draft is for "
+            "demonstration; validate against authentic source evidence before operational action.",
+        ] if config.USE_SAMPLE_DATA else []),
+        f"**Severity:** {severity} (dealer-count triage only; not confirmed financial impact)",
         f"**Affected dealers:** {total_dealers}",
         "",
         "## Issue",
         "",
-        "The following dealers have data coverage gaps that affect FBB ",
-        "commission accuracy. Please verify whether these are genuine ",
-        "coverage issues (e.g. snapshot window mismatch) or whether the ",
-        "underlying tables need updating.",
+        "The available data shows missing invoice evidence or account-profile values. ",
+        "Please confirm source coverage, dealer/product matching and the snapshot ",
+        "window first. These observations do not establish a source fault, ",
+        "incorrect commission or an amount owed.",
         "",
     ]
 
@@ -131,7 +140,7 @@ def _format_ticket_body(
         lines.append("## IFS missing — activations without invoice records")
         lines.append("")
         lines.append("Dealers activated FBB devices this period but no matching ")
-        lines.append("IFS purchase record was found in the 6-month window. May ")
+        lines.append("IFS purchase record was found in the available dataset. May ")
         lines.append("indicate stale IFS extract or out-of-window purchases.")
         lines.append("")
         lines.append("| Dealer | Code | Affected products | Activations |")
@@ -144,11 +153,11 @@ def _format_ticket_body(
         lines.append("")
 
     if usp_missing:
-        lines.append("## USP missing — NULL account_profile_class")
+        lines.append("## Missing partner classification — NULL account_profile_class")
         lines.append("")
         lines.append("Per the FBB Commission KB, a missing account_profile_class is ")
         lines.append("one of four documented root causes for zero-commission records. ")
-        lines.append("Fix at source (USP dimension snapshot) before the next commission run.")
+        lines.append("Confirm whether the profile is missing in the authoritative source and assess the affected records before proposing a correction.")
         lines.append("")
         lines.append("| Dealer | Code | Activations | Zero-comm records | Commission earned |")
         lines.append("|---|---|---:|---:|---:|")
@@ -164,14 +173,14 @@ def _format_ticket_body(
         "## Suggested actions",
         "",
         f"1. {severity_action}",
-        "2. Confirm whether the affected dealers should appear in the next ",
-        "   USP / IFS snapshot. If yes, refresh the source table.",
-        "3. Re-run the FBB commission job (`fbb_commission.py`) once the ",
-        "   underlying tables are updated.",
-        "4. Notify Finance / Revenue Assurance once the data is corrected so ",
-        "   any affected dealer disputes can be resolved.",
+        "2. If a source omission or stale extract is confirmed, ask the source owner ",
+        "   to assess whether a targeted refresh or reload is appropriate.",
+        "3. Only if corrected evidence changes commission inputs, ask Finance ",
+        "   to assess whether an authorized commission rerun is needed.",
+        "4. Return the confirmed coverage findings and any potential commission ",
+        "   impact to Finance / Revenue Assurance for review.",
         "",
-        "## Downstream impact",
+        "## Observed scope and potential impact",
         "",
         f"* Inventory: {len(ifs_missing)} dealers flagged as NO_INVOICE_RECORD",
         f"* Commission: {len(usp_missing)} dealers with NULL account_profile_class",
@@ -181,8 +190,8 @@ def _format_ticket_body(
         if total_zero > 0:
             lines.append(
                 f"* {total_zero:,} zero-commission activation records across "
-                f"the USP-missing dealers may be re-classifiable as qualified "
-                f"once the snapshot is fixed."
+                f"the dealers missing partner classification require record-level eligibility review; "
+                f"a profile correction alone does not establish entitlement."
             )
     lines.extend([
         "",
@@ -210,7 +219,7 @@ def compile_data_coverage_ticket(
             "severity_action": str,
             "affected_dealers": int,
             "ifs_missing": [...],   # empty list if source excludes IFS
-            "usp_missing": [...],   # empty list if source excludes USP
+            "usp_missing": [...],   # empty list if source excludes partner classification
             "ticket_body":  str,    # markdown
         }``
     """
@@ -218,9 +227,9 @@ def compile_data_coverage_ticket(
     usp_missing: list[dict[str, Any]] = []
 
     if source in ("ifs", "both"):
-        ifs_missing = _collect_ifs_missing(mon_period)
+        ifs_missing = collect_ifs_missing(mon_period)
     if source in ("usp", "both"):
-        usp_missing = _collect_usp_missing(mon_period)
+        usp_missing = collect_profile_class_missing(mon_period)
 
     affected = len({r["dealer_id"] for r in ifs_missing} | {r["dealer_id"] for r in usp_missing})
     severity, severity_action = _severity_for(affected)

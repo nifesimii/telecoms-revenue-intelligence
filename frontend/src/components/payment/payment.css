@@ -1,0 +1,3 @@
+.payment-workspace .payment-pagination > div { flex-wrap: wrap; font-size: 0.75rem; }
+.payment-workspace .overview-select { max-width: 100%; }
+.payment-workspace .overview-notice { overflow-wrap: anywhere; }

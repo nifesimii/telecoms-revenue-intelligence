@@ -78,6 +78,8 @@ class InventoryMismatchInputs:
     # Step 6 — upstream completeness
     ifs_records_present: bool = True
     known_ingestion_gap: bool = False
+    scenario_id: str = ""
+    scenario_label: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -264,13 +266,49 @@ def build_trail(inp: InventoryMismatchInputs) -> VerificationTrail:
         },
     ))
 
+    if inp.scenario_id:
+        disclosure = (
+            f"Synthetic comparison scenario {inp.scenario_id}: {inp.scenario_label}. "
+            "Shared demonstration evidence, not authentic IFS invoices or verified "
+            "stock. No purchase window, carryover or alias conclusion is established."
+        )
+        for step in steps:
+            step.detail.update(scenario_id=inp.scenario_id,
+                               scenario_label=inp.scenario_label)
+        named_steps = {step.name: step for step in steps}
+        signal = named_steps["mismatch_signal"]
+        signal.caveat = disclosure
+        signal.detail.update(source_table="synthetic_inventory", limitation=disclosure)
+        purchase = named_steps["purchase_record_lookup"]
+        purchase.checked = "Does this synthetic scenario include purchase evidence?"
+        purchase.result = (
+            f"Synthetic shared purchase quantity: {purchased:.0f} units."
+            if purchased is not None else "Synthetic scenario retains missing purchase evidence."
+        )
+        purchase.passed = False
+        purchase.caveat = disclosure
+        purchase.detail["source_table"] = "synthetic_inventory"
+        for name in ("prior_period_stock", "product_alias_reconciliation"):
+            step = named_steps[name]
+            step.result = "Not assessed: synthetic scenarios do not establish carryover or alias evidence."
+            step.passed = False
+            step.caveat = disclosure
+            step.detail = {"scenario_id": inp.scenario_id,
+                           "scenario_label": inp.scenario_label,
+                           "limitation": disclosure}
+        coverage = named_steps["upstream_completeness"]
+        coverage.result = "Synthetic comparison evidence does not establish authentic IFS coverage."
+        coverage.passed = False
+        coverage.caveat = disclosure
+        coverage.detail["data_source"] = "synthetic_inventory"
+
     # ── Conclusion + confidence ───────────────────────────────────────────
     conclusion, confidence = _conclude(inp, steps, gap)
     return VerificationTrail(
         partner_code=f"{inp.dealer_id}:{inp.product_code}",
         partner_name=f"{inp.dealer_name} · {inp.product_code}",
         mon_period=inp.mon_period,
-        payment_source=_DATA_SOURCE,
+        payment_source="synthetic_inventory" if inp.scenario_id else _DATA_SOURCE,
         steps=steps,
         conclusion=conclusion,
         confidence=confidence,
@@ -283,6 +321,8 @@ def _conclude(
     gap: float | None,
 ) -> tuple[str, str]:
     """Derive (conclusion, confidence) from the step results."""
+    if inp.scenario_id:
+        return "INSUFFICIENT_DATA", "LOW"
     caveat_step_names = [s.name for s in steps if s.caveat]
     step2 = next(s for s in steps if s.step == 2)
     step4 = next(s for s in steps if s.step == 4)
@@ -322,7 +362,7 @@ def _conclude(
 # Input gathering — fetch from the existing query layer.
 # ---------------------------------------------------------------------------
 
-def _prior_period(mon_period: str, known_periods: list[str]) -> str | None:
+def prior_period(mon_period: str, known_periods: list[str]) -> str | None:
     """The period immediately before ``mon_period`` in the known set."""
     if not known_periods:
         return None
@@ -342,6 +382,8 @@ def _prior_leftover_for(
     """
     if prior_df is None or prior_df.empty:
         return 0.0
+    if "scenario_id" in prior_df:
+        prior_df = prior_df[prior_df["scenario_id"].fillna("").eq("")]
     match = prior_df[
         (prior_df["dealer_id"].astype(str) == str(dealer_id))
         & (prior_df["product_code"].astype(str) == str(product_code))
@@ -370,6 +412,8 @@ def _sibling_purchases_for(
     out: dict[str, float] = {}
     if period_df is None or period_df.empty or not siblings:
         return out
+    if "scenario_id" in period_df:
+        period_df = period_df[period_df["scenario_id"].fillna("").eq("")]
     for code in siblings:
         match = period_df[
             (period_df["dealer_id"].astype(str) == str(dealer_id))
@@ -434,12 +478,79 @@ def gather_inputs(
         sibling_purchases=sibling_purchases,
         ifs_records_present=ifs_records_present,
         known_ingestion_gap=not ifs_records_present,
+        scenario_id=str(row.get("scenario_id") or ""),
+        scenario_label=str(row.get("scenario_label") or ""),
     )
 
 
 # ---------------------------------------------------------------------------
 # Orchestrator — run the whole period.
 # ---------------------------------------------------------------------------
+
+def _select_subjects(mon_period: str) -> tuple[pd.DataFrame, pd.DataFrame] | None:
+    """The period's audit subjects: ``(period_df, flagged)``, where ``flagged``
+    holds the (dealer, product) rows the inventory assurance flagged and
+    ``period_df`` is the whole comparison (sibling purchases are read from
+    it). ``None`` when the period has no subjects. The ONE subject filter
+    shared by :func:`run_period` and :func:`run_dealer`. A source read
+    failure propagates: an unreadable source is not "no subjects".
+    """
+    # Reject unknown periods early — the sample-data reader raises when the
+    # period isn't in the CSV partition map, and pandas may raise inside the
+    # merge if either side of the join is empty. Returning [] for an unknown
+    # period mirrors what the UI expects.
+    known = _known_periods()
+    if known and str(mon_period) not in known:
+        return None
+
+    period_df = execute_query(
+        "get_inventory_comparison", {"mon_period": str(mon_period)}
+    )
+    if period_df is None or period_df.empty:
+        return None
+
+    # Emit trails for the two flagged finding types. WITHIN_ALLOCATION rows
+    # are not audit subjects — no claim to verify.
+    flagged = period_df[period_df["finding_type"].isin(
+        ["CONFIRMED_MISMATCH", "NO_INVOICE_RECORD"]
+    )]
+    if flagged.empty:
+        return None
+    return period_df, flagged
+
+
+def _build_trails(
+    mon_period: str, period_df: pd.DataFrame, flagged: pd.DataFrame,
+) -> list[VerificationTrail]:
+    if flagged.empty:
+        return []
+
+    # Shared lookups — fetched once, reused across rows.
+    prior = prior_period(mon_period, _known_periods())
+    prior_df = None
+    if prior:
+        try:
+            prior_df = execute_query(
+                "get_inventory_comparison", {"mon_period": prior}
+            )
+        except Exception:
+            prior_df = None
+
+    ifs_records_present = ifs_covers_period(mon_period)
+
+    trails: list[VerificationTrail] = []
+    for _, row in flagged.iterrows():
+        inp = gather_inputs(
+            row.to_dict(),
+            mon_period,
+            period_df=period_df,
+            prior_period=prior,
+            prior_df=prior_df,
+            ifs_records_present=ifs_records_present,
+        )
+        trails.append(build_trail(inp))
+    return trails
+
 
 def run_period(mon_period: str, payment_source: str | None = None) -> list[VerificationTrail]:
     """Build a trail for every (dealer, product) flagged by the inventory
@@ -448,60 +559,34 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
     this module always reads IFS.
     """
     _ = payment_source  # interface parity with AuditModule.build
-
-    # Reject unknown periods early — the sample-data reader raises when the
-    # period isn't in the CSV partition map, and pandas may raise inside the
-    # merge if either side of the join is empty. Returning [] for an unknown
-    # period mirrors what the UI expects.
-    known = _known_periods()
-    if known and str(mon_period) not in known:
-        return []
-
     try:
-        period_df = execute_query(
-            "get_inventory_comparison", {"mon_period": str(mon_period)}
-        )
+        subjects = _select_subjects(mon_period)
     except Exception:
+        # The period run has always degraded to no trails on a read failure.
         return []
-    if period_df is None or period_df.empty:
+    if subjects is None:
         return []
+    return _build_trails(mon_period, *subjects)
 
-    # Emit trails for the two flagged finding types. WITHIN_ALLOCATION rows
-    # are not audit subjects — no claim to verify.
-    flagged = period_df[period_df["finding_type"].isin(
-        ["CONFIRMED_MISMATCH", "NO_INVOICE_RECORD"]
-    )]
-    if flagged.empty:
+
+def run_dealer(
+    mon_period: str, dealer_id: str, payment_source: str | None = None,
+) -> list[VerificationTrail]:
+    """One dealer's (dealer, product) trails, exactly as :func:`run_period`
+    would build them; ``[]`` when none of the dealer's products is flagged.
+    A source read failure raises, so callers report the check unavailable.
+    Read-only — never persisted. ``payment_source`` is ignored (IFS only).
+    """
+    _ = payment_source
+    subjects = _select_subjects(mon_period)
+    if subjects is None:
         return []
-
-    # Shared lookups — fetched once, reused across rows.
-    prior_period = _prior_period(mon_period, _known_periods())
-    prior_df = None
-    if prior_period:
-        try:
-            prior_df = execute_query(
-                "get_inventory_comparison", {"mon_period": prior_period}
-            )
-        except Exception:
-            prior_df = None
-
-    ifs_records_present = _ifs_covers_period(mon_period)
-
-    trails: list[VerificationTrail] = []
-    for _, row in flagged.iterrows():
-        inp = gather_inputs(
-            row.to_dict(),
-            mon_period,
-            period_df=period_df,
-            prior_period=prior_period,
-            prior_df=prior_df,
-            ifs_records_present=ifs_records_present,
-        )
-        trails.append(build_trail(inp))
-    return trails
+    period_df, flagged = subjects
+    return _build_trails(mon_period, period_df,
+                         flagged[flagged["dealer_id"].astype(str) == str(dealer_id).strip()])
 
 
-def _ifs_covers_period(mon_period: str) -> bool:
+def ifs_covers_period(mon_period: str) -> bool:
     """True if the IFS sample/table has any rows relevant to this period.
 
     Sample mode: the ifs_invoice_history CSV isn't partitioned by period,

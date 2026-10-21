@@ -5,8 +5,9 @@
 // don't have to dig past `.data`.
 
 import axios from 'axios';
+import { readExplanationStream } from './explanationStream.js';
 
-const baseURL = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const baseURL = import.meta.env?.VITE_API_URL ?? 'http://localhost:8000';
 
 const api = axios.create({
   baseURL,
@@ -17,6 +18,16 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+export async function getFinancialDealers(params, signal) {
+  const { data } = await api.get('/financial-health', { params, signal });
+  return data;
+}
+
+export async function getFinancialReport(dealerId, period, signal) {
+  const { data } = await api.get(`/financial-health/${encodeURIComponent(dealerId)}`, { params: { mon_period: period }, signal });
+  return data;
+}
+
 /**
  * POST /chat
  * @param {string} message The user's question.
@@ -24,10 +35,10 @@ const api = axios.create({
  * @param {string|null} mon_period Optional reporting period to pin (YYYYMM).
  * @returns {Promise<{response: string, tools_called: string[], raw_data: object, error: string|null}>}
  */
-export async function sendMessage(message, conversation_history = [], mon_period = null) {
+export async function sendMessage(message, conversation_history = [], mon_period = null, signal) {
   const payload = { message, conversation_history };
   if (mon_period) payload.mon_period = mon_period;
-  const { data } = await api.post('/chat', payload);
+  const { data } = await api.post('/chat', payload, { signal });
   return data;
 }
 
@@ -57,6 +68,38 @@ export async function getHealth() {
 export async function getDealers(mon_period = null) {
   const params = mon_period ? { mon_period } : {};
   const { data } = await api.get('/dealers', { params });
+  return data;
+}
+
+export async function getCommissionAccounts(params, signal) {
+  const { data } = await api.get('/commissions', { params, signal });
+  return data;
+}
+
+export async function getCommissionDetail(dealerId, params, signal) {
+  const { data } = await api.get(`/commissions/${encodeURIComponent(dealerId)}/detail`, { params, signal });
+  return data;
+}
+
+export async function getCommissionZeroRecords(dealerId, params, signal) {
+  const { data } = await api.get(`/commissions/${encodeURIComponent(dealerId)}/zero-records`, { params, signal });
+  return data;
+}
+
+export async function getCommissionSubscriptionRecords(dealerId, params, signal) {
+  const { data } = await api.get(`/commissions/${encodeURIComponent(dealerId)}/subscription-records`, { params, signal });
+  return data;
+}
+
+export async function getCommissionExport(params) {
+  const { data } = await api.get('/commissions/export', { params, responseType: 'text' });
+  return data;
+}
+
+export async function getDealerVerification(dealer_id, mon_period, signal) {
+  const { data } = await api.get(`/dealers/${encodeURIComponent(dealer_id)}/verification`, {
+    params: { mon_period }, signal,
+  });
   return data;
 }
 
@@ -111,6 +154,23 @@ export async function getAssuranceStatus(mon_period = null) {
   return data;
 }
 
+export async function getOverview(params, signal) {
+  const { data } = await api.get('/assurance/overview', { params, signal });
+  return data;
+}
+
+export async function getPaymentPosition(mon_period, signal) {
+  const { data } = await api.get('/payments/position', { params: { mon_period }, signal });
+  return data;
+}
+
+export async function getOverviewExport(mon_period) {
+  const { data } = await api.get('/assurance/overview/export', {
+    params: { mon_period }, responseType: 'text',
+  });
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Phase 3 — Inventory Assurance endpoint
 // ---------------------------------------------------------------------------
@@ -128,6 +188,12 @@ export async function getInventoryComparison(
   if (mon_period) params.mon_period = mon_period;
   if (include_within_allocation) params.include_within_allocation = true;
   const { data } = await api.get('/inventory/comparison', { params });
+  return data;
+}
+
+/** Bounded Inventory collection for the server-driven table. */
+export async function getInventoryComparisonPage(params, signal) {
+  const { data } = await api.get('/inventory/comparison-page', { params, signal });
   return data;
 }
 
@@ -171,14 +237,40 @@ export async function draftDisputeResponse(body) {
   return data;
 }
 
+/**
+ * GET /dealers/{dealer_id}/statement?mon_period=YYYYMM
+ * Per-period Finance/RA internal dealer statement — composes commission
+ * entitlement + payment settlement + ORSC + linked audit trails.
+ * @returns {Promise<{
+ *   dealer_id: string, dealer_name: string, mon_period: string,
+ *   commission: object, orsc: object|null, payment: object,
+ *   position: object, audit_trails: Array<object>
+ * }>}
+ */
+export async function getDealerStatement(dealer_id, mon_period) {
+  const { data } = await api.get(
+    `/dealers/${encodeURIComponent(dealer_id)}/statement`,
+    { params: { mon_period } },
+  );
+  return data;
+}
+
 // ---------------------------------------------------------------------------
 // Audit trails (generic, module-aware)
 // ---------------------------------------------------------------------------
 
+// Module list never changes in a session — cache the promise so
+// AssuranceStatusPanel, AuditCoverageBand, and AuditTrailPanel
+// all share one request instead of firing three.
+let _auditModulesPromise = null;
 /** GET /assurance/audit/modules — registered audit modules for the dropdown. */
 export async function getAuditModules() {
-  const { data } = await api.get('/assurance/audit/modules');
-  return data;
+  if (!_auditModulesPromise) {
+    _auditModulesPromise = api.get('/assurance/audit/modules')
+      .then(({ data }) => data)
+      .catch((e) => { _auditModulesPromise = null; throw e; });
+  }
+  return _auditModulesPromise;
 }
 
 /** POST /assurance/audit/run?module=&mon_period= — generate + persist trails. */
@@ -197,6 +289,13 @@ export async function getAuditTrails(module, mon_period, caveat_step = null) {
   const params = { module, mon_period };
   if (caveat_step) params.caveat_step = caveat_step;
   const { data } = await api.get('/assurance/audit/trails', { params });
+  return data;
+}
+
+export async function getAuditTrail(subject, module, mon_period, signal) {
+  const { data } = await api.get(`/assurance/audit/trails/${encodeURIComponent(subject)}`, {
+    params: { module, mon_period }, signal,
+  });
   return data;
 }
 
@@ -232,6 +331,12 @@ export async function getPaymentExceptions(mon_period = null) {
   return data;
 }
 
+/** Consolidated, bounded Payment collection. */
+export async function getPayments(params, signal) {
+  const { data } = await api.get('/payments', { params, signal });
+  return data;
+}
+
 /**
  * GET /payments/variance?period_a=YYYYMM&period_b=YYYYMM
  * @param {string} period_a
@@ -244,4 +349,99 @@ export async function getPaymentVariance(period_a, period_b) {
   return data;
 }
 
+/**
+ * GET /partner/health?period=YYYYMM&prior_period=YYYYMM
+ * Returns dealer health scorecard rows sorted worst-first.
+ */
+export async function getPartnerHealth(period, prior_period) {
+  const { data } = await api.get('/partner/health', {
+    params: { period, prior_period },
+  });
+  return data;
+}
+
 export default api;
+
+
+export async function getActivationAccounts(params, signal) {
+  const { data } = await api.get('/activations/accounts', { params, signal });
+  return data;
+}
+
+export async function getActivationDetail(dealerId, params, signal) {
+  const { data } = await api.get(`/activations/accounts/${encodeURIComponent(dealerId)}/detail`, { params, signal });
+  return data;
+}
+
+export async function getActivationExport(params) {
+  const { data } = await api.get('/activations/accounts/export', { params, responseType: 'text' });
+  return data;
+}
+
+export async function getPaymentExport(params, signal) {
+  const { data } = await api.get('/payments/export', { params, signal, responseType: 'text' });
+  return data;
+}
+
+export async function getPaymentAccount(dealerId, period, signal) {
+  const { data } = await api.get(`/payments/accounts/${encodeURIComponent(dealerId)}`, { params: { mon_period: period }, signal });
+  return data;
+}
+
+export async function getPaymentAnalytics(params, signal) {
+  const { data } = await api.get('/payments/analytics', { params, signal });
+  return data;
+}
+
+/** Bounded saved assessments; full steps load only for an exact subject. */
+export async function getAuditRecords(params, signal) {
+  const { data } = await api.get('/assurance/audit/records', { params, signal });
+  return data;
+}
+export async function getAuditEvidence(subject, module, mon_period, signal, trail_id) {
+  const { data } = await api.get(`/assurance/audit/records/${encodeURIComponent(subject)}`, { params: { module, mon_period, trail_id }, signal });
+  return data;
+}
+export async function getAuditExport(params) {
+  const { data } = await api.get('/assurance/audit/records/export', { params, responseType: 'text' });
+  return data;
+}
+
+/** Structured explanation transport; all fetch configuration stays at the API boundary. */
+export function explainFinding(payload, options = {}) {
+  return streamAnswer('/chat/explain', payload, options);
+}
+
+export function streamMessage(message, conversation_history = [], mon_period = null, options = {}) {
+  const payload = { message, conversation_history };
+  if (mon_period) payload.mon_period = mon_period;
+  if (options.investigationContext) payload.investigation_context = options.investigationContext;
+  return streamAnswer('/chat/stream', payload, options);
+}
+
+async function streamAnswer(path, payload, { signal, onText, onStatus } = {}) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, 120_000);
+  try {
+    const response = await fetch(`${baseURL.replace(/\/$/, '')}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
+      body: JSON.stringify(payload), signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`Explanation unavailable (HTTP ${response.status}). Please retry.`);
+    if (!response.headers.get('content-type')?.toLowerCase().includes('application/x-ndjson')) {
+      throw new Error('Invalid explanation response. Please retry.');
+    }
+    return await readExplanationStream(response, { signal: controller.signal, onText, onStatus });
+  } catch (error) {
+    if (timedOut) throw new Error('Explanation timed out. Please retry.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', abort);
+  }
+}

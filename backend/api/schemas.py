@@ -8,7 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from backend.db.payment_snapshot import (  # noqa: F401  (re-exported API models)
+    PaymentCoverageResponse,
+    PaymentSummaryRecord,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -36,19 +41,21 @@ class ChatRequest(BaseModel):
         default=None,
         pattern=r"^\d{6}$",
         description=(
-            "Optional reporting month (YYYYMM). When provided, the route "
-            "layer prepends it to the question as explicit context for the "
-            "agent."
+            "Optional reporting month (YYYYMM), passed separately from the "
+            "latest question to the agent's scope resolver."
         ),
     )
-
+    investigation_context: str | None = Field(
+        default=None, max_length=4000,
+        description="Active workspace scope, supplied on every turn independently of chat history.",
+    )
 
 class ChatResponse(BaseModel):
     """Outbound payload for ``POST /chat``."""
 
     response: str = Field(
         ...,
-        description="Claude's final text response, ready to render in the UI.",
+        description="Validated evidence-bound answer, ready to render in the UI.",
     )
     tools_called: list[str] = Field(
         default_factory=list,
@@ -57,9 +64,8 @@ class ChatResponse(BaseModel):
     raw_data: dict[str, Any] = Field(
         default_factory=dict,
         description=(
-            "Parsed envelope returned by each tool, keyed by tool name. "
-            "The frontend uses these to render tables / variance cards "
-            "without re-parsing the assistant text."
+            "Scoped evidence under measure_evidence, or bounded dealer lookup "
+            "data under get_dealer_codes. No unrelated measures are exposed."
         ),
     )
     error: str | None = Field(
@@ -196,6 +202,8 @@ class AssuranceModuleStatus(BaseModel):
     medium_count: int | None = None
     low_count: int | None = None
     findings: list[AssuranceFinding] = []
+    finding_count: int = 0
+    findings_truncated: bool = False
 
 
 class AssuranceStatusResponse(BaseModel):
@@ -203,6 +211,63 @@ class AssuranceStatusResponse(BaseModel):
 
     period: str
     modules: list[AssuranceModuleStatus]
+
+
+class OverviewModule(BaseModel):
+    module: str
+    status: str
+    finding_count: int
+    affected_dealers: int
+    high_count: int
+    medium_count: int
+    low_count: int
+    missing_invoice_count: int
+
+
+class OverviewFinding(AssuranceFinding):
+    module: str
+    product_code: str | None = None
+
+
+class OverviewDealer(BaseModel):
+    dealer_id: str
+    dealer_name: str
+    severity: str
+    lead_finding: OverviewFinding
+    module_findings: dict[str, OverviewFinding]
+    modules: list[str]
+    finding_count: int
+    amount_outstanding: float | None
+    payment_status: str | None
+
+
+class OverviewPayment(BaseModel):
+    period: str
+    total_commission_owed: float
+    total_amount_paid: float
+    total_amount_unpaid: float
+    payment_coverage_pct: float
+    disputed_count: int
+    partially_paid_count: int
+    pending_count: int
+    fully_paid_count: int
+    data_source: str
+    record_count: int
+
+
+class OverviewResponse(BaseModel):
+    period: str
+    checked_at: str
+    complete: bool
+    modules: list[OverviewModule]
+    finding_count: int
+    affected_dealers: int
+    cross_module_dealers: int
+    payment: OverviewPayment | None
+    items: list[OverviewDealer]
+    total: int
+    limit: int
+    offset: int
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +290,35 @@ class InventoryComparisonRecord(BaseModel):
     gap_pct: float | None = None
     finding_type: str
     data_coverage_note: str
+    scenario_id: str = ""
+    scenario_label: str = ""
+
+
+class PaginationMeta(BaseModel):
+    """Bounded collection metadata shared by intelligence tables."""
+
+    limit: int
+    offset: int
+    returned: int
+    total: int
+    has_more: bool
+
+
+class InventoryComparisonSummary(BaseModel):
+    confirmed_mismatch_count: int
+    no_invoice_record_count: int
+    within_allocation_count: int
+    total_gap_units: float
+    distinct_dealer_count: int
+    total_activation_count: int
+    total_recorded_purchased_units: float | None
+
+
+class InventoryComparisonPage(BaseModel):
+    items: list[InventoryComparisonRecord]
+    pagination: PaginationMeta
+    summary: InventoryComparisonSummary
+    source_note: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -232,43 +326,20 @@ class InventoryComparisonRecord(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class PaymentSummaryRecord(BaseModel):
-    """One row of the payment dataset for a dealer-month.
-
-    The base fields are populated by every source. The reconciliation fields
-    are only populated when ``data_source == "APDP"`` — they're derived from
-    ``normalized.partner_settlements`` and let the UI show the richer
-    reconciliation state (sales captured vs commissions earned vs paid).
-    """
-
-    dealer_id: str
-    dealer_name: str
-    account_profile_class: str = ""
-    report_month: str
-    commission_owed: float
-    amount_paid: float
-    amount_unpaid: float
-    payment_status: str
-    payment_channel: str
-    payment_date: str | None = None
-    exception_flag: str | None = None
-    data_source: str = "SIMULATED"
-
-    # --- v1.3.0 APDP reconciliation enrichment (None when SIMULATED) ---
-    reconciliation_status: str | None = None       # 6-state canonical
-    sale_count: int | None = None                   # consumer sales captured
-    total_sales_ngn: float | None = None
-    statement_gross_revenue_ngn: float | None = None
-    payment_variance_ngn: float | None = None       # signed: paid − owed
-    paid_count: int | None = None
-    partial_count: int | None = None
-    disputed_count: int | None = None
+# PaymentSummaryRecord and PaymentCoverageResponse live with the data-layer
+# snapshot (backend/db/payment_snapshot.py) so assurance and Atlas can build
+# it without importing the API. Re-exported here; the wire contract is unchanged.
 
 
-class PaymentCoverageResponse(BaseModel):
-    """Aggregated coverage payload for ``GET /payments/summary``."""
+class PaymentCollectionPage(BaseModel):
+    """Bounded matching accounts plus full-period financial totals."""
+
+    record_count: int = 0
+    generated_at: str = ""
 
     period: str
+    items: list[PaymentSummaryRecord]
+    pagination: PaginationMeta
     total_commission_owed: float
     total_amount_paid: float
     total_amount_unpaid: float
@@ -278,7 +349,77 @@ class PaymentCoverageResponse(BaseModel):
     pending_count: int
     fully_paid_count: int
     data_source: str = "SIMULATED"
-    records: list[PaymentSummaryRecord]
+
+
+# ---------------------------------------------------------------------------
+# /dealers/{dealer_id}/statement — per-period Finance/RA internal statement
+# ---------------------------------------------------------------------------
+
+
+class DealerStatementCommission(BaseModel):
+    expected_ngn: float
+    total_activations: int
+    qualified_activation_count: int
+    zero_commission_count: int
+    by_denomination: dict[str, float]
+
+
+class DealerStatementOrsc(BaseModel):
+    device_count: int
+    total_subscription_amount_ngn: float
+    zero_amount_count: int
+
+
+class DealerStatementApdpDetail(BaseModel):
+    sale_count: int
+    total_sales_ngn: float
+    statement_count: int
+    statement_gross_revenue_ngn: float
+    settlement_count: int
+    paid_count: int
+    partial_count: int
+    disputed_count: int
+    reconciliation_status: str
+
+
+class DealerStatementPayment(BaseModel):
+    data_source: str        # "simulated" | "apdp"
+    amount_paid_ngn: float
+    payment_found: bool
+    payment_status: str | None = None
+    apdp_detail: DealerStatementApdpDetail | None = None
+
+
+class DealerStatementPosition(BaseModel):
+    expected_ngn: float
+    paid_ngn: float
+    outstanding_ngn: float
+    variance_pct: float | None = None
+    headline: str           # "PAID_IN_FULL" | "UNDERPAID" | "OVERPAID"
+
+
+class DealerStatementAuditRef(BaseModel):
+    module: str
+    label: str
+    trail_id: int | None = None
+    conclusion: str
+    confidence: str
+    caveat_count: int | None = None
+    generated_at: str | None = None
+
+
+class DealerStatementResponse(BaseModel):
+    """Per-period Finance/RA internal statement for one dealer."""
+
+    dealer_id: str
+    dealer_name: str
+    account_profile_class: str
+    mon_period: str
+    commission: DealerStatementCommission
+    orsc: DealerStatementOrsc | None = None
+    payment: DealerStatementPayment
+    position: DealerStatementPosition
+    audit_trails: list[DealerStatementAuditRef]
 
 
 class IfsMissingItem(BaseModel):
@@ -326,8 +467,8 @@ class DisputeDraftRequest(BaseModel):
     # Optional verbatim quote of the dealer's claim — included in the
     # letter so the recipient sees exactly what we're responding to.
     dispute_text: str | None = None
-    # If the caller already has the paid amount (e.g. from /payments/summary),
-    # pass it through so the recommended position reflects real settlement state.
+    # Legacy input accepted for compatibility but ignored. Draft owed/paid
+    # amounts are retrieved from the configured payment source.
     amount_paid: float | None = None
 
 
@@ -341,11 +482,18 @@ class DisputeDraftSummary(BaseModel):
     unqualified_activations: int
     qualification_rate_pct: float
     qualified_commission_ngn: float
+    # Legacy field name: payment-source recorded owed, not a dealer claim.
     statement_claim_ngn: float
     amount_paid_ngn: float
     outstanding_ngn: float
     root_cause_classifications: dict[str, int]
     position_code: str
+    # APDP evidence counts/status qualify normalized source amounts. None on
+    # sources without these fields; absent records do not prove zero entitlement.
+    statement_count: int | None = None
+    settlement_count: int | None = None
+    reconciliation_status: str | None = None
+    evidence_qualifications: list[str] = Field(default_factory=list)
 
 
 class DisputeDraftResponse(BaseModel):
@@ -366,6 +514,23 @@ class AuditRunResponse(BaseModel):
     module: str = "zero_commission"
 
 
+class PartnerHealthRecord(BaseModel):
+    """One dealer's health scorecard row."""
+
+    dealer_id: str
+    dealer_name: str
+    account_profile_class: str = ""
+    health_score: float
+    health_band: str
+    settlement_rate_pct: float
+    settlement_rate_delta: float | None = None
+    commission_yield_pct: float
+    zero_commission_rate_pct: float
+    outstanding_ngn: float
+    dispute_flag: bool
+    data_source: str
+
+
 class PaymentVarianceRecord(BaseModel):
     """One dealer's payment delta between two periods, returned by
     ``GET /payments/variance``."""
@@ -382,3 +547,46 @@ class PaymentVarianceRecord(BaseModel):
     payment_status_b: str
     delta_paid: float
     status_changed: bool
+
+
+class PaymentAccountDetail(BaseModel):
+    period: str
+    data_source: str
+    generated_at: str
+    account: PaymentSummaryRecord
+
+
+class PaymentAnalyticsPage(BaseModel):
+    period: str
+    prior_period: str | None
+    view: str
+    source: str
+    generated_at: str
+    account_count: int
+    items: list[PaymentVarianceRecord | PartnerHealthRecord]
+    pagination: PaginationMeta
+
+
+class FindingScope(BaseModel):
+    """Server-verifiable finding identity; no client-supplied financial evidence."""
+
+    model_config = {'extra': 'forbid'}
+    module: str = Field(pattern=r'^(commission|activation|inventory|payment)$')
+    type: str = Field(min_length=1, max_length=80, pattern=r'^[A-Z_]+$')
+    product_code: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode='after')
+    def validate_product_scope(self):
+        if self.module == 'inventory':
+            if self.product_code is None or not self.product_code.strip():
+                raise ValueError('Inventory findings require product_code')
+        elif self.product_code is not None:
+            raise ValueError('product_code is only valid for inventory findings')
+        return self
+
+
+class ExplainFindingRequest(BaseModel):
+    model_config = {'extra': 'forbid'}
+    dealer_id: str = Field(min_length=1, max_length=100, pattern=r'^\S+$')
+    mon_period: str = Field(pattern=r'^\d{4}(0[1-9]|1[0-2])$')
+    finding: FindingScope

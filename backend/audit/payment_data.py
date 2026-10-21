@@ -38,6 +38,16 @@ from backend.db.connection import execute_query
 # cascade to every module consistently.
 PAY_TOLERANCE = 1.0
 
+# Canonical projection shared by Payments and finding explanations.
+RECON_TO_STATUS = {
+    "RECONCILED":               "FULLY_PAID",
+    "PARTIALLY_PAID":           "PARTIALLY_PAID",
+    "AMOUNT_MISMATCH":          "PARTIALLY_PAID",
+    "DISPUTED":                 "DISPUTED",
+    "STATEMENT_WITHOUT_PAYMENT": "PENDING",
+    "SALES_WITHOUT_STATEMENT":  "PENDING",
+}
+
 
 def payment_lookup(period: str, source: str) -> pd.DataFrame:
     """Per-dealer payment rows for the period, from the active payment source.
@@ -67,7 +77,9 @@ def extract_payment(
     """
     if payment_df is None or payment_df.empty:
         return 0.0, False, None
-    code_col = "dealer_id" if source == "apdp" else "distributor_code"
+    # The query layer returns ``dealer_id`` for both sources; ``distributor_code``
+    # remains for callers passing raw simulated frames.
+    code_col = "dealer_id" if "dealer_id" in payment_df.columns else "distributor_code"
     paid_col = "total_settled_ngn" if source == "apdp" else "amount_paid"
     status_col = "reconciliation_status" if source == "apdp" else "payment_status"
     if code_col not in payment_df.columns:

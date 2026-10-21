@@ -94,6 +94,11 @@ def test_dealers_returns_list_of_dealer_summary(client: TestClient) -> None:
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.live_agent
+@pytest.mark.skipif(
+    os.getenv("RUN_LIVE_AGENT_TESTS") != "1",
+    reason="live agent tests are opt-in (set RUN_LIVE_AGENT_TESTS=1)",
+)
 def test_chat_summary_question_returns_response_and_tool(
     client: TestClient,
 ) -> None:
@@ -147,4 +152,5 @@ def test_chat_internal_failure_returns_200_with_error(
     assert body["tools_called"] == []
     assert body["raw_data"] == {}
     assert body["error"] is not None
-    assert "simulated agent failure" in body["error"]
+    assert body["error"] == "chat_failed"
+    assert "simulated agent failure" not in str(body)

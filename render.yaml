@@ -26,9 +26,12 @@ services:
     healthCheckPath: /health
     autoDeploy: true
     envVars:
-      # ── Sample-data mode (no live Presto, no APDP) ────────────────────
+      # ── Sample-data mode (no live Presto) ────────────────────────────
       - key: USE_SAMPLE_DATA
         value: "true"
+      # Keep the hosted GM preview identical to localhost: both read the
+      # deterministic payment_simulation.csv fixture. APDP remains an opt-in
+      # integration mode for dedicated end-to-end testing.
       - key: PAYMENT_SOURCE
         value: simulated
 
@@ -66,6 +69,32 @@ services:
           name: fbb-audit-pg
           property: user
       - key: FBB_AUDIT_PG_PASSWORD
+        fromDatabase:
+          name: fbb-audit-pg
+          property: password
+
+      # ── APDP Postgres — reuses the same managed DB. The audit and
+      # normalized (APDP) schemas live in the same Postgres for the demo;
+      # in production these would be separate DBs behind different
+      # network boundaries. See infra/postgres/apdp_seed.sql for the
+      # one-shot schema+fixture bootstrap the backend applies at startup.
+      - key: APDP_PG_HOST
+        fromDatabase:
+          name: fbb-audit-pg
+          property: host
+      - key: APDP_PG_PORT
+        fromDatabase:
+          name: fbb-audit-pg
+          property: port
+      - key: APDP_PG_DB
+        fromDatabase:
+          name: fbb-audit-pg
+          property: database
+      - key: APDP_PG_USER
+        fromDatabase:
+          name: fbb-audit-pg
+          property: user
+      - key: APDP_PG_PASSWORD
         fromDatabase:
           name: fbb-audit-pg
           property: password

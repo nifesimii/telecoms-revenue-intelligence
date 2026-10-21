@@ -1,0 +1,17 @@
+dealer_id,product_code,scenario_id,scenario_label,total_units_purchased
+74050,1283279,synthetic_shared_exact_74050_1283279,Synthetic shared purchase evidence - June exact match,379
+296065,1212360,synthetic_shared_exact_296065_1212360,Synthetic shared purchase evidence - June exact match,159
+98053,1283280,synthetic_shared_exact_98053_1283280,Synthetic shared purchase evidence - June exact match,101
+69031,1212360,synthetic_shared_cushion_69031_1212360,Synthetic shared purchase evidence - June purchases exceed activations,300
+73037,1186254,synthetic_shared_cushion_73037_1186254,Synthetic shared purchase evidence - June purchases exceed activations,180
+74050,1283281,synthetic_shared_cushion_74050_1283281,Synthetic shared purchase evidence - June purchases exceed activations,100
+90032,1283279,synthetic_shared_one_unit_excess_90032_1283279,Synthetic shared purchase evidence - June one-unit activation excess,186
+19958,1283280,synthetic_shared_one_unit_excess_19958_1283280,Synthetic shared purchase evidence - June one-unit activation excess,98
+357063,1229866,synthetic_shared_one_unit_excess_357063_1229866,Synthetic shared purchase evidence - June one-unit activation excess,76
+98052,1186254,synthetic_shared_larger_excess_98052_1186254,Synthetic shared purchase evidence - June larger activation excess,200
+88031,1212360,synthetic_shared_larger_excess_88031_1212360,Synthetic shared purchase evidence - June larger activation excess,100
+357063,1283281,synthetic_shared_larger_excess_357063_1283281,Synthetic shared purchase evidence - June larger activation excess,50
+213044,1283279,synthetic_shared_missing_holdout_213044_1283279,Synthetic demo control - retained missing invoice evidence,
+205044,1186254,synthetic_shared_missing_holdout_205044_1186254,Synthetic demo control - retained missing invoice evidence,
+19477,1212360,synthetic_shared_missing_holdout_19477_1212360,Synthetic demo control - retained missing invoice evidence,
+98052,1283280,synthetic_shared_missing_holdout_98052_1283280,Synthetic demo control - retained missing invoice evidence,

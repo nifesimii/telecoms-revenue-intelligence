@@ -3,7 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 .pytest_cache/
-node_modules/
+node_modules
 dist/
 .vite/
 *.egg-info/

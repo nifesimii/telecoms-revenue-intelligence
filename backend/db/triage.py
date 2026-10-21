@@ -244,7 +244,7 @@ def _triage_get_activation_exceptions(
         "must_review": _records(must, cols),
         "worth_review": _records(worth, cols),
         "drill_down_hint": (
-            "ALL_UNQUALIFIED → most likely USP snapshot miss (KB Issue 1). "
+            "ALL_UNQUALIFIED → investigate whether the product was matched to the commission rate card for the calculation month (KB Issue 1); confirm record-level evidence. "
             "HIGH_UNQUALIFIED_RATE → run get_zero_commission_records to classify. "
             "UNUSUAL_VOLUME → present as 'requires investigation', never 'fraud'."
         ),
@@ -286,6 +286,12 @@ def _triage_get_inventory_comparison(
         "total_excess_units_confirmed": round(total_excess, 0),
         "worst_confirmed_mismatch": top_str,
     }
+    if "scenario_id" in df and df["scenario_id"].fillna("").ne("").any():
+        headline["source_note"] = (
+            "Includes synthetic shared purchase scenarios. These are fictional "
+            "comparisons, not authentic IFS invoices or verified inventory mismatches. "
+            "No stock carryover or alias resolution is established by synthetic evidence."
+        )
 
     cols = [
         "dealer_id",
@@ -298,6 +304,9 @@ def _triage_get_inventory_comparison(
         "inventory_gap",
         "gap_pct",
         "finding_type",
+        "scenario_id",
+        "scenario_label",
+        "data_coverage_note",
     ]
 
     # Must: CONFIRMED_MISMATCH sorted by gap_pct desc (highest severity first).

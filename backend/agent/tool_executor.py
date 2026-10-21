@@ -19,14 +19,20 @@ the agent loop forwards them to Claude so it can recover or apologise.
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+import importlib
+from typing import Any, Callable, Literal
+
+from pydantic import BaseModel, ConfigDict, Field
 
 import pandas as pd
 
 from backend.agent import prompts
-from backend.db import queries
+from backend.agent.measure_scope import DEALER_COMPARISON_MEASURES
+from backend.db import queries, financial_health
 from backend.db.composite import assemble_dealer_full_context
 from backend.db.connection import execute_query
+from backend.db.explanation_evidence import FindingEvidenceUnavailable
+from backend.db import subscription_evidence
 from backend.db.triage import TRIAGE_HANDLERS
 
 # Defensive cap on the number of tool-result rows we hand back to Claude.
@@ -37,6 +43,87 @@ from backend.db.triage import TRIAGE_HANDLERS
 # rows in production so existing behaviour is unaffected. Sort order on the
 # original query is preserved, so the most-actionable rows are kept.
 _TOOL_ROW_CAP = 500
+# Workspace-only fixture reads must not become callable or advertised agent tools.
+_INTERNAL_QUERY_NAMES = {"get_subscription_demo_records"}
+
+
+# measure -> (label, module, reader). Readers return one period-evidence dict:
+# reader(period, dealer_id, **_reader_options) per requested month, or for a dealer comparison
+# reader(earlier, later, dealer_id) once, keyed on the later month.
+_STANDALONE_EVIDENCE = {
+    "investigation_priority": ("Investigation priority", "backend.assurance.overview",
+                               "investigation_priority_evidence"),
+    "dealer_statement": ("Dealer statement", "backend.db.dealer_statement_evidence",
+                         "dealer_statement_evidence"),
+    "verification_outcome": ("Verification outcome", "backend.audit.verification_outcome",
+                             "verification_outcome_evidence"),
+    "commission_variance": ("Commission variance by product", "backend.db.variance_evidence",
+                            "commission_variance_evidence"),
+    "data_coverage": ("Data coverage", "backend.db.data_coverage_evidence", "data_coverage_evidence"),
+    "activation_exceptions": ("Activation exceptions", "backend.db.exception_evidence",
+                              "activation_exceptions_evidence"),
+    "payment_exceptions": ("Payment exceptions", "backend.db.exception_evidence",
+                           "payment_exceptions_evidence"),
+    "investigation_queue": ("Investigation queue", "backend.assurance.overview",
+                            "investigation_queue_evidence"),
+}
+
+
+def _reader_options(measure: str, request: dict[str, Any]) -> dict[str, Any]:
+    """Validated scope filters a reader takes besides month and dealer."""
+    if measure == 'verification_outcome' and request.get('verification_focus'):
+        return {'focus': request['verification_focus']}
+    if measure != "investigation_queue":
+        return {}
+    options = {"severity": request.get("queue_severity"),
+               "modules": list(request.get("queue_modules") or [])}
+    if request.get("limit") is not None:
+        options["limit"] = request["limit"]
+    return options
+
+
+def execute_measure_request(request: dict[str, Any]) -> dict[str, Any]:
+    """Route a validated measure request without exposing unrelated query fields."""
+    from backend.db.measure_evidence import collect_measure_evidence
+
+    measures = request.get("measures") or []
+    if measures == ['dealer_investigation']:
+        from backend.db.investigation_evidence import investigate
+        result = investigate(request['dealer_id'], request['periods'], request['investigation_family'],
+                             offset=request.get('record_offset', 0), limit=request.get('limit') or 20)
+        return {'requested_periods': request['periods'], 'dealer_id': request['dealer_id'],
+                'measures': [], 'explanations': [], 'investigation': result}
+    if len(measures) != 1 or measures[0] not in _STANDALONE_EVIDENCE:
+        return collect_measure_evidence(request)
+    # Standalone evidence reuses an existing computation unchanged; the
+    # reader is resolved at call time so its layer loads only when asked.
+    measure = measures[0]
+    label, module, reader = _STANDALONE_EVIDENCE[measure]
+    read = getattr(importlib.import_module(module), reader)
+    periods, dealer_id = list(request["periods"]), request.get("dealer_id")
+    if measure in DEALER_COMPARISON_MEASURES:
+        evidence = [read(*sorted(periods), dealer_id)]
+    else:
+        options = _reader_options(measure, request)
+        evidence = [read(period, dealer_id, **options) for period in periods]
+    return {"requested_periods": periods, "dealer_id": dealer_id, "explanations": [], "measures": [{
+        "measure": measure, "label": label, "unit": "text", "aggregation": "none", "note": "",
+        "periods": evidence,
+    }]}
+
+
+def execute_dealer_lookup(request: dict[str, Any]) -> dict[str, Any]:
+    """Retain bounded name/code association lookup for non-financial questions."""
+    from backend.db.measure_evidence import collect_dealer_codes
+
+    return collect_dealer_codes(request)
+
+
+def execute_affiliation(request: dict[str, Any]) -> dict[str, Any]:
+    """Collect the sibling account codes recorded under one dealer, with month commission."""
+    from backend.db.affiliation_evidence import collect_affiliation
+
+    return collect_affiliation(request)
 
 
 def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:
@@ -75,8 +162,8 @@ def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:
                 f"Tool {tool_name!r} failed: {type(exc).__name__}: {exc}",
             )
 
-    if tool_name not in queries.QUERY_NAMES:
-        valid_query = list(queries.QUERY_NAMES)
+    if tool_name not in queries.QUERY_NAMES or tool_name in _INTERNAL_QUERY_NAMES:
+        valid_query = [name for name in queries.QUERY_NAMES if name not in _INTERNAL_QUERY_NAMES]
         valid_direct = list(_DIRECT_HANDLERS.keys())
         return _error_result(
             tool_use_id,
@@ -88,6 +175,13 @@ def execute_tool(tool_use: dict[str, Any]) -> dict[str, Any]:
 
     try:
         df = execute_query(tool_name, tool_input)
+        if tool_name == "get_orsc_summary" and not df.empty:
+            # Share the workspace's recorded evidence without changing revenue SQL.
+            evidence = subscription_evidence.summaries(str(tool_input["mon_period"]))
+            df = pd.DataFrame([
+                {**row, **evidence.get(str(row["dealer_id"]), subscription_evidence.unavailable())}
+                for row in df.to_dict(orient="records")
+            ])
     except KeyError as exc:
         return _error_result(
             tool_use_id,
@@ -197,8 +291,7 @@ def _handle_get_dealer_full_context(
             "headline (commission, qualification rate, payment status). "
             "If there are inventory.confirmed_mismatches > 0 or "
             "activation_exceptions, present those next — they explain why "
-            "payment is DISPUTED / PARTIALLY_PAID. Always disclose SIMULATED "
-            "data when referencing payment fields. For prior-month "
+            "payment is DISPUTED / PARTIALLY_PAID. For prior-month "
             "comparison call get_month_on_month_variance separately."
         ),
     }
@@ -246,7 +339,7 @@ def _handle_compile_data_coverage_ticket(
         **payload,
         "drill_down_hint": (
             "Lead with the severity + affected_dealers count. Present the "
-            "IFS and USP dealer tables verbatim if the user wants the full "
+            "IFS and partner-classification dealer tables verbatim if the user wants the full "
             "list, otherwise summarise the top-3 by activation count. "
             "Hand the markdown ticket_body to the user as-is — they paste "
             "it into ServiceNow themselves (Stage 1 — no live submission)."
@@ -259,10 +352,56 @@ def _handle_compile_data_coverage_ticket(
     }
 
 
+class _FinancialPeriod(BaseModel):
+    model_config = ConfigDict(extra='forbid', strict=True)
+    mon_period: str = Field(pattern=r'^\d{4}(0[1-9]|1[0-2])$')
+
+
+class _FinancialReportInput(_FinancialPeriod):
+    distributor_code: str = Field(min_length=1, max_length=100)
+
+
+class _FinancialSummaryInput(_FinancialPeriod):
+    search: str = Field(default='', max_length=200)
+    sort_by: Literal['dealer_name', 'revenue', 'net_profit'] = 'dealer_name'
+    direction: Literal['asc', 'desc'] = 'asc'
+    limit: int = Field(default=25, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
+
+
+def _handle_financial_report(tool_use_id, tool_input):
+    request = _FinancialReportInput.model_validate(tool_input)
+    report = financial_health.get_report(request.distributor_code, request.mon_period)
+    return {
+        'type': 'tool_result', 'tool_use_id': tool_use_id,
+        'content': json.dumps({
+            'tool': 'get_financial_health_report', 'parameters': request.model_dump(),
+            'source': 'synthetic', 'provenance': financial_health.PROVENANCE,
+            'status': 'available' if report else 'unavailable', 'report': report,
+            'available_periods': financial_health.PERIODS,
+            'reason': None if report else 'No synthetic statement exists for this dealer and month. Use the financial summary to find supported dealers; missing data is not zero.',
+        }, ensure_ascii=False),
+    }
+
+
+def _handle_financial_summary(tool_use_id, tool_input):
+    request = _FinancialSummaryInput.model_validate(tool_input)
+    parameters = request.model_dump()
+    period = parameters.pop('mon_period')
+    summary = financial_health.list_dealers(period, **parameters)
+    return {
+        'type': 'tool_result', 'tool_use_id': tool_use_id,
+        'content': json.dumps({'tool': 'get_financial_health_summary',
+                               'parameters': request.model_dump(), **summary}, ensure_ascii=False),
+    }
+
+
 # Registry: tool name -> (tool_use_id, tool_input) -> tool_result dict
 _DIRECT_HANDLERS: dict[
     str, Callable[[str, dict[str, Any]], dict[str, Any]]
 ] = {
+    "get_financial_health_report": _handle_financial_report,
+    "get_financial_health_summary": _handle_financial_summary,
     "get_kb_section": _handle_get_kb_section,
     "get_dealer_full_context": _handle_get_dealer_full_context,
     "compile_data_coverage_ticket": _handle_compile_data_coverage_ticket,
@@ -340,6 +479,8 @@ def _success_result(
             "row_count": total_rows,
             "rows": _df_to_records(df),
         }
+    if tool_name == "get_dealer_codes":
+        envelope.update(df.attrs.get("lookup_metadata", {}))
     return {
         "type": "tool_result",
         "tool_use_id": tool_use_id,
@@ -372,3 +513,18 @@ def _df_to_records(df: pd.DataFrame) -> list[dict[str, Any]]:
         default_handler=str,
     )
     return json.loads(rows_json)
+
+
+
+def execute_explanation_evidence(
+    request: dict[str, Any], *, check_active: Callable[[], None] | None = None,
+) -> dict[str, Any]:
+    """Application-only route for scoped finding evidence; not a model tool."""
+    from backend.db.explanation_evidence import assemble_finding_evidence
+    return assemble_finding_evidence(request, check_active=check_active)
+
+
+def execute_portfolio_discovery(request: dict[str, Any]) -> dict[str, Any]:
+    from backend.db.portfolio_discovery import discover_zero_commission
+    return discover_zero_commission(request['periods'][0], limit=request.get('limit') or 20,
+                                    offset=request.get('discovery_offset', 0))

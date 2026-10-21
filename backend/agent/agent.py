@@ -1,46 +1,31 @@
-"""Claude conversation loop. Handles tool calls. No SQL here.
+"""One scoped Atlas turn, with provider I/O shared by buffered and streamed chat.
 
-The agent owns one job: drive a single turn of conversation with Claude,
-running any tool calls that come back, until Claude returns a final text
-response. It does not know about SQL, Presto, or sample data — those live
-behind :mod:`backend.agent.tool_executor`. It does not author the system
-prompt — that lives in :mod:`backend.agent.prompts`. It does not know the
-tool definitions — those live in :mod:`backend.agent.tools`.
-
-Public surface:
-    * :func:`run_agent` — single async entry point.
-
-A bottom-of-file ``if __name__ == "__main__":`` smoke test exercises the
-loop end-to-end against the sample CSVs.
+The model resolves intent, then composes an answer from validated, bounded
+evidence. Calculations and provenance stay application-owned. Candidate prose
+never becomes financial evidence or provisional user-visible text.
 """
 from __future__ import annotations
 
 import asyncio
 import json
 import logging
+import inspect
+import time
 from typing import Any
-
-import anthropic
 
 from backend import config
 from backend.agent import prompts, tool_executor
-from backend.agent.tools import TOOLS
-
-logger = logging.getLogger(__name__)
+from backend.agent.measure_scope import (
+    MeasureScope, SCOPE_TOOL, clarification_response, knowledge_response, unsupported_response, recover_missing_scope, repair_preserves_scope,
+)
+from backend.agent.measure_response import render_measure_response, render_dealer_codes, render_affiliation, render_discovery
+from backend.agent.dealer_resolution import resolve_dealer_name
+from backend.agent.inference import InferenceRun, cached_system, new_client
+from backend.agent.narrative import compose_answer, NarrativeGroundingError, NARRATIVE_FALLBACK
 
 # --- Model config ---
 MODEL_NAME = "claude-sonnet-4-5"
 MAX_TOKENS = 2048
-MAX_TOOL_ITERATIONS = 5  # safety cap — protects against pathological loops
-
-# --- Rate-limit retry ---
-# When Anthropic returns 429 (RateLimitError), retry up to
-# RATE_LIMIT_MAX_RETRIES times with a fixed RATE_LIMIT_RETRY_DELAY_SECONDS
-# wait between attempts. If every retry also rate-limits, the final
-# RateLimitError propagates and the standard ``except Exception`` path in
-# run_agent returns FALLBACK_RESPONSE — no exception escapes to the caller.
-RATE_LIMIT_MAX_RETRIES = 3
-RATE_LIMIT_RETRY_DELAY_SECONDS = 20
 
 # --- User-facing fallback ---
 FALLBACK_RESPONSE = (
@@ -48,160 +33,270 @@ FALLBACK_RESPONSE = (
 )
 
 
-async def run_agent(
-    user_message: str,
-    conversation_history: list = [],
-) -> dict:
-    """Drive one user turn through Claude with a tool-use loop.
-
-    Args:
-        user_message: The latest user message text.
-        conversation_history: Prior turns, each a ``{"role": ..., "content":
-            ...}`` dict in the format Anthropic's Messages API expects. The
-            caller's list is never mutated — it's copied on entry.
-
-    Returns:
-        A dict with three keys:
-            * ``response`` — the final assistant text Claude produced
-            * ``tools_called`` — ordered list of tool names invoked this turn
-              (duplicates preserved)
-            * ``raw_data`` — ``{tool_name: parsed_result_envelope}``. If the
-              same tool is called more than once in one turn, the latest
-              call wins.
-
-        On any API failure with no prior text accumulated, returns
-        :data:`FALLBACK_RESPONSE` with empty ``tools_called`` and
-        ``raw_data``.
-    """
-    # Defensive copy — never mutate the caller's history list, and avoid the
-    # mutable-default trap on conversation_history=[].
-    messages: list[dict[str, Any]] = list(conversation_history)
-    messages.append({"role": "user", "content": user_message})
-
-    tools_called: list[str] = []
-    raw_data: dict[str, Any] = {}
-    last_text: str = ""
-
+async def run_agent(user_message: str, conversation_history: list | None = None, *,
+                    reporting_period: str | None = None,
+                    investigation_context: str | None = None) -> dict:
+    """Run a complete conversation turn within a single 90-second budget."""
+    run = InferenceRun("chat")
+    client = None
+    status = "failed"
     try:
-        client = anthropic.AsyncAnthropic(api_key=config.ANTHROPIC_API_KEY)
-    except Exception:
-        logger.exception("Failed to construct Anthropic client")
-        return _error_response()
-
-    system_prompt = prompts.get_system_prompt()
-
-    for iteration in range(MAX_TOOL_ITERATIONS):
-        try:
-            response = await _create_with_rate_limit_retry(
-                client,
-                model=MODEL_NAME,
-                max_tokens=MAX_TOKENS,
-                system=system_prompt,
-                tools=TOOLS,
-                messages=messages,
-            )
-        except Exception:
-            logger.exception(
-                "Claude API call failed on iteration %d", iteration + 1
-            )
-            # If we already produced some text in an earlier iteration, return
-            # it rather than the generic fallback.
-            if last_text:
-                return {
-                    "response": last_text,
-                    "tools_called": tools_called,
-                    "raw_data": raw_data,
-                }
-            return _error_response()
-
-        # Capture any text Claude produced in this round, so we have something
-        # to return even if we later hit the iteration cap or an error.
-        text_pieces = [
-            block.text for block in response.content if block.type == "text"
-        ]
-        if text_pieces:
-            last_text = "\n".join(text_pieces).strip()
-
-        # Pull out tool_use blocks. If none, Claude is done.
-        tool_use_blocks = [
-            block for block in response.content if block.type == "tool_use"
-        ]
-        if not tool_use_blocks:
-            return {
-                "response": last_text,
-                "tools_called": tools_called,
-                "raw_data": raw_data,
-            }
-
-        # Append assistant turn (text + tool_use blocks) to the message list.
-        messages.append(
-            {
-                "role": "assistant",
-                "content": [_block_to_dict(b) for b in response.content],
-            }
-        )
-
-        # Run each tool and collect tool_result blocks for the next user turn.
-        tool_result_blocks: list[dict[str, Any]] = []
-        for block in tool_use_blocks:
-            tool_input = dict(block.input or {})
-            logger.info(
-                "Tool call iter=%d name=%s input=%s",
-                iteration + 1,
-                block.name,
-                tool_input,
-            )
-
-            result_block = tool_executor.execute_tool(
-                {
-                    "id": block.id,
-                    "name": block.name,
-                    "input": tool_input,
-                }
-            )
-            tool_result_blocks.append(result_block)
-            tools_called.append(block.name)
-
-            # Populate raw_data with the parsed envelope. tool_executor
-            # always returns ``content`` as a JSON string on success; on
-            # error it's a human-readable string — fall back gracefully.
-            content = result_block.get("content", "")
+        async with asyncio.timeout(run.remaining()):
+            client = new_client(config.ANTHROPIC_API_KEY)
+            result = await _run_turn(client, run, user_message, conversation_history or [],
+                                     reporting_period=reporting_period,
+                                     investigation_context=investigation_context)
+            status = "complete" if result["response"].strip() and result["response"] not in (FALLBACK_RESPONSE, NARRATIVE_FALLBACK) else "failed"
+            if status == "complete":
+                run.log("inference_answer_ready", duration_seconds=round(time.monotonic() - run.started, 4))
+            return result
+    except asyncio.CancelledError:
+        status = "cancelled"
+        raise
+    except Exception as exc:
+        run.log("inference_failure", error_type=type(exc).__name__)
+        return {**_error_response(), 'error': 'deadline_exceeded' if isinstance(exc, TimeoutError) else 'chat_failed'}
+    finally:
+        run.finish(status)
+        if client is not None:
+            # Real SDK clients close asynchronously; old test doubles may not.
             try:
-                raw_data[block.name] = json.loads(content)
-            except (json.JSONDecodeError, TypeError):
-                raw_data[block.name] = {
-                    "raw": content,
-                    "is_error": bool(result_block.get("is_error")),
-                }
-
-        # Feed tool results back as a user turn — required by the API.
-        messages.append({"role": "user", "content": tool_result_blocks})
-
-    # Hit the iteration cap without Claude returning a clean final response.
-    logger.warning(
-        "Hit MAX_TOOL_ITERATIONS=%d without end_turn — returning last text",
-        MAX_TOOL_ITERATIONS,
-    )
-    return {
-        "response": last_text
-        or "I was unable to complete the analysis within the allotted tool iterations.",
-        "tools_called": tools_called,
-        "raw_data": raw_data,
-    }
+                closed = client.close()
+                if inspect.isawaitable(closed):
+                    await closed
+            except Exception as exc:
+                run.log("inference_close_failure", error_type=type(exc).__name__)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+# The browser contract requires a tool name on tool phases; the concrete
+# evidence tools are only known after the bounded measure request runs.
+MEASURE_STATUS_TOOL = 'measure_evidence'
 
 
-def _block_to_dict(block: Any) -> dict[str, Any]:
-    """Serialise an Anthropic ContentBlock pydantic model to plain dict."""
-    if hasattr(block, "model_dump"):
-        return block.model_dump()
-    if hasattr(block, "dict"):
-        return block.dict()
-    return dict(block)
+async def run_agent_stream(user_message: str, conversation_history: list | None = None, *,
+                           reporting_period: str | None = None,
+                           investigation_context: str | None = None):
+    """Progress and validated text from the shared turn; cancellation owns I/O."""
+    run = InferenceRun("chat_stream")
+    events = asyncio.Queue(maxsize=1)
+
+    async def produce():
+        client = None
+        status = "failed"
+        try:
+            async with asyncio.timeout(run.remaining()):
+                client = new_client(config.ANTHROPIC_API_KEY)
+                result = await _run_turn(client, run, user_message, conversation_history or [],
+                                         reporting_period=reporting_period,
+                                         investigation_context=investigation_context,
+                                         emit=events.put)
+                if not result["response"].strip():
+                    raise RuntimeError("Empty answer")
+                if result["response"] == NARRATIVE_FALLBACK:
+                    # Preserve evidence but keep the turn retryable and out of
+                    # successful conversation history in the existing browser.
+                    await events.put({'type': 'status', 'phase': 'tool_complete',
+                                      'tool': MEASURE_STATUS_TOOL, 'reset': True,
+                                      'tools_called': result['tools_called'], 'raw_data': result['raw_data']})
+                    await events.put({'type': 'error', 'error': 'composition_failed',
+                                      'message': NARRATIVE_FALLBACK})
+                    return
+                status = "complete"
+                await events.put({"type": "complete", **result, "error": None})
+        except asyncio.CancelledError:
+            status = "cancelled"
+            raise
+        except Exception as exc:
+            run.log("inference_failure", error_type=type(exc).__name__)
+            code = "deadline_exceeded" if isinstance(exc, TimeoutError) else "chat_failed"
+            await events.put({"type": "error", "error": code,
+                              "message": "The answer could not be completed. Please retry."})
+        finally:
+            run.finish(status)
+            if client is not None:
+                try:
+                    await client.close()
+                except Exception as exc:
+                    run.log("inference_close_failure", error_type=type(exc).__name__)
+
+    task = asyncio.create_task(produce())
+    try:
+        yield {"type": "status", "phase": "thinking", "reset": False}
+        while True:
+            event = await events.get()
+            if event["type"] in ("complete", "error"):
+                await task
+            yield event
+            if event["type"] in ("complete", "error"):
+                break
+    finally:
+        if not task.done():
+            task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+async def _run_turn(client: Any, run: InferenceRun, user_message: str,
+                    conversation_history: list, *, reporting_period=None,
+                    investigation_context=None, emit=None) -> dict:
+    # Keep the latest question distinct from contextual workspace terminology.
+    # A presentation overlay keeps historical assistant language current without
+    # mutating original messages or rewriting user-authored questions.
+    from backend.terminology import normalize_generated_prose
+    conversation_history = [
+        {**message, 'content': normalize_generated_prose(message['content'])}
+        if message.get('role') == 'assistant' and isinstance(message.get('content'), str)
+        else dict(message)
+        for message in conversation_history
+    ]
+    messages = list(conversation_history)
+    messages.append({'role': 'user', 'content': json.dumps({
+        'question': user_message, 'reporting_period': reporting_period,
+        'investigation_context': investigation_context,
+    }, ensure_ascii=False)})
+
+    async def discard_draft(event):
+        # The provider can emit text before the scope tool. None of it is safe
+        # to publish, even as provisional text that would later be cleared.
+        run.remaining()
+
+    generate = run.create if emit is None else run.create_streamed
+    scope = None
+    original_candidate = None
+    for attempt in range(2):
+        response = await generate(
+            client, **({'emit': discard_draft} if emit is not None else {}),
+            model=MODEL_NAME, max_tokens=MAX_TOKENS,
+            system=cached_system(prompts.get_measure_system_prompt()),
+            tools=[SCOPE_TOOL], tool_choice={'type': 'tool', 'name': SCOPE_TOOL['name']},
+            messages=messages,
+        )
+        blocks = [block for block in response.content if block.type == 'tool_use']
+        candidate = (blocks[0].input if response.stop_reason == 'tool_use' and len(blocks) == 1
+                     and blocks[0].name == SCOPE_TOOL['name'] else None)
+        if attempt == 0:
+            original_candidate = candidate
+        try:
+            scope = MeasureScope.model_validate(candidate)
+            if attempt and not repair_preserves_scope(original_candidate, scope):
+                run.log('scope_validation', stage='scope', reason='repair_scope_changed', repair_count=attempt)
+                scope = MeasureScope(kind='clarification', clarification='request')
+        except ValueError:
+            scope = recover_missing_scope(candidate)
+            reason = 'missing_scope' if scope is not None else 'invalid_contract'
+            run.log('scope_validation', stage='scope', reason=reason, repair_count=attempt)
+            if scope is None:
+                if attempt or not run.claim_recovery('scope_repair'):
+                    scope = MeasureScope(kind='clarification', clarification='request')
+                else:
+                    messages.append({'role': 'user', 'content':
+                        'Return one valid scope contract for the original request. If information is missing, '
+                        'use clarification. Do not invent an account, period, or broaden scope.'})
+                    continue
+        break
+    request = scope.model_dump()
+    tools_called, raw_data = [], {}
+
+    async def finish_answer(validated_context):
+        # Existing response builders validate evidence and compute derived values.
+        # Their prose is supplemental context, never the sole generation input.
+        try:
+            answer = await compose_answer(
+                client, run, question=user_message, history=conversation_history,
+                scope=request, evidence=raw_data, tools_called=tools_called,
+                validated_context=validated_context, sample_mode=config.USE_SAMPLE_DATA,
+                model=MODEL_NAME,
+            )
+        except NarrativeGroundingError:
+            run.log('inference_narrative_rejected')
+            answer = NARRATIVE_FALLBACK
+        except Exception as exc:
+            # Retrieval succeeded. Preserve its provenance if only composition
+            # fails, without publishing a partial or unvalidated candidate.
+            run.log('inference_narrative_failure', error_type=type(exc).__name__)
+            answer = NARRATIVE_FALLBACK
+        if emit is not None and answer != NARRATIVE_FALLBACK:
+            await emit({'type': 'text', 'text': answer})
+        return {'response': answer, 'tools_called': tools_called, 'raw_data': raw_data,
+                'error': 'composition_failed' if answer == NARRATIVE_FALLBACK else None}
+
+    if scope.kind == 'clarification':
+        answer = clarification_response(scope)
+        if emit is not None:
+            await emit({'type': 'text', 'text': answer})
+        return {'response': answer, 'tools_called': [], 'raw_data': {}}
+    elif scope.measures == ['portfolio_discovery']:
+        if emit is not None:
+            await emit({'type': 'status', 'phase': 'tool_start', 'reset': True, 'tool': MEASURE_STATUS_TOOL})
+        discovery = await asyncio.to_thread(tool_executor.execute_portfolio_discovery, request)
+        run.remaining()
+        answer = render_discovery(discovery)
+        result = {'response': answer, 'tools_called': discovery['tools'],
+                  'raw_data': {'portfolio_discovery': discovery}}
+        if emit is not None:
+            await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
+                        'tool': MEASURE_STATUS_TOOL, 'tools_called': result['tools_called'], 'raw_data': result['raw_data']})
+            await emit({'type': 'text', 'text': answer})
+        return result
+    elif scope.kind == 'unsupported':
+        answer = unsupported_response(scope, prompts.KB_CONTENT)
+    elif scope.kind == 'knowledge':
+        answer = knowledge_response(scope, prompts.KB_CONTENT, sample_mode=config.USE_SAMPLE_DATA)
+    elif scope.kind == 'identity':
+        evidence = await asyncio.to_thread(tool_executor.execute_dealer_lookup, scope.model_dump())
+        run.remaining()
+        answer = render_dealer_codes(evidence)
+        tools_called = ['get_dealer_codes']
+        raw_data = {'get_dealer_codes': evidence}
+    elif scope.kind == 'affiliation':
+        # Group the sibling account codes recorded under one dealer for a single month; the
+        # collector discovers codes by recorded name, so no prior name-to-code resolution is needed.
+        evidence = await asyncio.to_thread(tool_executor.execute_affiliation, scope.model_dump())
+        run.remaining()
+        answer = render_affiliation(evidence)
+        tools_called = list(evidence['tools'])  # only the reads that actually ran
+        raw_data = {'affiliation': evidence}
+    else:
+        if emit is not None:
+            await emit({'type': 'status', 'phase': 'tool_start', 'reset': True,
+                        'tool': MEASURE_STATUS_TOOL})
+        resolution = None
+        if request.get('dealer_name'):
+            # A named dealer becomes one recorded code before any evidence read.
+            resolution = await asyncio.to_thread(resolve_dealer_name, request)
+            run.remaining()
+            if resolution.status != 'matched':
+                tools_called = ['get_dealer_codes'] if resolution.lookup else []
+                raw_data = {'get_dealer_codes': resolution.lookup} if resolution.lookup else {}
+                if emit is not None:
+                    await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
+                                'tool': MEASURE_STATUS_TOOL, 'tools_called': tools_called, 'raw_data': raw_data})
+                if emit is not None:
+                    await emit({'type': 'text', 'text': resolution.text})
+                return {'response': resolution.text, 'tools_called': tools_called, 'raw_data': raw_data}
+            request = {**request, 'dealer_id': resolution.dealer_id, 'dealer_name': None}
+        evidence = await asyncio.to_thread(tool_executor.execute_measure_request, request)
+        run.remaining()
+        answer = render_measure_response(request, evidence)
+        # Preserve every requested month in a single bounded evidence envelope.
+        # Only projected fields cross the public response boundary.
+        evidence_tools = [
+            item['tool'] for measure in evidence['measures'] for item in measure['periods']
+            if item.get('tool')
+        ]
+        evidence_tools.extend(item['tool'] for item in evidence.get('explanations', []) if item.get('tool'))
+        evidence_tools.extend(evidence.get('investigation', {}).get('tools', []))
+        for item in evidence.get('explanations', []):
+            evidence_tools.extend(item.get('investigation', {}).get('tools', []))
+        tools_called = list(dict.fromkeys(evidence_tools))
+        raw_data = {'measure_evidence': evidence}
+        if resolution is not None:
+            answer = resolution.text + '\n\n' + answer
+            tools_called = ['get_dealer_codes', *tools_called]
+            raw_data = {'get_dealer_codes': resolution.lookup, **raw_data}
+        if emit is not None:
+            await emit({'type': 'status', 'phase': 'tool_complete', 'reset': True,
+                        'tool': MEASURE_STATUS_TOOL, 'tools_called': tools_called, 'raw_data': raw_data})
+    return await finish_answer(answer)
 
 
 def _error_response() -> dict[str, Any]:
@@ -210,39 +305,6 @@ def _error_response() -> dict[str, Any]:
         "tools_called": [],
         "raw_data": {},
     }
-
-
-async def _create_with_rate_limit_retry(client: Any, **kwargs: Any) -> Any:
-    """Call ``client.messages.create`` with retry-on-rate-limit semantics.
-
-    On :class:`anthropic.RateLimitError`, sleeps for
-    ``RATE_LIMIT_RETRY_DELAY_SECONDS`` and retries up to
-    ``RATE_LIMIT_MAX_RETRIES`` times. Other exceptions propagate immediately
-    (the existing ``except Exception`` in :func:`run_agent` turns them into
-    :data:`FALLBACK_RESPONSE`). If every retry also rate-limits, the final
-    ``RateLimitError`` propagates so the same fallback path triggers — the
-    caller never sees an exception.
-    """
-    attempt = 0
-    while True:
-        try:
-            return await client.messages.create(**kwargs)
-        except anthropic.RateLimitError:
-            attempt += 1
-            if attempt > RATE_LIMIT_MAX_RETRIES:
-                logger.error(
-                    "Rate-limited by Anthropic — exhausted %d retries; "
-                    "giving up and falling back",
-                    RATE_LIMIT_MAX_RETRIES,
-                )
-                raise
-            logger.warning(
-                "Rate-limited by Anthropic; retry %d/%d in %ds",
-                attempt,
-                RATE_LIMIT_MAX_RETRIES,
-                RATE_LIMIT_RETRY_DELAY_SECONDS,
-            )
-            await asyncio.sleep(RATE_LIMIT_RETRY_DELAY_SECONDS)
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,6 @@ from fastapi.testclient import TestClient
 os.environ["USE_SAMPLE_DATA"] = "true"
 
 from backend.agent.dispute_responder import (  # noqa: E402
-    _classify_zero_record,
     compose_dispute_response,
 )
 from backend.main import app  # noqa: E402
@@ -23,44 +22,20 @@ from backend.main import app  # noqa: E402
 # Classifier
 # ---------------------------------------------------------------------------
 
-def test_classifier_null_profile_class_wins():
-    row = {
-        "account_profile_class": None,
-        "product_denomination": "FBB_DEVICE",
-        "invoice_date": "2025-01-01",
-        "first_activation_date": "2025-01-15",
-    }
-    assert _classify_zero_record(row) == "NULL_PROFILE_CLASS"
+def test_dispute_uses_the_same_verified_causes_as_chat():
+    from backend.db.investigation_evidence import investigate
+    result = investigate('296065', ['202606'])
+    letter = compose_dispute_response(distributor_code='296065', mon_period='202606')
+    assert letter['summary']['root_cause_classifications'] == {c['cause']: c['count'] for c in result['causes']}
+    assert 'fallback candidate' not in letter['markdown']
 
 
-def test_classifier_hynex_split():
-    row = {
-        "account_profile_class": "FIXED BROADBAND",
-        "product_denomination": "Hynex_1",
-        "invoice_date": "2025-01-01",
-        "first_activation_date": "2025-01-15",
-    }
-    assert _classify_zero_record(row) == "HYNEX_DENOMINATION_SPLIT"
-
-
-def test_classifier_outside_window():
-    row = {
-        "account_profile_class": "FIXED BROADBAND",
-        "product_denomination": "FBB_DEVICE",
-        "invoice_date": "2025-01-01",
-        "first_activation_date": "20260201 10:00:00",   # > 180 days later
-    }
-    assert _classify_zero_record(row) == "OUTSIDE_6_MONTH_WINDOW"
-
-
-def test_classifier_within_window_defaults_to_usp_miss():
-    row = {
-        "account_profile_class": "FIXED BROADBAND",
-        "product_denomination": "FBB_DEVICE",
-        "invoice_date": "2025-08-30",
-        "first_activation_date": "20260210 10:00:00",   # < 180 days
-    }
-    assert _classify_zero_record(row) == "USP_SNAPSHOT_MISS"
+def test_dispute_keeps_missing_support_unresolved(monkeypatch):
+    from backend.db import queries
+    original = queries.investigation_support
+    monkeypatch.setattr(queries, 'investigation_support', lambda *a, **kw: original(*a, **kw).iloc[:0])
+    letter = compose_dispute_response(distributor_code='296065', mon_period='202606')
+    assert letter['summary']['root_cause_classifications'] == {'OUTSIDE_6_MONTH_WINDOW': 2, 'UNRESOLVED': 48}
 
 
 # ---------------------------------------------------------------------------
@@ -82,8 +57,8 @@ def test_compose_dispute_response_for_real_dealer_in_sample():
     assert sum(s["root_cause_classifications"].values()) == s["unqualified_activations"]
     # Position should be derived
     assert s["position_code"] in {
-        "NO_FURTHER_ACTION", "PARTIAL_PAYMENT_AGREED",
-        "DISPUTE_DECLINED", "DECLINED_INSUFFICIENT_QUALIFICATION",
+        "RECORDED_BALANCE_ALIGNED", "RECORDED_SHORTFALL",
+        "RECORDED_EXCESS",
     }
 
 
@@ -93,10 +68,10 @@ def test_compose_markdown_includes_required_sections():
     for header in [
         "# Commission dispute review",
         "## 1. Activation evidence",
-        "## 2. Commission calculation",
-        "## 4. Recommended settlement position",
+        "## 2. Recorded payment position",
+        "## 4. Conditional Finance observation",
         "## 5. Next steps",
-        "MTN FBB Finance Team",
+        "Draft for Finance review",
     ]:
         assert header in md, f"missing section: {header}"
 
@@ -116,14 +91,22 @@ def test_compose_raises_for_unknown_dealer():
         compose_dispute_response(distributor_code="999999", mon_period="202602")
 
 
-def test_compose_uses_amount_paid_override_for_position():
-    # Force a clear over-payment scenario
+def test_compose_ignores_amount_paid_override_for_position():
+    # Client-supplied settlement must not override the recorded account.
+    from backend.db.connection import execute_query
+    payments = execute_query("get_payment_summary", {"mon_period": "202602"})
+    account = payments[payments["dealer_id"].astype(str) == "74050"].iloc[0]
     payload = compose_dispute_response(
         distributor_code="74050",
         mon_period="202602",
         amount_paid=999_999_999.99,
     )
-    assert payload["summary"]["position_code"] == "DISPUTE_DECLINED"
+    assert payload["summary"]["amount_paid_ngn"] == account["amount_paid"]
+    assert payload["summary"]["statement_claim_ngn"] == round(account["commission_owed"], 2)
+    assert payload["summary"]["outstanding_ngn"] == round(account["amount_unpaid"], 2)
+    assert "Simulated" in payload["markdown"]
+    assert "3 business days" not in payload["markdown"]
+    assert "dispute is declined" not in payload["markdown"]
 
 
 # ---------------------------------------------------------------------------

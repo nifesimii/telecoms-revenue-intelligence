@@ -61,6 +61,8 @@ CONCLUSIONS = (
     "INSUFFICIENT_DATA",
 )
 CONFIDENCES = ("HIGH", "MEDIUM", "LOW")
+# The shared "could not verify" conclusion: never a pass.
+INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
 
 
 @dataclass

@@ -20,6 +20,9 @@ Invariant grammar per case (all optional):
     must_mention_all     — list[str]; response (case-insensitive) must contain all
     must_not_mention     — list[str]; response must contain none
     min_response_chars   — int; response must be at least this long
+
+Cases may also supply conversation_history and investigation_context to exercise
+follow-ups with the same separate scope fields used by the public chat API.
 """
 from __future__ import annotations
 
@@ -37,10 +40,12 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
 
-# Force sample-data mode so tools work without Presto.
+# Default to samples; validate the resolved configuration before every case.
 os.environ.setdefault("USE_SAMPLE_DATA", "true")
 
-from backend.agent.agent import run_agent  # noqa: E402
+from backend import config  # noqa: E402
+from backend.agent.agent import FALLBACK_RESPONSE, run_agent  # noqa: E402
+from backend.agent.narrative import NARRATIVE_FALLBACK  # noqa: E402
 
 
 GOLDEN_PATH = Path(__file__).parent / "golden.jsonl"
@@ -55,6 +60,7 @@ class CaseResult:
     duration_s: float = 0.0
     tools_called: list[str] = field(default_factory=list)
     response_preview: str = ""
+    response: str = ""
 
 
 def _load_cases(filter_category: str | None = None) -> list[dict[str, Any]]:
@@ -75,6 +81,10 @@ def _check_invariants(case: dict[str, Any], response_text: str,
                       tools_called: list[str]) -> list[str]:
     errors: list[str] = []
     lower = (response_text or "").lower()
+    if response_text.strip() == FALLBACK_RESPONSE:
+        errors.append("agent returned retrieval error fallback")
+    if response_text.strip() == NARRATIVE_FALLBACK:
+        errors.append("agent returned narrative error fallback")
 
     for required in case.get("must_call_tools", []):
         if required not in tools_called:
@@ -111,14 +121,17 @@ def _check_invariants(case: dict[str, Any], response_text: str,
 async def _run_one(case: dict[str, Any]) -> CaseResult:
     start = time.monotonic()
     try:
+        if not config.USE_SAMPLE_DATA or config.PAYMENT_SOURCE != "simulated":
+            raise ValueError("Demo evaluations require USE_SAMPLE_DATA=true and PAYMENT_SOURCE=simulated")
         result = await run_agent(
             user_message=case["question"],
-            conversation_history=[],
-            mon_period=case.get("mon_period"),
+            conversation_history=case.get("conversation_history", []),
+            reporting_period=case.get("mon_period"),
+            investigation_context=case.get("investigation_context"),
         )
         elapsed = time.monotonic() - start
-        response_text = getattr(result, "response", None) or ""
-        tools_called = list(getattr(result, "tools_called", []) or [])
+        response_text = result["response"]
+        tools_called = list(result["tools_called"])
         errors = _check_invariants(case, response_text, tools_called)
         return CaseResult(
             case_id=case["id"],
@@ -128,6 +141,7 @@ async def _run_one(case: dict[str, Any]) -> CaseResult:
             duration_s=elapsed,
             tools_called=tools_called,
             response_preview=(response_text or "")[:160].replace("\n", " "),
+            response=response_text,
         )
     except Exception as e:
         return CaseResult(

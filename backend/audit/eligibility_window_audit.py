@@ -179,7 +179,7 @@ def build_trail(inp: EligibilityWindowInputs) -> VerificationTrail:
                  f"outside window (>{_ELIGIBILITY_WINDOW_DAYS}d), or future-dated (<0d)."),
         result=(
             f"{n_outside} outside window (zero-commission CORRECT), "
-            f"{n_inside} inside window (should have earned commission), "
+            f"{n_inside} inside window (other eligibility checks required), "
             f"{n_future} future-dated (data quality issue)."
         ),
         # Pass when every record is legitimately outside the window.
@@ -203,7 +203,7 @@ def build_trail(inp: EligibilityWindowInputs) -> VerificationTrail:
     # For each record inside the window, check if another documented
     # zero-commission root cause explains it (KB Section 6):
     #   - NULL account_profile_class (Issue 6)
-    #   - Product missing from USP rate card (Issue 2 / USP snapshot miss)
+    #   - Product not matched to commission rate card (Issue 2)
     #   - Hynex/Hynex_1 alias split (Issue 4)
     # Records inside the window with NONE of these explanations are the
     # candidate policy violations.
@@ -229,8 +229,8 @@ def build_trail(inp: EligibilityWindowInputs) -> VerificationTrail:
         step=5,
         name="root_cause_attribution",
         checked=("For each inside-window record, check for another documented "
-                 "zero-commission root cause (NULL profile class, USP snapshot "
-                 "miss, known alias split)."),
+                 "zero-commission root cause (NULL profile class, product not matched "
+                 "to commission rate card, known alias split)."),
         result=(
             f"{n_attributed} of {n_inside} inside-window record(s) attributable "
             f"to other root causes; {n_unexplained} unexplained."
@@ -432,17 +432,18 @@ def gather_inputs(
 # Orchestrator — run the whole period.
 # ---------------------------------------------------------------------------
 
-def run_period(mon_period: str, payment_source: str | None = None) -> list[VerificationTrail]:
-    """Build a trail for every partner with any zero-commission activity in
-    the period. ``payment_source`` accepted for interface parity with
-    :class:`~backend.audit.base.AuditModule.build`; unused here.
+def _select_subjects(mon_period: str) -> pd.DataFrame:
+    """The period's audit subjects: dealer-summary rows of every partner with
+    any zero-commission activity. The ONE subject filter shared by
+    :func:`run_period` and :func:`run_dealer`.
     """
-    _ = payment_source
-
     summary_df = execute_query("get_dealer_summary", {"mon_period": mon_period})
     if summary_df.empty:
-        return []
-    flagged = summary_df[summary_df["zero_commission_count"].astype(int) > 0]
+        return summary_df
+    return summary_df[summary_df["zero_commission_count"].astype(int) > 0]
+
+
+def _build_trails(mon_period: str, flagged: pd.DataFrame) -> list[VerificationTrail]:
     if flagged.empty:
         return []
 
@@ -459,6 +460,29 @@ def run_period(mon_period: str, payment_source: str | None = None) -> list[Verif
         )
         trails.append(build_trail(inp))
     return trails
+
+
+def run_period(mon_period: str, payment_source: str | None = None) -> list[VerificationTrail]:
+    """Build a trail for every partner with any zero-commission activity in
+    the period. ``payment_source`` accepted for interface parity with
+    :class:`~backend.audit.base.AuditModule.build`; unused here.
+    """
+    _ = payment_source
+    return _build_trails(mon_period, _select_subjects(mon_period))
+
+
+def run_dealer(
+    mon_period: str, dealer_id: str, payment_source: str | None = None,
+) -> list[VerificationTrail]:
+    """One dealer's trail, exactly as :func:`run_period` would build it;
+    ``[]`` when the dealer is not a subject. Read-only — never persisted.
+    ``payment_source`` accepted for parity with the other modules; unused.
+    """
+    _ = payment_source
+    flagged = _select_subjects(mon_period)
+    if flagged.empty:
+        return []
+    return _build_trails(mon_period, flagged[flagged["dealer_id"].astype(str) == str(dealer_id).strip()])
 
 
 # ---------------------------------------------------------------------------

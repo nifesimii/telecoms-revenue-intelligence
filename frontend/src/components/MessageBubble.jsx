@@ -4,15 +4,47 @@
 // Assistant    → left-aligned, white background, subtle border
 //                Markdown rendered (bold, lists, line breaks, tables) via
 //                react-markdown + remark-gfm. NGN amounts get a darker weight.
-//                Tools_called rendered as small grey pills below the body.
 //                If get_dealer_summary or get_orsc_summary was called, a
 //                compact "top 10 by commission" mini-table renders below.
 // Loading      → an isolated assistant-styled bubble with three bouncing dots.
 
 import React from 'react';
+import PortfolioDiscovery from './commission/PortfolioDiscovery.jsx';
+import { commissionTerminology } from '../lib/commissionTerminology.js';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { formatNGN, formatPeriod, NGN_RE, NGN_MATCH_RE } from '../lib/format.js';
+
+// Transform parsed Markdown, so quoted/fenced examples never become disclosures.
+// Keep one Markdown tree to preserve references and formatting across the split.
+function remarkVerificationEvidence() {
+  return (tree, file) => {
+    const source = String(file.value);
+    const index = tree.children.findIndex((node) =>
+      node.type === 'heading' && node.depth === 3 &&
+      node.position.start.column === 1 &&
+      source.slice(node.position.start.offset, node.position.end.offset) ===
+        '### Verification evidence' &&
+      /^\r?\n/.test(source.slice(node.position.end.offset)) &&
+      source.slice(node.position.end.offset).trim().length > 0,
+    );
+    if (index === -1) return;
+
+    const evidence = tree.children.splice(index);
+    tree.children.push({
+      type: 'blockquote',
+      data: { hName: 'details' },
+      children: [
+        {
+          type: 'paragraph',
+          data: { hName: 'summary' },
+          children: [{ type: 'text', value: 'View evidence' }],
+        },
+        ...evidence.slice(1),
+      ],
+    });
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Currency highlighter — wraps "NGN X[,XXX].XX" matches in a bolder span.
@@ -43,6 +75,14 @@ function enhanceText(node) {
 }
 
 const mdComponents = {
+  details: ({ children }) => (
+    <details className="mt-3 border-t border-gray-200 pt-2">{children}</details>
+  ),
+  summary: ({ children }) => (
+    <summary className="cursor-pointer rounded text-sm font-semibold text-gray-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-600">
+      {children}
+    </summary>
+  ),
   p: ({ children }) => <p className="mb-2 last:mb-0">{enhanceText(children)}</p>,
   ul: ({ children }) => (
     <ul className="list-disc ml-5 mb-2 space-y-0.5">{children}</ul>
@@ -70,8 +110,8 @@ const mdComponents = {
   ),
   hr: () => <hr className="my-3 border-gray-200" />,
   table: ({ children }) => (
-    <div className="overflow-x-auto my-3">
-      <table className="text-xs border-collapse border border-gray-200 w-full">
+    <div className="max-w-full overflow-x-auto my-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-gray-500" tabIndex={0} role="region" aria-label="Scrollable evidence table">
+      <table className="text-xs border-collapse border border-gray-200 w-full min-w-max [overflow-wrap:normal]">
         {children}
       </table>
     </div>
@@ -106,13 +146,13 @@ function MiniDealerTable({ rows, valueKey, valueHeader, countKey, countHeader, p
     .slice(0, 10);
   if (top.length === 0) return null;
   return (
-    <div className="mt-3 overflow-x-auto">
+    <div className="mt-3 max-w-full overflow-x-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-gray-500" tabIndex={0} role="region" aria-label="Scrollable dealer summary table">
       {period && (
         <div className="text-[10px] uppercase tracking-wide text-gray-500 mb-1">
           Top 10 by {valueHeader.toLowerCase()} · {formatPeriod(period)}
         </div>
       )}
-      <table className="text-xs border-collapse border border-gray-200 w-full">
+      <table className="text-xs border-collapse border border-gray-200 w-full min-w-max [overflow-wrap:normal]">
         <thead className="bg-gray-100 text-gray-700">
           <tr>
             <th className="border border-gray-200 px-2 py-1 text-left">#</th>
@@ -183,29 +223,6 @@ function pickDealerMiniTable(tools_called, raw_data, period) {
 }
 
 // ---------------------------------------------------------------------------
-// Tool pills
-// ---------------------------------------------------------------------------
-
-function ToolPills({ tools_called, period }) {
-  if (!tools_called || tools_called.length === 0) return null;
-  return (
-    <div className="mb-2 flex flex-wrap items-center gap-1.5">
-      {tools_called.map((name, i) => (
-        <span
-          key={`${name}-${i}`}
-          className="inline-block bg-gray-100 text-gray-600 text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-gray-200"
-        >
-          {name}
-        </span>
-      ))}
-      {period && (
-        <span className="text-[10px] text-gray-500">· {formatPeriod(period)}</span>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // Loading dots — for the placeholder bubble while isLoading
 // ---------------------------------------------------------------------------
 
@@ -236,7 +253,7 @@ export function LoadingBubble() {
 // Main bubble
 // ---------------------------------------------------------------------------
 
-export default function MessageBubble({ message }) {
+export default function MessageBubble({ message, onDiscoverySelect, onDiscoveryNextPage, discoveryDisabled }) {
   const isUser = message.role === 'user';
   const miniTable = !isUser
     ? pickDealerMiniTable(message.tools_called, message.raw_data, message.mon_period)
@@ -255,11 +272,12 @@ export default function MessageBubble({ message }) {
   return (
     <div className="flex justify-start mb-3">
       <div className="max-w-[90%] bg-white border border-gray-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-sm text-sm text-gray-800 leading-relaxed">
-        <ToolPills tools_called={message.tools_called} period={message.mon_period} />
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-          {message.content || ''}
+        {message.incomplete && <p className="text-xs text-amber-800 mb-2">{message.status === 'streaming' ? 'Writing explanation…' : message.status === 'stopped' ? 'Stopped · incomplete answer' : 'Interrupted · incomplete answer'}</p>}
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkVerificationEvidence]} components={mdComponents}>
+          {commissionTerminology(message.content || '')}
         </ReactMarkdown>
         {miniTable}
+        {!message.incomplete && message.raw_data?.portfolio_discovery && <PortfolioDiscovery key={`${message.raw_data.portfolio_discovery.period}:${message.raw_data.portfolio_discovery.offset}`} discovery={message.raw_data.portfolio_discovery} onSelect={onDiscoverySelect} onNextPage={onDiscoveryNextPage} disabled={discoveryDisabled} />}
       </div>
     </div>
   );

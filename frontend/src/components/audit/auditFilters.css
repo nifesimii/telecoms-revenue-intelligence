@@ -1,0 +1,37 @@
+/* Keep the saved-evidence filters compact without shrinking their controls. */
+@media (min-width: 1280px) {
+  [aria-label='Audit filters'] {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 16px;
+    align-items: end;
+  }
+
+  [aria-label='Audit filters'] > div {
+    display: contents;
+  }
+
+  [aria-label='Audit filters'] label {
+    grid-column: span 2;
+    width: auto;
+  }
+
+  [aria-label='Audit filters'] > div:first-child > label:first-child,
+  [aria-label='Audit filters'] > div:nth-child(2) > label:nth-child(n + 3) {
+    grid-column: span 3;
+  }
+
+  [aria-label='Audit filters'] > div:first-child > label:nth-child(2) {
+    grid-column: span 5;
+  }
+
+  [aria-label='Audit filters'] button {
+    grid-column: span 2;
+    justify-self: end;
+    align-self: end;
+  }
+
+  [aria-label='Audit filters'] > p {
+    grid-column: 1 / -1;
+  }
+}

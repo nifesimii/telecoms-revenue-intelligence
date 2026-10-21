@@ -8,10 +8,10 @@ Severity / action mapping (taken straight from the KB / spec):
     +-------------------------+----------+-----------------------------------------+
     | exception_type          | severity | recommended_action                      |
     +-------------------------+----------+-----------------------------------------+
-    | ALL_UNQUALIFIED         | HIGH     | Verify product codes against USP        |
-    |                         |          | dimension for this period               |
+    | ALL_UNQUALIFIED         | HIGH     | Verify product codes against the        |
+    |                         |          | commission rate card for this period    |
     | HIGH_UNQUALIFIED_RATE   | MEDIUM   | Review activation qualification rate    |
-    |                         |          | and USP coverage                        |
+    |                         |          | and commission rate card coverage       |
     | UNUSUAL_VOLUME          | LOW      | Investigate activation volume for       |
     |                         |          | legitimacy. Not confirmed fraud.        |
     +-------------------------+----------+-----------------------------------------+
@@ -24,18 +24,18 @@ from backend.assurance.base import AssuranceResult, BaseAssuranceService
 from backend.db.connection import execute_query
 
 
-_SEVERITY_BY_EXCEPTION: dict[str, str] = {
+SEVERITY_BY_EXCEPTION: dict[str, str] = {
     "ALL_UNQUALIFIED": "HIGH",
     "HIGH_UNQUALIFIED_RATE": "MEDIUM",
     "UNUSUAL_VOLUME": "LOW",
 }
 
-_ACTION_BY_EXCEPTION: dict[str, str] = {
+ACTION_BY_EXCEPTION: dict[str, str] = {
     "ALL_UNQUALIFIED": (
-        "Verify product codes against USP dimension for this period"
+        "Verify product codes against commission rate card for this period"
     ),
     "HIGH_UNQUALIFIED_RATE": (
-        "Review activation qualification rate and USP coverage"
+        "Review activation qualification rate and commission rate card coverage"
     ),
     "UNUSUAL_VOLUME": (
         "Investigate activation volume for legitimacy. Not confirmed fraud."
@@ -64,8 +64,8 @@ class ActivationAssuranceService(BaseAssuranceService):
         findings: list[dict[str, Any]] = []
         for _, row in df.iterrows():
             exception_type = str(row["exception_type"])
-            severity = _SEVERITY_BY_EXCEPTION.get(exception_type, "MEDIUM")
-            action = _ACTION_BY_EXCEPTION.get(exception_type, "Investigate")
+            severity = SEVERITY_BY_EXCEPTION.get(exception_type, "MEDIUM")
+            action = ACTION_BY_EXCEPTION.get(exception_type, "Investigate")
             findings.append(
                 {
                     "type": exception_type,

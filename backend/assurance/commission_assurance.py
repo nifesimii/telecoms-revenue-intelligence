@@ -61,7 +61,7 @@ class CommissionAssuranceService(BaseAssuranceService):
                         f"activations of {int(row['total_activations'])} total"
                     ),
                     "recommended_action": (
-                        "Review USP dimension coverage for affected product codes"
+                        "Review commission rate card coverage for affected product codes"
                     ),
                 }
             )

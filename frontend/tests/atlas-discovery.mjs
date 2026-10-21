@@ -1,0 +1,101 @@
+// Production Commission workspace with deterministic chat transport; no provider calls.
+import assert from 'node:assert/strict';
+const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const browser = await chromium.launch({ headless: true, channel: 'chrome' });
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+page.setDefaultTimeout(10000);
+const requests = [], errors = [];
+const question = 'Investigate zero-commission records using only documented KB causes. State what remains unverified.';
+const discovery = { status: 'available', period: '202606', workspace: 'commission', ranking: 'zero_commission_count_desc_dealer_id_asc', total_count: 3,
+  items: [{ dealer_id: '296065', dealer_name: 'Discovery exact account', zero_commission_count: 50 }, { dealer_id: '0002', dealer_name: 'Discovery exact account', zero_commission_count: 40 }], limit: 2, offset: 0, has_more: true };
+const discoveryText = '3 dealer accounts have zero-commission records. Counts do not establish causes.\n\n| Exact account | Dealer | Zero-commission records |\n| --- | --- | ---: |\n| 296065 | Discovery exact account | 50 |\n| 0002 | Discovery exact account | 40 |';
+let reply = { type: 'complete', response: discoveryText, tools_called: ['get_dealer_summary'], raw_data: { portfolio_discovery: discovery }, error: null };
+const atlas = page.getByRole('region', { name: 'Atlas', exact: true });
+const send = async (text) => { await atlas.getByRole('textbox').fill(text); await atlas.getByRole('button', { name: 'Send question' }).click(); };
+page.on('pageerror', error => errors.push(error.message));
+try {
+  await page.route('**/chat/stream', async route => {
+    requests.push(route.request().postDataJSON());
+    await route.fulfill({ contentType: 'application/x-ndjson', body: JSON.stringify(reply) + '\n' });
+  });
+  await page.route('**/chat', route => route.abort());
+  await page.route('**/chat/explain', route => route.abort());
+  await page.goto(`${process.env.APP_URL || 'http://localhost:5173'}/?view=commission&period=202606`);
+  await page.getByRole('button', { name: 'Ask Atlas', exact: true }).click();
+  await send(question);
+  await atlas.getByLabel('Account to investigate').waitFor();
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].message, question);
+  assert.match(requests[0].investigation_context, /Portfolio-level/);
+  assert.equal(await atlas.getByLabel('Account to investigate').inputValue(), '');
+  assert(await atlas.getByRole('button', { name: 'Investigate selected account', exact: true }).isDisabled());
+  await atlas.getByLabel('Account to investigate').selectOption('296065');
+  await atlas.getByRole('button', { name: 'Investigate selected account', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await page.getByText('Account investigation', { exact: true }).waitFor();
+  await atlas.getByRole('textbox').waitFor();
+  assert.equal(await atlas.getByRole('textbox').inputValue(), question);
+  assert.equal(requests.length, 1, 'Choosing an account never submits twice or invokes a provider');
+  reply = { type: 'complete', response: '50 zero-commission records for the selected exact account. Evidence remains scoped.', tools_called: [], raw_data: {}, error: null };
+  await atlas.getByRole('button', { name: 'Send question' }).click();
+  await atlas.getByText(reply.response, { exact: true }).waitFor();
+  assert.equal(requests.length, 2);
+  assert.equal(requests[1].message, question);
+  assert.equal(requests[1].mon_period, '202606');
+  assert.match(requests[1].investigation_context, /Exact dealer account code 296065/);
+  assert.match(requests[1].investigation_context, /Comparison period 202605/);
+  assert.deepEqual(requests[1].conversation_history, [], 'Selected account does not inherit portfolio history');
+  await page.getByRole('button', { name: 'Back to accounts' }).click();
+  await atlas.getByLabel('Account to investigate').waitFor();
+  for (const width of [320, 768, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 1000 });
+    await atlas.scrollIntoViewIfNeeded();
+    assert(await atlas.getByLabel('Account to investigate').isVisible());
+    await atlas.getByLabel('Account to investigate').selectOption('296065');
+    await atlas.getByRole('button', { name: 'Investigate selected account', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    assert(await atlas.getByRole('button', { name: 'Next affected accounts' }).evaluate(element => element === document.activeElement), 'Discovery actions remain keyboard reachable at every width');
+    assert(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `No document overflow at ${width}px`);
+    await atlas.screenshot({ path: `/tmp/atlas-discovery-${width}.png` });
+  }
+  reply = { type: 'complete', response: 'Accounts 3–3 of 3. Exact account 0003.', tools_called: ['get_dealer_summary'], raw_data: { portfolio_discovery: { ...discovery, offset: 2, has_more: false, items: [{ dealer_id: '0003', dealer_name: 'Another account', zero_commission_count: 30 }] } }, error: null };
+  await atlas.getByRole('button', { name: 'Next affected accounts' }).click();
+  await atlas.getByText(reply.response, { exact: true }).waitFor();
+  assert.match(requests.at(-1).message, /Jun 2026, starting after the first 2 accounts, with 2 accounts per page/);
+  const newestSelection = atlas.getByLabel('Account to investigate').last();
+  assert.equal(await newestSelection.inputValue(), '', 'New page begins without a stale selection');
+  assert.deepEqual(await newestSelection.locator('option').evaluateAll(options => options.map(option => option.value)), ['', '0003']);
+
+  reply = { type: 'complete', response: 'Please select an exact dealer account before I investigate its records.', tools_called: [], raw_data: {}, error: null };
+  await send('Investigate the dealer.');
+  await atlas.getByText(reply.response, { exact: true }).waitFor();
+  assert.equal(await atlas.getByText('Interrupted · incomplete answer', { exact: true }).count(), 0);
+  assert.equal(await atlas.getByRole('button', { name: 'Retry explanation' }).count(), 0);
+  const successfulHistoryLength = requests.at(-1).conversation_history.length + 2;
+  reply = { type: 'error', error: 'chat_failed', message: 'Atlas could not complete this request. Please retry.' };
+  await send('Fail this request.');
+  await atlas.getByRole('alert').waitFor();
+  assert.equal(await atlas.getByText(reply.message, { exact: true }).count(), 1, 'Operational message appears once without an extra wrapper');
+  assert.equal(await atlas.getByText('Interrupted · incomplete answer', { exact: true }).count(), 0, 'No empty interrupted bubble');
+  const failedRequest = requests.at(-1);
+  reply = { type: 'complete', response: 'Recovered after retry.', tools_called: [], raw_data: {}, error: null };
+  await atlas.getByRole('button', { name: 'Retry explanation' }).click();
+  await atlas.getByText(reply.response, { exact: true }).waitFor();
+  assert.deepEqual(requests.at(-1), failedRequest);
+  assert.equal(requests.at(-1).conversation_history.length, successfulHistoryLength, 'Failure is excluded from successful history');
+
+  reply = { type: 'complete', response: 'Affected dealer evidence is unavailable. This does not establish zero affected accounts.', tools_called: [], raw_data: { portfolio_discovery: { ...discovery, status: 'unavailable', total_count: null, items: [], has_more: false } }, error: null };
+  await atlas.getByRole('button', { name: 'Clear thread' }).click();
+  await send('List affected accounts.');
+  await atlas.getByText(reply.response, { exact: true }).waitFor();
+  assert.equal(await atlas.getByLabel('Account to investigate').count(), 0);
+  await page.getByRole('combobox', { name: /Reporting period/ }).selectOption('202605');
+  await atlas.getByRole('textbox').waitFor();
+  assert.equal(await atlas.getByText(reply.response, { exact: true }).count(), 0, 'Period change isolates discovery history');
+  reply = { type: 'complete', response: discoveryText, tools_called: [], raw_data: { portfolio_discovery: discovery }, error: null };
+  await send('List accounts.');
+  await atlas.getByLabel('Account to investigate').waitFor();
+  assert(await atlas.getByLabel('Account to investigate').isDisabled(), 'Evidence from another period cannot select an account');
+  assert.deepEqual(errors, []);
+  console.log('PASS exact account keyboard selection, explicit Send/context/history, 320/768/1024/1440px, bounded paging, clarification, single error/exact retry, unavailable evidence and period isolation');
+} finally { await browser.close(); }

@@ -15,7 +15,9 @@ File-to-topic routing (by filename prefix):
 Lifecycle:
     inbox/      → file lands here (mounted volume in compose)
     archive/    → moved here on full success
-    quarantine/ → moved here when filename is unrecognised or no rows valid
+    quarantine/ → moved here when filename is unrecognised, any row
+                  fails validation, or no rows are valid. Quarantine
+                  means the file was not published.
 
 Idempotency:
     * File-level: a file in archive/ is never re-processed.
@@ -148,9 +150,9 @@ def _process_file(
 ) -> bool:
     """Publish all rows of one file. Returns True on full success.
 
-    On any row publish failure the file is NOT moved — it will be retried
-    on the next poll. Rows with missing columns are counted as failures
-    but do not block the file (they would simply never validate).
+    Validation runs before any Kafka publish. One invalid row quarantines
+    the file with nothing sent, so quarantine never means "partially
+    ingested". On publish failure the file stays in inbox/ for retry.
     """
     event_type = route["event_type"]
     topic      = route["topic"]
@@ -159,13 +161,11 @@ def _process_file(
 
     log.info("Processing file", file=path.name, event_type=event_type, dry_run=dry_run)
 
-    published = 0
-    skipped   = 0
-    publish_errors = 0
-
+    skipped = 0
+    row_count = 0
     with path.open(newline="") as f:
-        reader = csv.DictReader(f)
-        for idx, row in enumerate(reader):
+        for idx, row in enumerate(csv.DictReader(f)):
+            row_count += 1
             reason = _validate_row(row, required)
             if reason:
                 rows_failed.labels(event_type=event_type, reason="validation").inc()
@@ -174,8 +174,28 @@ def _process_file(
                     "Row failed validation",
                     file=path.name, row_index=idx, reason=reason,
                 )
-                continue
 
+    if skipped > 0:
+        _move(path, quarantine_dir, dry_run)
+        files_quarantined.labels(reason="validation").inc()
+        log.error(
+            "File quarantined — one or more rows failed validation",
+            file=path.name,
+            published=0,
+            skipped=skipped,
+        )
+        return False
+
+    if row_count == 0:
+        _move(path, quarantine_dir, dry_run)
+        files_quarantined.labels(reason="no_valid_rows").inc()
+        log.error("File quarantined — no valid rows", file=path.name)
+        return False
+
+    published = 0
+    publish_errors = 0
+    with path.open(newline="") as f:
+        for idx, row in enumerate(csv.DictReader(f)):
             payload = {
                 "provider":     PROVIDER,
                 "event_type":   event_type,
@@ -193,8 +213,13 @@ def _process_file(
                 published += 1
                 continue
 
-            ok = publish_event(topic=topic, payload=payload,
-                               provider=PROVIDER, key=key)
+            ok = publish_event(
+                topic=topic,
+                payload=payload,
+                provider=PROVIDER,
+                key=key,
+                wait_for_delivery=True,
+            )
             if ok:
                 rows_published.labels(event_type=event_type).inc()
                 published += 1
@@ -208,13 +233,6 @@ def _process_file(
             "File left in inbox/ for retry (publish errors)",
             file=path.name, published=published, errors=publish_errors,
         )
-        return False
-
-    # If nothing valid at all, quarantine instead of archive.
-    if published == 0:
-        _move(path, quarantine_dir, dry_run)
-        files_quarantined.labels(reason="no_valid_rows").inc()
-        log.error("File quarantined — no valid rows", file=path.name)
         return False
 
     _move(path, archive_dir, dry_run)

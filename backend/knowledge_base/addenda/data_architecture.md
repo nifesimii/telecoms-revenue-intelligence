@@ -11,7 +11,7 @@ This is the full source-system inventory and development-schema layout. It lives
 | `device_orsc_summary`            | `dataops_prod` | Monthly ORSC summary — subscription revenue per active IMEI                  |
 | `ifs_vw_invoiced_sales_tran_new` | `flare_8`      | Oracle IFS invoiced sales — unit selling prices and order amounts            |
 | `tas_augmented_customer_master`  | `flare_8`      | Trade partner master — maps `distributor_code` to `partner_type`             |
-| `usp_dimension`                  | `mtnn_it`      | Unit Selling Price dimension — product pricing and commission rates by month |
+| `usp_dimension`                  | `mtnn_it`      | Commission rate card — product prices and commission amounts by month |
 | `cs6_ccn_cdr`                    | `flare_8`      | CDR data — FBB/FIBRENET subscription revenue (FTTH subscriptions)            |
 
 

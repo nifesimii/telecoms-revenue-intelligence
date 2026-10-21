@@ -19,6 +19,20 @@ relevant section here in the same change.
 
 This repository is one product built in two stacked layers.
 
+**Dealer Financial Health demonstration** adds a separate whole-business review
+workspace at `?view=financial-health`. Its read-only `/financial-health` API uses
+`backend/db/financial_health.py` to generate synthetic statements for 20 existing sample dealer identities
+with reconciled monthly statements and six KPIs. The frozen cohort lives in
+`data/samples/financial_health_dealers.json`; shared identity is not evidence of
+actual financial condition. Atlas reads this same service through
+`get_financial_health_summary` and `get_financial_health_report`, with Financial
+Health conversation scope isolated by dealer and period. It does not read APDP, Presto,
+or real dealer accounts, even when other workspaces use live data. The collection
+is bounded and searched/sorted on the backend; exact dealer-month detail is loaded
+on demand through TanStack Query. The React workspace lives in
+`frontend/src/components/financial/`. See `docs/DEALER_FINANCIAL_HEALTH.md` for
+scope, assumptions, model rules, verification and future pilot work.
+
 **FBB Revenue Intelligence** (`backend/` + `frontend/`) is a finance-facing
 application that explains, validates, and audits MTN Nigeria's Fixed
 Broadband (FBB) **trade-partner commissions**. It answers questions like "what
@@ -27,14 +41,123 @@ commission do we owe dealer X for this month", "why did their payout change",
 prove, step by step, that a partner was or wasn't paid". Its users are Finance,
 Revenue Assurance, and FBB Operations.
 
-**APDP — African Payment Data Platform** (`apdp/`) is the payment-data pipeline
-that will feed FBB real settlement data (Kafka → Flink → Postgres). Today FBB
-runs primarily on sample CSVs; APDP is the path to live data. The two layers
-meet at a single seam: APDP normalises payment/settlement events into a Postgres
-view (`normalized.partner_settlements`), and FBB reads that view when the
-`PAYMENT_SOURCE=apdp` flag is set.
+**Atlas** is the shared AI assistant across Commission (including Subscriptions),
+Payments, Inventory, Findings, and Financial Health. Its description is “Your commission intelligence
+assistant.” The platform retains its existing name; Atlas identifies the assistant
+in the UI, accessibility labels, and system prompt.
+
+Every ordinary Atlas request carries the active workspace scope in the optional
+`investigation_context` field, separately from the displayed question. Both chat
+routes attach it to the model's current turn, so references such as “this dealer”
+resolve to the selected exact account without depending on earlier chat text.
+Openings, follow-ups and retries carry only the readable question in the user
+message; generated scope instructions are never concatenated into it. A compact
+header shows the dealer name, exact account, reporting/comparison periods and
+workspace. Account/period conversation isolation remains in the shared chat store.
+The Payment “Ask Atlas” action submits its opening question once for an empty
+thread. Reopening pending, completed or failed threads preserves the conversation
+and drafts; clearing a thread requires a new explicit opener click to submit again.
+Stored v1 threads retain their conversations while exact historical generated
+prefixes matching the stored scope are removed from display, history and retry
+text. Unknown or edited formats remain unchanged. New writes use v2 so newly
+typed literal text is never interpreted as a legacy prefix on reload.
+
+The selected account is the default commission/payment scope. Explicit broader
+commission requests reuse recorded-name affiliation: code anchors total other
+codes, while an all-code partner total uses the exact recorded name and includes
+the selected account. Answers enumerate contributing codes and label name-only
+association as unverified. This does not establish broader payment or financial
+evidence, or loosen Findings/product and Financial Health boundaries.
+
+**APDP — African Payment Data Platform** (`apdp/`) is the payment-data
+pipeline. The full production path is Kafka → Flink → Postgres, but
+because the Flink Docker build is broken and the Kafka→Postgres sink was
+never wired (see `apdp/CLAUDE.md`), the demo takes a shortcut: fixture
+CSVs → pure-Python `normalizer_core` → direct psycopg2 INSERT into
+`normalized.transactions`. Everything downstream of the normaliser
+(the `normalized.partner_settlements` view, and FBB reading from it)
+works exactly the same as the eventual live path.
+
+The two layers meet at one seam: `normalized.partner_settlements`. FBB
+reads that view when `PAYMENT_SOURCE=apdp` is set. APDP is an opt-in
+integration mode. **Localhost and the Render GM preview both use
+`PAYMENT_SOURCE=simulated`** so they return the same deterministic
+`payment_simulation.csv` records, totals, dealer names, and exception
+flags. A dedicated APDP environment can enable the Postgres path without
+changing the preview contract. `backend/config.py` enforces this for the
+Render service named `fbb-preview`, preventing a stale dashboard-level
+`PAYMENT_SOURCE` value from silently overriding the preview contract.
+
+The APDP fixture generator now samples from the FBB dealer roster
+(`data/samples/fbb_comm_dev_act_<period>.csv`) rather than 5 hardcoded
+synthetic codes, so the same dealer IDs appear on both sides of the
+reconciliation. Without that patch, the same partner could never
+appear in both commission (FBB) and settlement (APDP) data, and the
+statement + audit modules had nothing to join.
+
+For the Render deploy specifically, APDP data is packaged as a
+`pg_dump` at `infra/postgres/apdp_seed.sql` (~23 MB, ~23k transaction
+rows across two periods) that the FBB backend applies on startup via
+its lifespan hook — idempotent (COUNT-and-skip on subsequent boots),
+non-fatal (a seed failure logs and lets the app boot with an empty
+Payment tab rather than a 500).
 
 ---
+
+## Atlas investigations
+
+Ordinary chat can resolve a `dealer_investigation` request for zero commissions,
+activation commission variance, or payment reconciliation. `investigation_family`
+selects the reader; `presentation` selects explanation, records, actions or a dealer
+letter draft. Exact dealer/month scope and record paging are validated before reads.
+The model resolves intent; it does not create financial figures or rejection reasons.
+
+All-account zero-commission requests use `portfolio_discovery` before an exact
+account investigation. `db/portfolio_discovery.py` reuses one period-scoped
+`get_dealer_summary` read, ranks by zero-commission record count descending and
+exact account code ascending, and returns the complete matching count with a
+bounded page (default 20, maximum 100). It does not load each dealer's detailed
+evidence. Missing source coverage or unreadable evidence remains unavailable,
+with a null count. Counts alone establish neither causes nor financial exposure.
+The discovery contract accepts `all` and `zero_commission` as equivalent filter
+values because the affected-account selection is intrinsic to this measure;
+other filters remain invalid.
+The response keeps the bounded account table in conversation history; Commission
+provides an explicit exact-account selection action preserving reporting context.
+See `docs/ATLAS_DEMO_RELIABILITY.md` for acceptance evidence and limitations.
+
+`backend/db/investigation_evidence.py` owns the shared result. It reads the existing
+queries plus persisted calculation/workflow fixtures through `db/queries.py`.
+`backend/agent/investigation_response.py` renders business conclusions and next steps.
+The generic zero-commission explanation, Findings evidence and dispute-letter endpoint
+reuse this result. Full-population classification precedes a maximum 100-record page.
+Historical saved audit trails remain historical observations; this change does not
+rewrite them or execute audit-store writes. Live Presto remains unimplemented.
+
+Calculation support must match period, account, device, input fingerprint and policy
+version. A recorded primary reason needs the corresponding lookup/mapping/date evidence.
+Payment process evidence must match owed, paid, status and balance direction; incomplete
+APDP coverage never establishes a balance and cannot use simulated supporting evidence.
+Data mode stays in workspace provenance rather than repeated answer disclaimers.
+See `docs/ATLAS_INVESTIGATIONS.md` and `data/samples/README.md` for scenario generation.
+
+## Commission rate-card terminology
+
+Readable responses, evidence, tickets and exports use **commission rate card**.
+The canonical cause label is **Product not matched to commission rate card**.
+It means the product could not be matched for the calculation month, so the
+applicable commission amount could not be retrieved. Monthly evidence requirements
+and calculations remain unchanged.
+
+Source and persistence identifiers, including `usp_dimension`, `USP_SNAPSHOT_MISS`,
+`usp_snapshot_period`, `usp_lookup`, `products_missing_from_usp` and `source=usp`,
+remain compatibility aliases. “Unit Selling Price” / `unit_selling_price` retains
+its numeric selling-price meaning. The coverage alias `usp_missing` describes
+**Missing partner classification**, a separate cause.
+
+Historical generated assistant and audit prose receives presentation overlays;
+original stored evidence and user-authored messages remain intact. Normalization
+preserves quotations, code and source identifiers. Legacy input remains accepted.
 
 ## 2. Tech Stack
 
@@ -63,10 +186,14 @@ the source of truth for what to install.
 - **Tailwind CSS 3** — styling (utility classes, no component library).
 - **axios** — HTTP client; every backend call is centralised in
   `frontend/src/api/client.js`.
+- **TanStack Query 5** — bounded page cache, in-flight request deduplication,
+  cancellation signals, retry policy, and short-lived reuse on tab returns.
 - **react-markdown** + **remark-gfm** — render the agent's markdown answers.
 
-No TypeScript, no state-management library (React context + hooks are enough at
-this size), no test runner on the frontend yet.
+No TypeScript, no global state-management library (React context + focused
+hooks are enough at this size), no test runner on the frontend yet. Large
+collection state is deliberately bounded by the API rather than stored as a
+complete browser-side dataset.
 
 ### APDP (Python + infra)
 - **Apache Kafka** (KRaft mode, no Zookeeper) — event backbone.
@@ -128,9 +255,35 @@ backend/
 │   ├── composite.py         assemble_dealer_full_context(): bundles commission +
 │   │                        activation + inventory + payment for one dealer into a
 │   │                        single call (saves the agent 4 round-trips).
+│   ├── dealer_statement.py  Per-period Finance/RA internal statement composer.
+│   │                        Joins activation commission + subscription commission
+│   │                        + subscription revenue + payment (respects
+│   │                        PAYMENT_SOURCE) + linked audit trails into one dict —
+│   │                        powers GET /dealers/{id}/statement.
+│   ├── dealer_statement_evidence.py  Projects that statement into Atlas
+│   │                        dealer_statement evidence (owed/paid/outstanding per
+│   │                        commission type, plus a plain-sum combined total).
 │   ├── triage.py            TRIAGE_HANDLERS: shape/trim query results for the agent.
-│   ├── data_coverage.py     Compiles the IFS/USP data-gap ServiceNow ticket.
+│   ├── data_coverage.py     Compiles the IFS / partner-classification data-gap ServiceNow ticket.
+│   ├── data_coverage_evidence.py  Projects its two collectors into Atlas
+│   │                        data_coverage evidence (one month, all dealers or one);
+│   │                        a failed collector is unavailable, never zero dealers.
+│   ├── variance_evidence.py  Projects get_month_on_month_variance into Atlas
+│   │                        commission_variance evidence (one dealer, two months);
+│   │                        change = later − earlier per product from the same rows.
+│   ├── exception_evidence.py  Atlas activation_exceptions / payment_exceptions
+│   │                        evidence (one month, all dealers or one), read from the
+│   │                        screens' own computations: activation_workspace.collection
+│   │                        (view=exceptions) and the /payments snapshot filtered by
+│   │                        payment_snapshot.payment_collection. ≤100 dealers listed;
+│   │                        counts and outstanding cover every matching dealer.
 │   ├── apdp.py              Reads APDP's partner_settlements view (PAYMENT_SOURCE=apdp).
+│   ├── payment_snapshot.py  load_payment_snapshot(period): source-aware settlement
+│   │                        snapshot + PaymentSummaryRecord/PaymentCoverageResponse
+│   │                        (re-exported by api/schemas). Shared by Payments,
+│   │                        Overview and Atlas; APDP outage → PaymentSourceUnavailable.
+│   │                        payment_collection(): the GET /payments status/search
+│   │                        filter and ordering, shared with Atlas payment_exceptions.
 │   └── audit_store.py       Persists + queries verification trails in the FBB audit DB.
 │
 ├── assurance/              ── INTELLIGENCE: the "flaggers" ──
@@ -140,20 +293,49 @@ backend/
 │   ├── commission_assurance.py    Flags dealers with zero-commission activations.
 │   ├── activation_assurance.py    Flags activation-volume/qualification anomalies.
 │   ├── inventory_assurance.py     Flags purchase-vs-activation mismatches.
-│   └── payment_assurance.py       Flags payment-coverage exceptions.
+│   ├── payment_assurance.py       Flags payment-coverage exceptions.
+│   └── overview.py                overview_snapshot(): the one Overview computation
+│                                  (findings + ranked investigation queue) used by
+│                                  GET /assurance/overview and Atlas via
+│                                  investigation_priority_evidence() (one dealer)
+│                                  and investigation_queue_evidence() (the month's
+│                                  queue, filtered by severity/modules, at most
+│                                  100 listed; full-queue ranks and totals).
 │
 ├── audit/                 ── INTELLIGENCE: the "prover" (audit trails) ──
 │   ├── trail.py            TrailStep + VerificationTrail dataclasses + JSON sanitiser.
-│   ├── zero_commission_audit.py   The 6-step verification chain for "was partner X
-│   │                        paid?" (activity → rate → expected → payment search →
-│   │                        near-match → upstream completeness → verdict).
-│   └── base.py             Generic AuditModule + registry — lets new audit domains
-│                            (inventory, payment) plug in later with one file each.
+│   ├── base.py             Generic AuditModule + registry — new audit domains plug
+│                            in with one file + one register(...) call.
+│   ├── payment_data.py     Shared payment lookup / adjacency / coverage helpers
+│                            (extracted from zero_commission so multiple modules
+│                            can consume without a leaky import chain).
+│   ├── product_aliases.py  Known SKU-alias groups (Hynex / Hynex_1). One source
+│                            of truth for both zero_commission and inventory_mismatch.
+│   ├── zero_commission_audit.py     "Was partner X paid for zero-comm records?"
+│                            6-step chain, PAID / NOT_PAID / INSUFFICIENT_DATA.
+│   ├── inventory_mismatch_audit.py  "Do activations exceed invoiced purchases?"
+│                            Per (dealer, product) — composite partner_code.
+│                            RECONCILED / EXCESS_ACTIVATION / INSUFFICIENT_DATA.
+│   ├── payment_reconciliation_audit.py  "Was partner X paid the correct amount?"
+│                            Broader net than zero_commission — every partner with
+│                            activation activity. PAID_IN_FULL / DISPUTED_ROUNDING /
+│                            UNDERPAID / OVERPAID / INSUFFICIENT_DATA.
+│   ├── eligibility_window_audit.py  "Are zero-comm records genuinely outside the
+│                            6-month invoice→activation window?" Per-partner
+│                            rollup, per-IMEI evidence in step details.
+│                            POLICY_MET / POLICY_VIOLATED / MIXED_ATTRIBUTION.
+│   └── verification_outcome.py  Atlas read-only dealer-month verdicts: the latest saved
+│                            run per module when the dealer is in it, else the module's own
+│                            run_dealer in memory ("checked on request"); never persists.
 │
 ├── agent/                 ── AGENT LAYER (Claude chat) ──
-│   ├── agent.py            The conversation loop. run_agent(): sends messages to
-│   │                        Claude, executes tool-use turns (max 5 iterations),
-│   │                        retries on rate limits, returns the answer + tool trace.
+│   ├── agent.py            Shared buffered/streamed turn: resolves a structured
+│   │                        request, retrieves scoped evidence and renders it.
+│   ├── measure_scope.py    Validated interpretation contract and focused questions.
+│   ├── dealer_resolution.py A measure's dealer_name → one recorded code (exact name,
+│   │                        else unique partial name) before any evidence read;
+│   │                        none/several/unreadable answer without evidence.
+│   ├── measure_response.py Application-owned values, labels, coverage and tables.
 │   ├── tools.py            Tool definitions in Anthropic format. ~13 tools: the 4
 │   │                        core (dealer summary, zero-commission records, MoM
 │   │                        variance, ORSC) + activation/inventory/payment queries +
@@ -161,6 +343,15 @@ backend/
 │   ├── tool_executor.py    Routes a Claude tool call → the right db/ function.
 │   │                        QUERY tools go through execute_query; DIRECT tools
 │   │                        (get_kb_section, dossier) call handlers directly.
+│   │                        The investigation_priority measure reads the Overview
+│   │                        queue via assurance/overview (one dealer, one month);
+│   │                        investigation_queue reads the same queue for all
+│   │                        dealers (one month; no dealer allowed).
+│   │                        dealer_statement reads db/dealer_statement_evidence.
+│   │                        verification_outcome reads audit/verification_outcome;
+│   │                        commission_variance, data_coverage,
+│   │                        activation_exceptions and payment_exceptions read their
+│   │                        db/*_evidence modules. All are STANDALONE_MEASURES.
 │   ├── prompts.py          Builds the system prompt. Injects the tiered KB (see §5).
 │   └── dispute_responder.py  Pure-Python (no LLM) generator for a finance-ready
 │                            dispute-response letter.
@@ -191,15 +382,20 @@ frontend/src/
 │                           the frontend can do.
 ├── context/PeriodContext.jsx  Selected reporting month, shared app-wide, URL-synced.
 ├── hooks/
-│   ├── useChat.js          Chat state + localStorage persistence.
-│   └── useDealerVerification.js  Shared fetch for the inline "verify" expandables.
+│   ├── useChat.js          Scoped conversation store + localStorage persistence;
+│   │                      in-flight answers survive workspace navigation.
+│   ├── useDebouncedValue.js       Debounces server-side table search.
+│   └── useLazyDealerVerification.js  Fetches/caches evidence only for rows opened.
 ├── lib/
 │   ├── format.js           NGN + period (YYYYMM → "Feb 2026") formatting.
 │   └── csv.js              CSV export helper.
 └── components/
-    ├── ChatInterface.jsx / MessageBubble.jsx / DealerSummaryTable.jsx / VarianceCard.jsx
-    │                       Commission Intelligence tab (the Claude chat + sidebar).
-    ├── activation/         Activation Intelligence tab (summary/variance/exceptions).
+    ├── commission/         CommissionWorkspace, account table, summary, detail,
+    │                      on-demand evidence and contextual assistant.
+    ├── MessageBubble.jsx  Shared explanation rendering (legacy ChatInterface
+    │                      and DealerSummaryTable remain unused by the shell).
+    ├── activation/         Bounded activation accounts, comparisons, findings,
+    │                       full-period summary and on-demand account evidence.
     ├── inventory/          Inventory Intelligence tab + DataCoverageTicketModal.
     ├── payment/            Payment Intelligence tab + DisputeDraftModal.
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).
@@ -237,31 +433,218 @@ apdp/
 
 ## 4. Data Flow
 
-### Flow A — a chat question ("why did dealer 74050 earn zero commission?")
-```
-Browser (ChatInterface) → api/client.js POST /chat
-  → routes.py → agent.run_agent()
-    → Claude decides to call a tool (e.g. get_zero_commission_records)
-      → tool_executor routes it → db/connection.execute_query()
-        → db/queries.py SAMPLE_HANDLERS[name] reads data/samples/*.csv (pandas)
-      ← tool result returned to Claude
-    ← Claude composes the English answer (grounded in the injected KB)
-  ← routes.py returns {response, tools_called, ...}
-← rendered as markdown in the chat
-```
-The agent may fetch KB addenda mid-answer via `get_kb_section`, and may call
-`get_dealer_full_context` to get commission+activation+inventory+payment in one
-shot instead of four calls.
+### Shared shell navigation
 
-### Flow B — a data panel (e.g. Payment Intelligence)
+The two-row header uses the same max-width and responsive gutters as all six
+workspaces. Public view IDs remain `overview`, `commission`, `activation`,
+`inventory`, `payment` and `audit`; labels are shorter in the header only.
+
+Workspace switches push history entries; initial URL normalization and period
+changes replace the current entry. `popstate` restores the URL view and month.
+Period validation waits for the available-month list. Serializable investigation
+context/revisions live in each entry's `fbbWorkspace` history state; restoring a
+revision remounts that contextual workspace when necessary. Context is not added
+to the shareable URL. DOM focus targets for Audit returns remain in memory.
+Ordinary same-period switches retain visited panels, including Audit, preserving
+current filters and detail state. Explicit new investigation contexts and month
+changes retain the existing scoped reset behavior. Payment sub-tabs continue to
+mount only their active content, and bounded TanStack Query caching is unchanged.
+
+### Commission workspace — recorded figures before explanation
+
+`api/commission_routes.py` adds `/commissions` (bounded accounts), `/export`
+(all matching accounts), `/{dealer_id}/detail` (one exact account), and
+`/{dealer_id}/zero-records` (bounded raw activation evidence). Contracts live
+in `api/commission_schemas.py`. `db/commission_workspace.py` composes existing
+named queries without new SQL, recalculation, payment reads or audit execution.
+Search, class/zero filters, stable sorting and full-filter totals precede paging;
+the hard collection limit is 100. Existing `/dealers` remains unchanged.
+Activation commission, subscription revenue and subscription commission have
+separate semantics. The internal sample-only `get_subscription_demo_records`
+handler in `db/queries.py`, dispatched through `execute_query`, joins fictional
+upstream commission/settlement statements to existing dealer/device/month
+attribution. `db/subscription_evidence.py` validates and aggregates those recorded
+amounts. Its additive nullable commission, settled and outstanding fields
+are shared by workspace totals/detail/exports and the existing
+`get_orsc_summary` agent tool; `amount_ngn` remains subscription revenue.
+`/{dealer_id}/subscription-records` loads bounded device evidence on demand.
+Live mode does not read these fixtures and leaves unsupported commission fields
+unavailable. No commission rate is applied at runtime. See
+`docs/SUBSCRIPTION_COMMISSION_DEMO.md` for assumptions and the live-data gap.
+Absent comparison records do not become verified zero balances. Denomination
+amounts reconcile to the recorded total, including unattributed amounts.
+
+The frontend uses TanStack Query for account pages and on-demand evidence.
+Selecting a dealer opens a code-and-period-anchored investigation, with a
+responsive return path to the filtered table. Saved audit evidence loads only
+on request. AI conversations are scoped by account, period, comparison and
+stream; a subscription-backed store persists answers even if a component
+unmounts while a request is pending. No question is automatically sent.
+
+### Activation workspace — activity, qualification and evidence
+
+`api/activation_workspace_routes.py` exposes `/activations/accounts`, its matching
+CSV `/export`, and `/{dealer_id}/detail`. Typed contracts live in
+`api/activation_workspace_schemas.py`; `db/activation_workspace.py` composes the
+existing named activation queries and shared assurance finding metadata. Legacy
+activation APIs remain available. No new SQL or commission calculation is added.
+
+The full-period summary stays independent of search, class and finding filters.
+The backend groups findings per account and computes both finding and distinct
+account counts before sorting and paging (maximum 100). Comparison is explicitly
+limited to accounts present in both periods; missing prior records stay null,
+and qualification-rate movement is expressed in percentage points.
+
+The frontend mounts one bounded account view at a time with TanStack Query.
+Account evidence reuses the existing paginated zero-commission reads and saved
+verification only when requested. Navigation to Commission preserves the exact
+account and comparison. Source failures remain errors, not empty successes.
+Like existing collection adapters, sample processing still assembles a period
+in pandas before paging; native engine paging awaits measured production plans.
+See `docs/ACTIVATION_WORKSPACE.md` for the acceptance and verification record.
+
+### Flow A — an ordinary Atlas question
 ```
-Browser panel → api/client.js GET /payments/summary?mon_period=YYYYMM
-  → routes.py → db/connection.execute_query("get_payment_summary", ...)
+Browser (CommissionAssistant) → api/client.js POST /chat/stream
+  → explanation_routes.py → agent.run_agent_stream()
+    → Claude returns one resolve_measure_request contract (full core KB retained)
+      → measure_scope validates measures, dealer, periods and requested operation
+      → dealer_resolution turns a named dealer into one recorded code, or answers
+        (no match / several matches / lookup unreadable) without reading evidence
+      → tool_executor → db/measure_evidence → named existing queries/services
+        → queries.py owns CSV coverage and query reads
+      ← bounded projections with complete aggregates and source-specific coverage
+      → existing response builders validate evidence and compute derived figures
+      → narrative supplies structured evidence, scope, history and fact references
+    ← Claude composes prose; application checks references before publication
+      + application-owned tables, tool/period provenance and audit disclosures
+  ← NDJSON status/text events, then {type: complete, response, tools_called, ...}
+← progress events, then validated markdown and completion
+```
+The buffered `POST /chat` API shares this path. Provider draft prose is withheld,
+including text emitted before the interpretation tool; only a validated scope
+and evidence result can supply user-visible figures. Cancellation, retry budgets
+and NDJSON status/text/complete/error transport remain intact. Time to first answer
+text includes scope resolution, evidence retrieval and final composition.
+
+Scope interpretation is still probabilistic. Deterministic enforcement begins at
+the validated interpretation: the model cannot choose arbitrary data tools.
+The final composition stage uses application-owned fact references for values,
+accounts, periods and source identifiers. Unknown references and known invalid
+candidates are withheld; one repair shares the original deadline. Rejection or
+provider failure after retrieval returns a concise explanation failure with the
+retrieved evidence retained. Cancellation and the overall deadline retain their
+existing transport behavior. Reference checks constrain factual values but do
+not prove semantic correctness: a model can still misdescribe a supported fact.
+Public conversation tests and real-provider evaluations cover that residual risk.
+The latest question, reporting month and workspace context are distinct inputs;
+existing scoped conversation history supplies user-agreed definitions and accepted
+alternatives. Ambiguous requests clarify; clear unsupported requests select a
+KB-owned capability boundary without requesting unrelated evidence. General policy
+answers compose from validated core KB excerpts with paragraph context and the
+applicable eligibility limitation, suppressing internal query expressions. Dealer name/code
+lookups remain bounded and non-financial. A measure
+may name its dealer instead of giving a code; the model copies the name and the
+application resolves it via `get_dealer_codes` before the final answer is composed.
+
+The common zero-commission-causes and activation-eligibility policy questions use
+named KB topic selectors, avoiding model transcription of the source paragraph.
+Other policy questions retain the validated exact-excerpt path.
+
+`raw_data.measure_evidence` preserves each requested measure and month rather than
+overwriting repeated tool calls. Source gaps remain unavailable, not zero. Figures
+are projected before triage; capped breakdowns never establish complete totals.
+Financial selectors restrict individual KPIs/statements/lines. Inventory snapshots
+and financial statement lines are not added into misleading totals. Requested why
+answers may include bounded zero-record observations; conflicting eligibility
+definitions and missing historical source matches prevent unsupported causal claims.
+Eligibility-specific verification loads only that audit module. In sample mode,
+it leads with structured outside/inside counts under the KB's demo policy
+(invoice to first activation, calendar days 0–180 inclusive). Missing dates and
+activation-before-invoice records remain visible as data gaps. Saved trails
+without complete structured counts or with a different window cannot establish
+the demo classification. Detailed recorded verdicts sit below the exact Markdown
+heading `### Verification evidence`, rendered as an accessible, collapsed
+“View evidence” disclosure. In live mode, the Finance policy conflict remains
+explicit before recorded audit confidence. Single-month
+activation commission rankings accept a bounded top-N limit (maximum 100).
+Existing standalone tools and scoped finding explanations keep their contracts;
+ordinary chat no longer performs an unrestricted model-selected tool loop.
+See `docs/ATLAS_MEASURE_SCOPE.md` for capabilities and verification limits.
+
+### Explain Findings — scoped evidence and streamed generation
+
+Overview's Explain Findings action carries an exact dealer, month, finding
+module/type and, for inventory, required product code. After explicit submission,
+`POST /chat/explain` validates this identity against existing assurance/query
+evidence through `tool_executor.execute_explanation_evidence` and
+`db/explanation_evidence.py`. It then makes one explanation-generation call,
+without a model-selected tool round trip. The full core KB remains in the
+system prompt. Source provenance, missing-evidence qualifications and bounded
+detail counts accompany the evidence; a zero-record sample cannot establish
+population-wide root-cause counts.
+
+The response is NDJSON: incremental `text` events followed by one `complete`
+event carrying the existing response/tool/data metadata, or a sanitized `error`
+event. Partial answers remain visibly incomplete. Scoped conversations survive
+workspace navigation, and Stop cancels the active request. Edited questions and
+follow-ups use the evidence-bound ordinary chat path. See `docs/INFERENCE_LATENCY.md` for
+the wire contract, timing measurements and operational validation limits.
+
+Both paths share `agent/inference.py`: SDK retries are disabled, and one recovery
+allowance is shared by provider retry, scope repair and narrative repair within
+the existing 90-second request deadline. HTTP timeouts are explicit. Stable
+system/tool prefixes use provider prompt caching. Payload-free
+logs separate evidence, model calls, retries, first text, total duration and
+token/cache usage. Streaming cannot retry after emitting answer text. Blocking
+read-only data work runs in a worker thread; cancellation stops the waiting
+request but cannot forcibly terminate that worker's underlying read.
+
+### Flow B — a bounded data panel (e.g. Payment Intelligence)
+```
+Browser panel → api/client.js GET /payments?mon_period=YYYYMM&limit=50&offset=0
+  → routes.py validates bounded pagination/filter/sort parameters
+  → db/connection.execute_query("get_payment_summary", ...)
     → if PAYMENT_SOURCE=simulated: pandas over payment_simulation.csv
     → if PAYMENT_SOURCE=apdp:      db/apdp.py reads normalized.partner_settlements
-  ← Pydantic-shaped rows → panel table
+  ← {items (max 100), pagination, whole-filter-set summary} → panel table
 ```
-This is a plain data endpoint — no LLM involved.
+This is a plain data endpoint — no LLM involved. Inventory follows the same
+contract at `/inventory/comparison-page`. Search is debounced and stale HTTP
+requests are aborted. Payment Exceptions and All Payments share the single
+`/payments` collection with a status filter, so the APDP settlement dataset is
+not fetched twice. Only the active Payment sub-tab is mounted.
+
+Inventory's investigation workspace uses the same bounded comparison contract,
+with server finding filters and current-filter summary counts. Its selected
+dealer-product detail reads saved `inventory_mismatch` trails by exact
+`dealer_id:product_code` and period on demand. Comparison states remain separate
+from saved conclusions. Period-keyed state and TanStack Query prevent stale
+dealer evidence being shown under a new month. Invoice-window and completeness
+limitations are explicit; see `docs/INVENTORY_WORKSPACE.md`.
+
+Sample Inventory comparisons also join a separate immutable fictional purchase
+cohort from `inventory_demo_scenarios.csv`. Source IFS and activation CSVs remain
+unchanged; shared quantities follow existing pooled comparison semantics rather
+than introducing a monthly invoice window. `scenario_id`/`scenario_label` and
+coverage notes survive API and agent result compression. The UI exposes scenario
+search and suppresses older saved trails for those rows. New synthetic trails are
+inconclusive, and synthetic rows cannot supply carryover/alias evidence for other
+comparisons. The generator, manifest and walkthrough are documented in
+`docs/INVENTORY_DEMO_SCENARIOS.md`.
+
+Payment's expandable Verify rows use
+`GET /dealers/{dealer_id}/verification?mon_period=YYYYMM`. The compact response
+is fetched only when the row is first opened and cached by dealer-period; tab
+mounting no longer downloads verification evidence for every dealer.
+
+**Current storage-engine boundary:** sample mode still has to aggregate the
+period CSV in-process before applying the bounded page, and the APDP summary
+adapter currently reads the period reconciliation rows before slicing. The
+wire contract is already bounded, so these internals can move to native
+Presto/Postgres page/count/aggregate queries without changing the frontend.
+Live Presto remains unimplemented; do not claim database-level page efficiency
+until that path is wired and measured.
 
 ### Flow C — the audit trail (generate + inspect verification chains)
 ```
@@ -277,7 +660,25 @@ Later, GET /assurance/audit/trails[/{partner}] and /breakdown read them back for
 inspection and evaluation (e.g. "all trails where step 6 raised a caveat").
 ```
 
-### Flow D — APDP ingestion (how live data will reach FBB)
+### Audit saved-evidence workspace
+
+`api/audit_workspace_routes.py` adds `/assurance/audit/records`, `/records/export`
+and `/records/{subject}` without breaking legacy audit readers. The collection is
+compact and bounded (maximum 100); server search/filter/sort precedes pagination,
+with separate full-module and whole-filter summaries. `db/audit_workspace.py`
+reuses existing period-scoped audit-store reads and preserves recorded provenance.
+Optional `trail_id` isolates a specific saved row when subjects have duplicates.
+Historical Eligibility wording is qualified in additive presentation fields;
+original results and conclusions remain unchanged.
+
+AuditTrailPanel uses TanStack Query for page/evidence caching and cancellation;
+steps load only on evidence selection. Reports and full-match CSV are downloads.
+Run remains explicit and states module/period replacement and missing history.
+Database materialization is still period-wide: compact projection and native
+page/count/aggregate optimization are deferred pending measured query plans.
+See `docs/AUDIT_WORKSPACE.md` for scope and verification.
+
+### Flow D — APDP ingestion, production path (Kafka → Flink → Postgres)
 ```
 Dealer CSV drop → ingestion/pollers/telecom_batch.py → Kafka raw topic
   → flink_jobs/normalizer (Flink) → canonical event → Kafka normalized topic
@@ -285,6 +686,72 @@ Dealer CSV drop → ingestion/pollers/telecom_batch.py → Kafka raw topic
       → migrate_v1_3_0.sql's partner_settlements view
         → FBB db/apdp.py reads it when PAYMENT_SOURCE=apdp
 ```
+**Status:** the normaliser logic is complete + tested, but the Flink
+Docker build is broken (`apache-flink==1.18.1` pip timeout) and the
+Kafka→Postgres sink was never wired. This is the eventual production
+path; not what runs today.
+
+### Flow D′ — APDP demo path (bypass Kafka + Flink)
+```
+apdp/tools/generate_telecom_fixtures.py         (samples FBB dealer IDs)
+  → dealer_sales.csv + commission_statements.csv + settlement_records.csv
+    → apdp/tools/ingest_fixtures_to_postgres.py (uses normalizer_core directly)
+      → Postgres normalized.transactions
+        → normalized.partner_settlements view
+          → FBB db/apdp.py reads it when PAYMENT_SOURCE=apdp
+```
+This is what actually runs in the demo. Same normaliser code as Flow D
+(pure-Python `normalizer_core.py` is the shared brain), just skipping
+the streaming plumbing. On Render, the seeded Postgres state is
+packaged as `infra/postgres/apdp_seed.sql` and applied on backend boot
+by `main.py`'s lifespan hook — see the "APDP seed loading" abstraction
+in §5.
+
+### Flow E — a Dealer Statement (per-period, Finance-internal)
+```
+Statement button in Payment Intelligence dealer row
+  → api/client.js GET /dealers/{dealer_id}/statement?mon_period=YYYYMM
+    → routes.py → db/dealer_statement.compose_dealer_statement()
+      → execute_query("get_dealer_summary", ...)         (commission side)
+      → execute_query("get_orsc_summary", ...)           (subscription revenue,
+                                                          informational)
+      → subscription_evidence.summaries(period)          (subscription commission
+                                                          owed/settled/outstanding)
+      → payment_data.payment_lookup(period, source)      (settlement side,
+                                                          respects PAYMENT_SOURCE)
+      → audit_store.get_partner_trail(...) per module    (linked evidence)
+    ← DealerStatementResponse (Position headline + all four sections)
+← DealerStatementModal renders. Copy-as-markdown / download-as-.md.
+```
+This is a formatter, not a new data source — every underlying number
+comes from an existing query or audit trail. The Position headline
+(PAID_IN_FULL / UNDERPAID / OVERPAID) is computed from the same
+tolerance rules as the payment_reconciliation audit module, so the
+statement and the audit trail never contradict each other on the same
+(dealer, period).
+
+### Flow F — Current Position card on Overview
+```
+Overview → GET /assurance/overview?mon_period=…&limit=5&offset=…
+  → full-period finding/unique-dealer/module counts + compact payment totals
+    + bounded dealer queue (severity, outstanding amount, dealer code order)
+Comparison → GET /payments/position?mon_period=… (aggregate-only)
+Full export → GET /assurance/overview/export?mon_period=… (CSV)
+```
+`assurance/overview.py` aggregates complete registered findings before filtering
+or pagination. Payment findings and amounts are derived from the same
+source-aware payment summary used by Payments, without a second exception read.
+Amounts are joined once per dealer, never summed across module findings.
+Partial source failures are explicit and block a supposedly complete export.
+The legacy `/assurance/status` still provides previews, now with total/truncation
+metadata; it does not power the new Overview. The UI caches bounded queue pages
+with TanStack Query and resets period-specific state to avoid stale labels.
+Evidence links carry module/dealer intent; payment links explicitly choose
+Exceptions. Existing module-specific audit chains provide evidence on demand.
+Inventory uses the exact dealer/product subject; commission uses its saved
+dealer chain, activation uses compact dealer verification, and payment uses
+the dealer statement. Persisted evidence retains its own source and timestamp.
+Database-native paging remains deferred pending measured live query plans.
 
 ---
 
@@ -308,10 +775,25 @@ needed via the `get_kb_section` tool. *Why:* the full KB in every prompt burned
 too much of the per-minute token budget on cold runs; the split keeps prompts
 small while keeping the detail reachable.
 
-**The agent loop (`agent/agent.py`).** `run_agent()` runs a bounded tool-use
-loop (`MAX_TOOL_ITERATIONS = 5`) with rate-limit retries, and returns both the
-text answer and the list of tools called. *Why the cap:* protects against
-pathological loops and runaway token spend.
+**The ordinary agent turn (`agent/agent.py`).** `run_agent()` makes a structured
+scope-resolution call, retrieves and validates bounded evidence, then delegates
+final prose to `agent/narrative.py`. Claude receives structured facts and writes
+the answer; existing builders still own validation, derived arithmetic and tables.
+Policy and evidence answers use composition. Missing-scope clarifications,
+unresolved dealer names and portfolio discovery complete directly using
+application-owned responses, so asking for an account or period cannot fail
+because another composition call is unavailable. Malformed scope output may be
+repaired once; it must validate before any evidence read. Missing fields never
+authorize an invented account or period. Repaired evidence requests also preserve
+the original independently validated account/name, periods, filter and request
+kind; changed or untrustworthy bounds yield clarification. Scope repair, provider retry and narrative
+repair share one recovery allowance and the original deadline. No provisional
+model claims are published. Returned evidence and tool traces retain their public shape.
+Scope diagnostics record request ID, stage, reason category and repair count;
+they exclude model payloads. Buffered operational failures carry a sanitized
+`error` code, matching the streamed distinction between failure and completion.
+Historical latency measurements describe their recorded protocol, not a guarantee
+for this additional generation step.
 
 **Tool executor's two routing paths (`agent/tool_executor.py`).** QUERY tools go
 through `execute_query`; DIRECT tools (`get_kb_section`, dealer dossier) call a
@@ -328,12 +810,83 @@ is a *structured, persisted* object (not a text explanation): an ordered list of
 steps, each with what-was-checked / result / caveat, plus a conclusion and
 confidence. `AuditModule` (`audit/base.py`) makes the whole machinery
 domain-agnostic — a new audit domain is one new `*_audit.py` + a `register(...)`
-call, with no changes to storage, endpoints, or UI. *Why:* the trail must be
+call, with no changes to storage, endpoints, or UI. Each module exposes
+`run_period(period, source)` (the registered builder, persisted only by the run
+endpoint) and `run_dealer(period, dealer_id, source)`, which filters the same
+private `_select_subjects` that `run_period` uses to one dealer and never
+persists; `verification_outcome` calls `run_dealer` so a dealer's on-request trail
+cannot drift from its slice of a full run. *Why:* the trail must be
 queryable for audit ("prove this claim") and for evaluation ("how often did we
 mislabel a data gap as not-paid?"), which a text blob can't support.
 
 **`PeriodContext` (frontend).** The selected reporting month is global app state,
 synced to the URL, so all panels stay on the same period and links are shareable.
+
+**Workspace loading and activity.** `App.jsx` loads workspaces on demand with
+per-workspace loading/error boundaries. Visited workspaces stay mounted to retain
+dealer selections, filters and investigations. `WorkspaceActivityBoundary`
+freezes a hidden workspace's reporting context, and `useWorkspaceQuery` disables
+its query observers. Returning delivers the current global month immediately;
+old-month placeholder figures are not relabeled as current evidence. Initial
+collection reads wait for period metadata so the default comparison is known.
+See `docs/PERFORMANCE_IMPROVEMENTS.md` for measurements and verification.
+
+**Bounded intelligence collections (`PaginationMeta` + page response models).**
+Inventory and Payment never return an unbounded array to their main tables.
+The server owns search, filters, deterministic sorting, total counts, and
+whole-filter-set aggregates; the browser renders at most 100 records and uses
+shared pagination controls. *Why:* virtualization alone reduces DOM work but
+does not reduce payload, JSON parsing, or browser memory. The bounded wire
+contract is the stable seam that lets the future data engine evolve safely.
+
+**On-demand verification (`useLazyDealerVerification`).** Expandable evidence
+is keyed and cached by `(period, dealer_id)`, with concurrent requests
+deduplicated. *Why:* verification is a detail workflow, not a prerequisite for
+showing a table page.
+
+**TanStack Query client (`frontend/src/main.jsx`).** Collection pages are keyed
+by period + pagination + search + filters, stay fresh for 60 seconds, and are
+garbage-collected after five minutes. This is intentionally a browser cache,
+not a source of truth; the backend remains authoritative.
+
+**HTTP performance observability (`backend/main.py`).** Every response includes
+a `Server-Timing` duration and emits a payload-free structured timing log. The
+middleware intentionally logs no SQL or financial record contents.
+
+**Sample activation aggregation (`db/queries.py`).** Dealer metadata, counts and
+denomination totals are grouped in batches instead of repeating pandas grouping
+for each dealer. Dealer totals retain the original `Series.sum` semantics and
+literal first-row metadata (including nulls). This is an optimization of recorded
+source aggregation, not commission recalculation or a cached financial balance.
+
+**Optional APDP seed loading (`backend/main.py::_seed_apdp_if_empty` +
+`infra/postgres/apdp_seed.sql`).** On backend startup, when
+`PAYMENT_SOURCE=apdp` and `normalized.transactions` is empty (or the
+table is missing entirely), the FBB backend applies the packaged seed
+via psycopg2. Idempotent (COUNT-and-skip on subsequent boots), non-fatal
+(a failure logs and lets the app boot — Payment tab shows an empty
+state with the Live·APDP badge rather than a 500). *Why:* Render's
+managed Postgres has no way to inject fixture data at provision time;
+this hook is how the demo gets ~23k transaction rows into the DB on
+first boot without an operator running `psql` by hand. This path is disabled
+in the localhost-aligned Render preview. An APDP-enabled environment's first boot pays
+~30-60s for the load; every boot after is ~50ms.
+
+**Dealer-statement composer (`backend/db/dealer_statement.py`).** A
+formatter, not a new data source. Reads commission-side (`get_dealer_summary`)
++ subscription revenue (`get_orsc_summary`, informational) + subscription
+commission (`subscription_evidence.summaries`, its own settlement) +
+payment-side (`payment_data.payment_lookup` — respects `PAYMENT_SOURCE`,
+activation commission only) + linked audit trails
+(`audit_store.get_partner_trail` per registered module) and shapes them into
+one per-period statement dict. `combined` is a plain sum of the two commission
+types and includes subscription commission only when it is recorded; the
+subscription sides carry a status (recorded / not_recorded / unavailable,
+using `queries.has_source_period` coverage) so an uncovered or unreadable
+source is never shown as zero or "none". The Position headline (PAID_IN_FULL / UNDERPAID / OVERPAID) uses
+the same tolerance rules as `payment_reconciliation_audit`, so a
+dealer's Statement and their audit trail never contradict each other
+on the same (dealer, period).
 
 ---
 
@@ -394,38 +947,58 @@ Things that are deliberately incomplete, temporary, or non-obvious — don't
   `NotImplementedError`. `USE_SAMPLE_DATA=true` is the permanent mode until a
   Presto service account is provisioned. The SQL strings in `queries.py` exist
   for that future path but are not executed today — the pandas handlers are.
-- **Payment data is simulated by default.** `payment_simulation.csv` is generated
-  from real commission/exception data (`data/generate_payment_simulation.py`).
-  `PAYMENT_SOURCE=apdp` switches to live APDP data, but that requires the APDP
-  stack running and its telecom feed populated.
-- **APDP is partially deployed.** The normaliser logic, sink, and schema exist and
-  are tested, but the end-to-end pipeline is not continuously running; it's
-  brought up on demand. See `apdp/CLAUDE.md` / `PROGRESS.md` for current state.
-- **Audit trail confidence reads LOW on sample data.** Every zero-commission
-  trail comes back LOW confidence because the sample USP product codes don't
-  overlap the activation product codes (trips step 2) and sample payments have
-  adjacent-period partials (trips step 5). This is the system being honest about
-  ambiguous sample data, not a bug. An open design question (in `PROGRESS.md`):
-  should a partial payment be its own conclusion (`PARTIALLY_PAID`) rather than
-  `NOT_PAID`/LOW? Validate on real trails before trusting confidence at face value.
-- **Audit table name vs generality.** The audit table is still called
-  `audit.zero_commission_trail` even though the layer is now generic (it has a
-  `module` column). Renaming it is a migration deferred until a second module lands.
-- **`ensure_schema()` self-heal.** `audit_store.py` runs an idempotent ALTER on
-  first write to add the `module` column to older audit DBs. It's a convenience so
-  a pre-existing DB doesn't need a manual migration — intentional, not a leak.
-- **No auth.** Any caller can hit any endpoint and query any dealer. Fine for the
-  current demo/pilot stage; a real deployment needs authn/authz (flagged in
-  `docs/PRODUCTION_READINESS_LEARNING_PLAN.md`).
+- **APDP demo path bypasses Kafka + Flink.** Production would ingest via
+  Kafka topics → Flink normaliser → Postgres sink. Today the Flink Docker
+  build fails on the `apache-flink==1.18.1` pip timeout and the Kafka→Postgres
+  sink was never wired (see `apdp/CLAUDE.md`). We work around it: fixture
+  CSVs → `apdp/tools/ingest_fixtures_to_postgres.py` runs the same
+  `normalizer_core.py` code directly + INSERTs via psycopg2. The
+  view (`normalized.partner_settlements`) and everything downstream is
+  identical to the eventual live path — the shortcut is only at ingestion.
+- **APDP + audit share one Postgres.** Locally and on Render, the FBB
+  `audit` schema and the APDP `raw` + `normalized` schemas live in the
+  same managed Postgres (`fbb-audit-pg`). One connection, one bill, one
+  place to reason about. Production would put APDP behind its own DB
+  and network boundary; the demo doesn't need that separation.
+- **APDP data on Render is seeded from `infra/postgres/apdp_seed.sql`.**
+  ~23 MB SQL file baked into the Docker image, applied on backend
+  startup via `main.py`'s lifespan hook when
+  `PAYMENT_SOURCE=apdp` AND `normalized.transactions` is empty.
+  Idempotent — skips instantly on subsequent boots.
+- **Fixture-generator dealer roster** in `apdp/tools/generate_telecom_fixtures.py`
+  loads dealer IDs from `data/samples/fbb_comm_dev_act_<period>.csv` so
+  the same partner appears on both sides of the reconciliation. Falls
+  back to a legacy 5-dealer hardcoded list if the FBB CSVs aren't
+  reachable (isolated APDP checkouts, testing).
+- **Audit trail confidence on the `zero_commission` module reads LOW
+  everywhere on sample data.** This is the module being honest about
+  ambiguous data: sample commission rate-card product codes don't overlap activation codes
+  (trips step 2), simulated payments carry adjacent-period partials
+  (trips step 5). Use `payment_reconciliation` for the broader signal
+  — on APDP data it produces a rich UNDERPAID / OVERPAID /
+  DISPUTED_ROUNDING / PAID_IN_FULL spread.
+- **`ensure_schema()` self-heal.** `audit_store.py` runs idempotent
+  ALTERs on first write to add the `module` column and rename the
+  legacy `zero_commission_trail` table to `verification_trail` on
+  older audit DBs. Intentional convenience so a pre-existing DB
+  doesn't need an operator migration.
+- **No auth.** Any caller can hit any endpoint and query any dealer.
+  Fine for the pilot; a real deployment needs authn/authz (flagged in
+  `docs/PRODUCTION_READINESS_LEARNING_PLAN.md`). The GM preview is
+  gated by HTTP Basic Auth at the FastAPI layer — not a real user
+  system.
 - **No CI linter; one known-flaky test.**
-  `test_inventory_agent.py::test_kb_inventory_rules_grounded` is a live-LLM test
-  and can flake. GitHub Actions runs the non-eval suite only.
-- **`uv.lock` vs `requirements.txt`.** Both exist at the root/backend. The pinned
-  `backend/requirements.txt` is the source of truth for installs; `uv.lock` is not
-  currently the managed lockfile.
-- **Two separate docker-compose files.** Root `docker-compose.yml` is *only* the
-  FBB audit Postgres + backup. APDP's full stack is `apdp/docker-compose.yml`.
-  They are independent; don't expect one to bring up the other.
+  `test_inventory_agent.py::test_kb_inventory_rules_grounded` is a
+  live-LLM test that occasionally emits "fraud" in a KB-forbidden
+  negation. GitHub Actions runs the non-eval suite only.
+- **`uv.lock` vs `requirements.txt`.** Both exist at the root/backend.
+  The pinned `backend/requirements.txt` is the source of truth for
+  installs; `uv.lock` is not currently the managed lockfile.
+- **Two separate docker-compose files.** Root `docker-compose.yml` is
+  *only* the FBB audit Postgres + backup. APDP's full stack is
+  `apdp/docker-compose.yml`. They are independent; don't expect one
+  to bring up the other. Because the demo bypasses Kafka/Flink, you
+  only need the root compose to run locally.
 
 ---
 
@@ -456,8 +1029,38 @@ cd frontend && npm install && npm run dev
 # 5. Tests (sample mode, no external services)
 .venv/bin/python -m pytest backend/tests -q
 RUN_EVALS=1 .venv/bin/python -m pytest backend/tests/test_evals.py -q   # opt-in, billable
+
+# 6. (Optional) APDP live-data path — generate + load fixtures into the
+#     same Postgres from step 2, then flip PAYMENT_SOURCE=apdp on the backend.
+python apdp/tools/generate_telecom_fixtures.py --period 202602 --out /tmp/apdp-fixtures
+python apdp/tools/generate_telecom_fixtures.py --period 202603 --out /tmp/apdp-fixtures
+PGPASSWORD=fbb_audit_pass psql -h localhost -p 5544 -U fbb_audit -d fbb_audit \
+  -f apdp/infra/postgres/init.sql -f apdp/migrate_v1_3_0.sql       # apply APDP schemas
+.venv/bin/python apdp/tools/ingest_fixtures_to_postgres.py --fixtures /tmp/apdp-fixtures --period 202602
+.venv/bin/python apdp/tools/ingest_fixtures_to_postgres.py --fixtures /tmp/apdp-fixtures --period 202603
+# Now re-run step 3 with PAYMENT_SOURCE=apdp APDP_PG_HOST=localhost APDP_PG_PORT=5544
+#   APDP_PG_DB=fbb_audit APDP_PG_USER=fbb_audit APDP_PG_PASSWORD=fbb_audit_pass
 ```
 
 The app runs fully on sample data without Docker or Presto — only the Audit
-Trails tab and `PAYMENT_SOURCE=apdp` need Postgres. APDP has its own setup; see
-`apdp/README.md` and `apdp/CLAUDE.md`.
+Trails tab and `PAYMENT_SOURCE=apdp` need Postgres. Step 6 is what the Render
+deploy does automatically via the packaged `infra/postgres/apdp_seed.sql`. APDP
+has its own setup; see `apdp/README.md` and `apdp/CLAUDE.md`.
+
+
+## Payment investigation workspace (September 13)
+
+Payment uses full-period financial totals above a bounded account collection and
+an exact dealer-period detail view. Exceptions and All Payments share `/payments`.
+`/payments/export` uses the same filters and deterministic ordering over one source
+snapshot, exporting all matching accounts. `/payments/accounts/{dealer_id}` resolves
+an exact account; `/payments/analytics` bounds existing comparison/Health results.
+The existing legacy endpoints remain compatible. Native source query pagination
+remains deferred pending measured query plans.
+
+Activation verification uses dealer-period TanStack Query state; saved payment
+reconciliation trails load on request without initiating audits. Payment-scoped AI
+threads reuse the shared Atlas conversation lifecycle. Exact Activation navigation now
+opens account detail rather than a substring-search list. Source selection,
+retrieval time and saved assessment provenance remain distinct. Full contract,
+limitations and verification: `docs/PAYMENT_WORKSPACE.md`.

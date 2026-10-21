@@ -1,0 +1,1857 @@
+{
+  "schema_version": 1,
+  "dataset_id": "inventory_shared_synthetic_v1",
+  "provenance": {
+    "source": "Fictional purchase evidence for sample-mode demonstration only; not IFS source invoices.",
+    "semantics": "Immutable shared dataset: identical purchase quantities apply across all reporting periods using existing pooled comparison semantics.",
+    "limitations": "No monthly purchase window, replenishment, stock balance, carryover, alias resolution, or real-world invoice completeness is asserted.",
+    "selection": "Fixed named cohort absent from base IFS in all six months; scenarios selected for June comparisons, not representative coverage.",
+    "holdouts": "Blank CSV quantities and null manifest quantities retain unknown purchases, gaps, and percentages; they are not zero-quantity invoices.",
+    "integration": "Sample-only exact dealer/product join; reject base evidence collisions; apply nonblank quantities only; preserve synthetic provenance in downstream displays and audit evidence.",
+    "activation_sources": "January and April-June are existing synthetic extensions; February/March are preserved reference fixtures. This generator changes none of them."
+  },
+  "periods": [
+    "202601",
+    "202602",
+    "202603",
+    "202604",
+    "202605",
+    "202606"
+  ],
+  "cohort_size": 16,
+  "synthetic_purchase_pairs": 12,
+  "retained_missing_pairs": 4,
+  "source_sha256": {
+    "ifs_invoice_history.csv": "1f4241dc033e5d37130d218778572c7aacd0f5e448e638dc61c3c4ee5533d17e",
+    "fbb_comm_dev_act_202601.csv": "7c524bbb617e6abfe65c13cfab1b26646b7fd2d5e4663910dff7283a234a9755",
+    "fbb_comm_dev_act_202602.csv": "68cf30f375388c4c2a5374c40b41e73b40d8b5c770e5bc8ce7f4adc0774f1fdb",
+    "fbb_comm_dev_act_202603.csv": "d34f053e5cd6c5c06f09bd27d5ffdd428c3a4f4511c3b91cc656e7f300ce004f",
+    "fbb_comm_dev_act_202604.csv": "00430a7e5ba3916fef7ad43c800d41e1f7cc3347b3b70e4d63be56dd0d2b746d",
+    "fbb_comm_dev_act_202605.csv": "9ff6dc5601fdb0d28230ca8f2783347c1697f90c9e81d6179e2d28178b3700fa",
+    "fbb_comm_dev_act_202606.csv": "e66bc85cf86e9f2fd21b2c12e849986b2474f1a276c6fe771728a71efc1c67b2"
+  },
+  "monthly_outcomes": {
+    "202601": {
+      "baseline": {
+        "comparison_count": 3927,
+        "observed_mismatches": 10,
+        "observed_excess_units": 131.0,
+        "invoice_gaps": 3868,
+        "within_purchases": 49,
+        "exact_matches": 6
+      },
+      "enriched": {
+        "comparison_count": 3927,
+        "observed_mismatches": 10,
+        "observed_excess_units": 131.0,
+        "invoice_gaps": 3856,
+        "within_purchases": 61,
+        "exact_matches": 6
+      }
+    },
+    "202602": {
+      "baseline": {
+        "comparison_count": 4067,
+        "observed_mismatches": 12,
+        "observed_excess_units": 162.0,
+        "invoice_gaps": 4006,
+        "within_purchases": 49,
+        "exact_matches": 5
+      },
+      "enriched": {
+        "comparison_count": 4067,
+        "observed_mismatches": 12,
+        "observed_excess_units": 162.0,
+        "invoice_gaps": 3994,
+        "within_purchases": 61,
+        "exact_matches": 5
+      }
+    },
+    "202603": {
+      "baseline": {
+        "comparison_count": 4236,
+        "observed_mismatches": 24,
+        "observed_excess_units": 224.0,
+        "invoice_gaps": 4150,
+        "within_purchases": 62,
+        "exact_matches": 9
+      },
+      "enriched": {
+        "comparison_count": 4236,
+        "observed_mismatches": 27,
+        "observed_excess_units": 284.0,
+        "invoice_gaps": 4138,
+        "within_purchases": 71,
+        "exact_matches": 9
+      }
+    },
+    "202604": {
+      "baseline": {
+        "comparison_count": 4169,
+        "observed_mismatches": 24,
+        "observed_excess_units": 200.0,
+        "invoice_gaps": 4084,
+        "within_purchases": 61,
+        "exact_matches": 7
+      },
+      "enriched": {
+        "comparison_count": 4169,
+        "observed_mismatches": 27,
+        "observed_excess_units": 238.0,
+        "invoice_gaps": 4072,
+        "within_purchases": 70,
+        "exact_matches": 7
+      }
+    },
+    "202605": {
+      "baseline": {
+        "comparison_count": 4236,
+        "observed_mismatches": 26,
+        "observed_excess_units": 247.0,
+        "invoice_gaps": 4150,
+        "within_purchases": 60,
+        "exact_matches": 9
+      },
+      "enriched": {
+        "comparison_count": 4236,
+        "observed_mismatches": 29,
+        "observed_excess_units": 325.0,
+        "invoice_gaps": 4138,
+        "within_purchases": 69,
+        "exact_matches": 9
+      }
+    },
+    "202606": {
+      "baseline": {
+        "comparison_count": 4236,
+        "observed_mismatches": 29,
+        "observed_excess_units": 275.0,
+        "invoice_gaps": 4150,
+        "within_purchases": 57,
+        "exact_matches": 7
+      },
+      "enriched": {
+        "comparison_count": 4236,
+        "observed_mismatches": 35,
+        "observed_excess_units": 377.0,
+        "invoice_gaps": 4138,
+        "within_purchases": 63,
+        "exact_matches": 10
+      }
+    }
+  },
+  "scenarios": [
+    {
+      "scenario_id": "synthetic_shared_exact_74050_1283279",
+      "scenario_label": "Synthetic shared purchase evidence - June exact match",
+      "dealer_id": "74050",
+      "dealer_name": "Stone Light Networks",
+      "product_code": "1283279",
+      "product_name": "TOZED,ROUMIF4389,ROUMIF4389,4G MIFI,MIFI,ROUMIF4389,ROUTER TRADE",
+      "total_units_purchased": 379,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 61,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 61,
+            "total_units_purchased": 379,
+            "inventory_gap": -318,
+            "gap_pct": -83.9,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 66,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 66,
+            "total_units_purchased": 379,
+            "inventory_gap": -313,
+            "gap_pct": -82.6,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 343,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 343,
+            "total_units_purchased": 379,
+            "inventory_gap": -36,
+            "gap_pct": -9.5,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 326,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 326,
+            "total_units_purchased": 379,
+            "inventory_gap": -53,
+            "gap_pct": -14.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 356,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 356,
+            "total_units_purchased": 379,
+            "inventory_gap": -23,
+            "gap_pct": -6.1,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 379,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 379,
+            "total_units_purchased": 379,
+            "inventory_gap": 0,
+            "gap_pct": 0.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_exact_296065_1212360",
+      "scenario_label": "Synthetic shared purchase evidence - June exact match",
+      "dealer_id": "296065",
+      "dealer_name": "River Isle Ventures",
+      "product_code": "1212360",
+      "product_name": "ZTE,MF935,MF935,4G,MIFI,MF935,ROUTER TRADE",
+      "total_units_purchased": 159,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 133,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 133,
+            "total_units_purchased": 159,
+            "inventory_gap": -26,
+            "gap_pct": -16.4,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 151,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 151,
+            "total_units_purchased": 159,
+            "inventory_gap": -8,
+            "gap_pct": -5.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 151,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 151,
+            "total_units_purchased": 159,
+            "inventory_gap": -8,
+            "gap_pct": -5.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 146,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 146,
+            "total_units_purchased": 159,
+            "inventory_gap": -13,
+            "gap_pct": -8.2,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 153,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 153,
+            "total_units_purchased": 159,
+            "inventory_gap": -6,
+            "gap_pct": -3.8,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 159,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 159,
+            "total_units_purchased": 159,
+            "inventory_gap": 0,
+            "gap_pct": 0.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_exact_98053_1283280",
+      "scenario_label": "Synthetic shared purchase evidence - June exact match",
+      "dealer_id": "98053",
+      "dealer_name": "Raven Sky Networks",
+      "product_code": "1283280",
+      "product_name": "TOZED,ROUMOD4390,ROUMOD4390,4G CPE WITH UPS,MODEM,ROUMOD4390,ROUTER TRADE",
+      "total_units_purchased": 101,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 87,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 87,
+            "total_units_purchased": 101,
+            "inventory_gap": -14,
+            "gap_pct": -13.9,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 99,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 99,
+            "total_units_purchased": 101,
+            "inventory_gap": -2,
+            "gap_pct": -2.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 93,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 93,
+            "total_units_purchased": 101,
+            "inventory_gap": -8,
+            "gap_pct": -7.9,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 87,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 87,
+            "total_units_purchased": 101,
+            "inventory_gap": -14,
+            "gap_pct": -13.9,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 96,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 96,
+            "total_units_purchased": 101,
+            "inventory_gap": -5,
+            "gap_pct": -5.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 101,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 101,
+            "total_units_purchased": 101,
+            "inventory_gap": 0,
+            "gap_pct": 0.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_cushion_69031_1212360",
+      "scenario_label": "Synthetic shared purchase evidence - June purchases exceed activations",
+      "dealer_id": "69031",
+      "dealer_name": "Azure Leaf Communications",
+      "product_code": "1212360",
+      "product_name": "ZTE,MF935,MF935,4G,MIFI,MF935,ROUTER TRADE",
+      "total_units_purchased": 300,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 110,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 110,
+            "total_units_purchased": 300,
+            "inventory_gap": -190,
+            "gap_pct": -63.3,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 125,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 125,
+            "total_units_purchased": 300,
+            "inventory_gap": -175,
+            "gap_pct": -58.3,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 222,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 222,
+            "total_units_purchased": 300,
+            "inventory_gap": -78,
+            "gap_pct": -26.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 206,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 206,
+            "total_units_purchased": 300,
+            "inventory_gap": -94,
+            "gap_pct": -31.3,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 236,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 236,
+            "total_units_purchased": 300,
+            "inventory_gap": -64,
+            "gap_pct": -21.3,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 246,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 246,
+            "total_units_purchased": 300,
+            "inventory_gap": -54,
+            "gap_pct": -18.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_cushion_73037_1186254",
+      "scenario_label": "Synthetic shared purchase evidence - June purchases exceed activations",
+      "dealer_id": "73037",
+      "dealer_name": "Azure Trail Networks",
+      "product_code": "1186254",
+      "product_name": "TOZED,MIFI,4G,ZLT M30S,MODEM,ROUMOD1491,MODEM TRADE",
+      "total_units_purchased": 180,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 92,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 92,
+            "total_units_purchased": 180,
+            "inventory_gap": -88,
+            "gap_pct": -48.9,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 104,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 104,
+            "total_units_purchased": 180,
+            "inventory_gap": -76,
+            "gap_pct": -42.2,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 141,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 141,
+            "total_units_purchased": 180,
+            "inventory_gap": -39,
+            "gap_pct": -21.7,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 136,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 136,
+            "total_units_purchased": 180,
+            "inventory_gap": -44,
+            "gap_pct": -24.4,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 145,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 145,
+            "total_units_purchased": 180,
+            "inventory_gap": -35,
+            "gap_pct": -19.4,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 152,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 152,
+            "total_units_purchased": 180,
+            "inventory_gap": -28,
+            "gap_pct": -15.6,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_cushion_74050_1283281",
+      "scenario_label": "Synthetic shared purchase evidence - June purchases exceed activations",
+      "dealer_id": "74050",
+      "dealer_name": "Stone Light Networks",
+      "product_code": "1283281",
+      "product_name": "ZTE,ROUMOD4391,ROUMOD4391,4G CPE WITH UPS,MODEM,ROUMOD4391,ROUTER TRADE",
+      "total_units_purchased": 100,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 75,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 75,
+            "total_units_purchased": 100,
+            "inventory_gap": -25,
+            "gap_pct": -25.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 81,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 81,
+            "total_units_purchased": 100,
+            "inventory_gap": -19,
+            "gap_pct": -19.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 72,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 72,
+            "total_units_purchased": 100,
+            "inventory_gap": -28,
+            "gap_pct": -28.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 70,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 70,
+            "total_units_purchased": 100,
+            "inventory_gap": -30,
+            "gap_pct": -30.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 75,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 75,
+            "total_units_purchased": 100,
+            "inventory_gap": -25,
+            "gap_pct": -25.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 79,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 79,
+            "total_units_purchased": 100,
+            "inventory_gap": -21,
+            "gap_pct": -21.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_one_unit_excess_90032_1283279",
+      "scenario_label": "Synthetic shared purchase evidence - June one-unit activation excess",
+      "dealer_id": "90032",
+      "dealer_name": "Quartz Meadow Networks",
+      "product_code": "1283279",
+      "product_name": "TOZED,ROUMIF4389,ROUMIF4389,4G MIFI,MIFI,ROUMIF4389,ROUTER TRADE",
+      "total_units_purchased": 186,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 40,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 40,
+            "total_units_purchased": 186,
+            "inventory_gap": -146,
+            "gap_pct": -78.5,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 46,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 46,
+            "total_units_purchased": 186,
+            "inventory_gap": -140,
+            "gap_pct": -75.3,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 173,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 173,
+            "total_units_purchased": 186,
+            "inventory_gap": -13,
+            "gap_pct": -7.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 163,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 163,
+            "total_units_purchased": 186,
+            "inventory_gap": -23,
+            "gap_pct": -12.4,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 180,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 180,
+            "total_units_purchased": 186,
+            "inventory_gap": -6,
+            "gap_pct": -3.2,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 187,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 187,
+            "total_units_purchased": 186,
+            "inventory_gap": 1,
+            "gap_pct": 0.5,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_one_unit_excess_19958_1283280",
+      "scenario_label": "Synthetic shared purchase evidence - June one-unit activation excess",
+      "dealer_id": "19958",
+      "dealer_name": "Meadow Wind Networks",
+      "product_code": "1283280",
+      "product_name": "TOZED,ROUMOD4390,ROUMOD4390,4G CPE WITH UPS,MODEM,ROUMOD4390,ROUTER TRADE",
+      "total_units_purchased": 98,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 62,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 62,
+            "total_units_purchased": 98,
+            "inventory_gap": -36,
+            "gap_pct": -36.7,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 69,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 69,
+            "total_units_purchased": 98,
+            "inventory_gap": -29,
+            "gap_pct": -29.6,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 87,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 87,
+            "total_units_purchased": 98,
+            "inventory_gap": -11,
+            "gap_pct": -11.2,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 83,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 83,
+            "total_units_purchased": 98,
+            "inventory_gap": -15,
+            "gap_pct": -15.3,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 93,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 93,
+            "total_units_purchased": 98,
+            "inventory_gap": -5,
+            "gap_pct": -5.1,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 99,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 99,
+            "total_units_purchased": 98,
+            "inventory_gap": 1,
+            "gap_pct": 1.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_one_unit_excess_357063_1229866",
+      "scenario_label": "Synthetic shared purchase evidence - June one-unit activation excess",
+      "dealer_id": "357063",
+      "dealer_name": "Azure Leaf Communications",
+      "product_code": "1229866",
+      "product_name": "ZTE,INDOOR,4G,CAT4 CPE,WIRELESS,K10,ROUTER TRADE",
+      "total_units_purchased": 76,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 11,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 11,
+            "total_units_purchased": 76,
+            "inventory_gap": -65,
+            "gap_pct": -85.5,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 11,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 11,
+            "total_units_purchased": 76,
+            "inventory_gap": -65,
+            "gap_pct": -85.5,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 67,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 67,
+            "total_units_purchased": 76,
+            "inventory_gap": -9,
+            "gap_pct": -11.8,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 63,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 63,
+            "total_units_purchased": 76,
+            "inventory_gap": -13,
+            "gap_pct": -17.1,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 75,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 75,
+            "total_units_purchased": 76,
+            "inventory_gap": -1,
+            "gap_pct": -1.3,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 77,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 77,
+            "total_units_purchased": 76,
+            "inventory_gap": 1,
+            "gap_pct": 1.3,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_larger_excess_98052_1186254",
+      "scenario_label": "Synthetic shared purchase evidence - June larger activation excess",
+      "dealer_id": "98052",
+      "dealer_name": "Ember Hill Networks",
+      "product_code": "1186254",
+      "product_name": "TOZED,MIFI,4G,ZLT M30S,MODEM,ROUMOD1491,MODEM TRADE",
+      "total_units_purchased": 200,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 46,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 46,
+            "total_units_purchased": 200,
+            "inventory_gap": -154,
+            "gap_pct": -77.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 52,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 52,
+            "total_units_purchased": 200,
+            "inventory_gap": -148,
+            "gap_pct": -74.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 224,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 224,
+            "total_units_purchased": 200,
+            "inventory_gap": 24,
+            "gap_pct": 12.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 210,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 210,
+            "total_units_purchased": 200,
+            "inventory_gap": 10,
+            "gap_pct": 5.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 232,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 232,
+            "total_units_purchased": 200,
+            "inventory_gap": 32,
+            "gap_pct": 16.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 244,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 244,
+            "total_units_purchased": 200,
+            "inventory_gap": 44,
+            "gap_pct": 22.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_larger_excess_88031_1212360",
+      "scenario_label": "Synthetic shared purchase evidence - June larger activation excess",
+      "dealer_id": "88031",
+      "dealer_name": "Oak Field Communications",
+      "product_code": "1212360",
+      "product_name": "ZTE,MF935,MF935,4G,MIFI,MF935,ROUTER TRADE",
+      "total_units_purchased": 100,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 53,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 53,
+            "total_units_purchased": 100,
+            "inventory_gap": -47,
+            "gap_pct": -47.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 57,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 57,
+            "total_units_purchased": 100,
+            "inventory_gap": -43,
+            "gap_pct": -43.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 115,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 115,
+            "total_units_purchased": 100,
+            "inventory_gap": 15,
+            "gap_pct": 15.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 109,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 109,
+            "total_units_purchased": 100,
+            "inventory_gap": 9,
+            "gap_pct": 9.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 122,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 122,
+            "total_units_purchased": 100,
+            "inventory_gap": 22,
+            "gap_pct": 22.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 129,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 129,
+            "total_units_purchased": 100,
+            "inventory_gap": 29,
+            "gap_pct": 29.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_larger_excess_357063_1283281",
+      "scenario_label": "Synthetic shared purchase evidence - June larger activation excess",
+      "dealer_id": "357063",
+      "dealer_name": "Azure Leaf Communications",
+      "product_code": "1283281",
+      "product_name": "ZTE,ROUMOD4391,ROUMOD4391,4G CPE WITH UPS,MODEM,ROUMOD4391,ROUTER TRADE",
+      "total_units_purchased": 50,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 31,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 31,
+            "total_units_purchased": 50,
+            "inventory_gap": -19,
+            "gap_pct": -38.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 35,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 35,
+            "total_units_purchased": 50,
+            "inventory_gap": -15,
+            "gap_pct": -30.0,
+            "finding_type": "WITHIN_ALLOCATION"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 71,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 71,
+            "total_units_purchased": 50,
+            "inventory_gap": 21,
+            "gap_pct": 42.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 69,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 69,
+            "total_units_purchased": 50,
+            "inventory_gap": 19,
+            "gap_pct": 38.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 74,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 74,
+            "total_units_purchased": 50,
+            "inventory_gap": 24,
+            "gap_pct": 48.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 76,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 76,
+            "total_units_purchased": 50,
+            "inventory_gap": 26,
+            "gap_pct": 52.0,
+            "finding_type": "CONFIRMED_MISMATCH"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_missing_holdout_213044_1283279",
+      "scenario_label": "Synthetic demo control - retained missing invoice evidence",
+      "dealer_id": "213044",
+      "dealer_name": "Silver Grove Communications",
+      "product_code": "1283279",
+      "product_name": "TOZED,ROUMIF4389,ROUMIF4389,4G MIFI,MIFI,ROUMIF4389,ROUTER TRADE",
+      "total_units_purchased": null,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 90,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 90,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 97,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 97,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 186,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 186,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 180,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 180,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 197,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 197,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 208,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 208,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_missing_holdout_205044_1186254",
+      "scenario_label": "Synthetic demo control - retained missing invoice evidence",
+      "dealer_id": "205044",
+      "dealer_name": "Sunset Crest Communications",
+      "product_code": "1186254",
+      "product_name": "TOZED,MIFI,4G,ZLT M30S,MODEM,ROUMOD1491,MODEM TRADE",
+      "total_units_purchased": null,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 93,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 93,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 107,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 107,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 164,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 164,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 158,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 158,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 171,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 171,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 180,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 180,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_missing_holdout_19477_1212360",
+      "scenario_label": "Synthetic demo control - retained missing invoice evidence",
+      "dealer_id": "19477",
+      "dealer_name": "Ocean Vale Ventures",
+      "product_code": "1212360",
+      "product_name": "ZTE,MF935,MF935,4G,MIFI,MF935,ROUTER TRADE",
+      "total_units_purchased": null,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 137,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 137,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 150,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 150,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 123,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 123,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 115,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 115,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 129,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 129,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 136,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 136,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "synthetic_shared_missing_holdout_98052_1283280",
+      "scenario_label": "Synthetic demo control - retained missing invoice evidence",
+      "dealer_id": "98052",
+      "dealer_name": "Ember Hill Networks",
+      "product_code": "1283280",
+      "product_name": "TOZED,ROUMOD4390,ROUMOD4390,4G CPE WITH UPS,MODEM,ROUMOD4390,ROUTER TRADE",
+      "total_units_purchased": null,
+      "monthly_expectations": {
+        "202601": {
+          "baseline": {
+            "activation_count": 141,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 141,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202602": {
+          "baseline": {
+            "activation_count": 152,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 152,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202603": {
+          "baseline": {
+            "activation_count": 176,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 176,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202604": {
+          "baseline": {
+            "activation_count": 171,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 171,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202605": {
+          "baseline": {
+            "activation_count": 188,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 188,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        },
+        "202606": {
+          "baseline": {
+            "activation_count": 199,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          },
+          "enriched": {
+            "activation_count": 199,
+            "total_units_purchased": null,
+            "inventory_gap": null,
+            "gap_pct": null,
+            "finding_type": "NO_INVOICE_RECORD"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -87,13 +87,16 @@ GET_ZERO_COMMISSION_RECORDS: dict[str, Any] = {
         "  * 'List the leakage candidates for Dealer Z in [month]'\n\n"
         "Each row contains: imei, product_name, product_code, invoice_date, "
         "first_activation_date, unit_selling_price, commission_rate.\n\n"
-        "After calling this tool you MUST classify each returned record using "
-        "exactly one of the four KB root causes:\n"
-        "  1. USP snapshot miss\n"
+        "After calling this tool, classify a returned record only if the "
+        "available evidence supports one of the four KB root causes:\n"
+        "  1. Product not matched to commission rate card\n"
         "  2. Outside 6-month eligibility window\n"
         "  3. NULL account_profile_class\n"
         "  4. Known denomination split (Hynex / Hynex_1)\n"
-        "Do not invent any other root cause. Both inputs are required."
+        "A zero rate alone does not distinguish these causes. If evidence is "
+        "insufficient, state that the cause is unverified and identify the "
+        "missing evidence; do not force a classification or invent another "
+        "cause. Both inputs are required."
     ),
     "input_schema": {
         "type": "object",
@@ -124,7 +127,7 @@ GET_MONTH_ON_MONTH_VARIANCE: dict[str, Any] = {
         "period = current_period carry delta_ngn (current minus prior) and "
         "delta_pct; rows where period = prior_period have delta_ngn = 0.\n\n"
         "After calling this tool, you MUST explain the variance using KB "
-        "root causes only (e.g. USP snapshot miss, transaction lag from "
+        "root causes only (e.g. Product not matched to commission rate card, transaction lag from "
         "Issue 3, denomination split from Issue 4). Do not speculate beyond "
         "the KB. All three inputs are required."
     ),
@@ -160,23 +163,26 @@ GET_MONTH_ON_MONTH_VARIANCE: dict[str, Any] = {
 GET_ORSC_SUMMARY: dict[str, Any] = {
     "name": "get_orsc_summary",
     "description": (
-        "Returns per-dealer Ongoing Revenue Service Commission (ORSC) "
-        "subscription totals for a single reporting month from "
+        "Returns per-dealer recorded subscription "
+        "revenue totals for a single reporting month from "
         "development.fbb_comm_orsc.\n\n"
         "Use this for:\n"
-        "  * 'What is the ORSC summary for [month]?'\n"
-        "  * 'Which dealers are earning ORSC and how much?'\n"
-        "  * 'How many devices on Dealer X are still generating ORSC?'\n\n"
+        "  * 'What is the Subscription commission summary for [month]?'\n"
+        "  * 'Which dealers are earning Subscription commission and how much?'\n"
+        "  * 'How many devices on Dealer X are still generating Subscription commission?'\n\n"
         "Behaviour:\n"
         "  * Without distributor_code: one row per dealer, sorted by "
         "total_subscription_amount_ngn descending.\n"
         "  * With distributor_code: a single row for that dealer.\n\n"
-        "Each row contains: distributor_code, distributor_name, "
+        "Each row contains: dealer_id, dealer_name, "
         "account_profile_class, device_count, total_subscription_amount_ngn, "
-        "zero_amount_count.\n\n"
-        "Important: data_subscription_amount IS the commission basis. There "
-        "is no 10%% rate multiplication for ORSC — the amount returned is "
-        "what MTN owes the dealer for that month."
+        "zero_amount_count, plus nullable subscription_commission_ngn, "
+        "subscription_settled_ngn and subscription_outstanding_ngn.\n\n"
+        "Important: total_subscription_amount_ngn is recorded subscription revenue. "
+        "The separate subscription commission and settlement fields, when available, "
+        "are recorded upstream results. Report them separately "
+        "from revenue. Null means unavailable, not zero. Follow the KB's subscription "
+        "evidence and policy limitations when explaining these fields."
     ),
     "input_schema": {
         "type": "object",
@@ -370,10 +376,7 @@ GET_PAYMENT_SUMMARY: dict[str, Any] = {
         "amount_paid, amount_unpaid, payment_status (FULLY_PAID / "
         "PARTIALLY_PAID / DISPUTED / PENDING), payment_channel, "
         "payment_date, exception_flag, data_source.\n\n"
-        "IMPORTANT: Payment data is simulated. Derived from real "
-        "commission and exception records — live Oracle AP integration "
-        "will replace this in production. Always disclose this when "
-        "presenting payment findings."
+        "Payment records are not confirmed Oracle AP disbursements."
     ),
     "input_schema": {
         "type": "object",
@@ -403,8 +406,7 @@ GET_PAYMENT_EXCEPTIONS: dict[str, Any] = {
         "  * 'Which dealers have settlement exceptions?'\n\n"
         "Each row includes ``exception_flag`` linking back to the "
         "underlying Phase 2 / Phase 3 finding — use this for cross-"
-        "phase reasoning. IMPORTANT: payment data is simulated; always "
-        "disclose this."
+        "phase reasoning."
     ),
     "input_schema": {
         "type": "object",
@@ -429,8 +431,7 @@ GET_PAYMENT_VARIANCE: dict[str, Any] = {
         "commission_owed_a / amount_paid_a / payment_status_a, "
         "commission_owed_b / amount_paid_b / payment_status_b, "
         "delta_paid (period_b minus period_a), status_changed (bool).\n\n"
-        "Rows are sorted by abs(delta_paid) descending. IMPORTANT: "
-        "payment data is simulated; always disclose this."
+        "Rows are sorted by abs(delta_paid) descending."
     ),
     "input_schema": {
         "type": "object",
@@ -470,7 +471,7 @@ GET_KB_SECTION: dict[str, Any] = {
         "Valid section names:\n"
         "  * data_architecture       — source-system inventory + dev schema\n"
         "  * table_schemas           — column-level field definitions for "
-        "dev_act / ORSC / USP\n"
+        "dev_act / Subscription commission / commission rate card\n"
         "  * calculation_logic       — pseudo-SQL for the commission "
         "calculation pipeline\n"
         "  * ftth_subscriptions_query — FBB / FIBRENET subscription "
@@ -540,8 +541,7 @@ GET_DEALER_FULL_CONTEXT: dict[str, Any] = {
         "activation_exceptions[...], inventory{confirmed_mismatches, "
         "no_invoice_records, within_allocation, findings[...]}, "
         "payment{...}, zero_records_sample[...].\n\n"
-        "Payment data is SIMULATED — disclose this when quoting payment "
-        "figures. For month-on-month comparison run "
+        "For month-on-month comparison run "
         "get_month_on_month_variance separately."
     ),
     "input_schema": {
@@ -574,13 +574,13 @@ COMPILE_DATA_COVERAGE_TICKET: dict[str, Any] = {
         "can paste into ServiceNow.\n\n"
         "Two gap classes are covered:\n"
         "  * IFS missing — dealers with NO_INVOICE_RECORD inventory rows.\n"
-        "  * USP missing — dealers with NULL account_profile_class (one of "
+        "  * Missing partner classification — dealers with NULL account_profile_class (one of "
         "the four KB-documented root causes for zero-commission records).\n\n"
         "Use this when:\n"
         "  * The user asks to 'compile / draft / generate a ticket for data "
         "coverage issues / data team / task team'.\n"
         "  * After investigating a dealer dispute that bottoms out in "
-        "missing IFS or USP data — escalate by drafting a ticket.\n\n"
+        "missing IFS data or partner classification — escalate by drafting a ticket.\n\n"
         "Severity scales with the affected-dealer count: 1-3 = LOW, "
         "4-10 = MEDIUM, 10+ = HIGH. Stage 1 only — this does NOT submit to "
         "ServiceNow; the finance officer pastes the body manually."
@@ -605,7 +605,85 @@ COMPILE_DATA_COVERAGE_TICKET: dict[str, Any] = {
 }
 
 
+GET_DEALER_CODES: dict[str, Any] = {
+    "name": "get_dealer_codes",
+    "description": (
+        "List distinct dealer codes associated with a selected complete dealer name "
+        "across activation and subscription revenue records. Match ignores case and "
+        "surrounding whitespace only; no fuzzy, partial-name or branch inference. "
+        "Use for 'list all codes attached to [dealer name]'. Omit period bounds to "
+        "search all available months, even when the workspace has a selected month; "
+        "only set bounds when the user requests a date range. Returns recorded name "
+        "variants, first/last observed month within the search, sources, and coverage "
+        "metadata even when no codes match. State the searched coverage and sample "
+        "data status. These associations do not establish branches or common legal "
+        "ownership; observation endpoints do not establish continuous association. "
+        "Fetch successive pages while has_more is true before claiming to list all "
+        "codes. If no matches, ask for the complete recorded name; do not invent codes."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "dealer_name": {"type": "string", "minLength": 1, "maxLength": 300},
+            "start_period": _MON_PERIOD_SCHEMA,
+            "end_period": _MON_PERIOD_SCHEMA,
+            "page": {"type": "integer", "minimum": 1, "default": 1},
+            "page_size": {"type": "integer", "minimum": 1, "maximum": 100, "default": 100},
+        },
+        "required": ["dealer_name"],
+        "additionalProperties": False,
+    },
+}
+
+
+GET_FINANCIAL_HEALTH_REPORT: dict[str, Any] = {
+    "name": "get_financial_health_report",
+    "description": (
+        "Read the same whole-business financial report shown in Financial Health "
+        "for one exact existing dealer code and month. Returns income statement, balance "
+        "sheet, cash flow, prior-month amounts, six KPIs with formulas/inputs/status, "
+        "observations and evidence. These are not "
+        "MTN commission/settlement evidence. Missing reports "
+        "and ratios are unavailable, not zero. No credit score or lending recommendation. "
+        "Use get_financial_health_summary to find supported dealers by name first. "
+        "For arbitrary month comparisons retrieve each month's report."
+    ),
+    "input_schema": {
+        "type": "object", "properties": {
+            "mon_period": _MON_PERIOD_SCHEMA,
+            "distributor_code": _DISTRIBUTOR_CODE_SCHEMA,
+        }, "required": ["mon_period", "distributor_code"], "additionalProperties": False,
+    },
+}
+
+GET_FINANCIAL_HEALTH_SUMMARY: dict[str, Any] = {
+    "name": "get_financial_health_summary",
+    "description": (
+        "Find or compare the 20 dealers with Financial Health "
+        "statements, January–June 2026. Search name, exact code or scenario; returns "
+        "bounded dealer summaries and six KPIs with prior-month values and missing-evidence "
+        "statuses. Same source as the Financial Health tab. State the "
+        "reporting month. This cohort is not the entire dealer portfolio. Fetch pages "
+        "until has_more is false before claiming a whole-cohort comparison. Inspect exact "
+        "reports for statement explanations. Do not assign credit scores or recommend lending."
+    ),
+    "input_schema": {
+        "type": "object", "properties": {
+            "mon_period": _MON_PERIOD_SCHEMA,
+            "search": {"type": "string", "maxLength": 200},
+            "sort_by": {"type": "string", "enum": ["dealer_name", "revenue", "net_profit"]},
+            "direction": {"type": "string", "enum": ["asc", "desc"]},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
+            "offset": {"type": "integer", "minimum": 0, "default": 0},
+        }, "required": ["mon_period"], "additionalProperties": False,
+    },
+}
+
+
 TOOLS: list[dict[str, Any]] = [
+    GET_FINANCIAL_HEALTH_REPORT,
+    GET_FINANCIAL_HEALTH_SUMMARY,
+    GET_DEALER_CODES,
     GET_DEALER_SUMMARY,
     GET_ZERO_COMMISSION_RECORDS,
     GET_MONTH_ON_MONTH_VARIANCE,

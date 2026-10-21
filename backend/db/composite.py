@@ -18,6 +18,8 @@ from typing import Any
 
 import pandas as pd
 
+from backend import config
+from backend.audit.payment_data import payment_lookup
 from backend.db.connection import execute_query
 from backend.db.queries import get_available_periods
 
@@ -123,6 +125,7 @@ def assemble_dealer_full_context(
         "get_inventory_comparison", {"mon_period": mon_period}
     )
     inv_match = inv_df[inv_df["dealer_id"].astype(str) == distributor_code]
+    synthetic_count = int(inv_match["scenario_id"].ne("").sum()) if "scenario_id" in inv_match else 0
     confirmed_count = int((inv_match["finding_type"] == "CONFIRMED_MISMATCH").sum())
     no_invoice_count = int((inv_match["finding_type"] == "NO_INVOICE_RECORD").sum())
     within_count = int((inv_match["finding_type"] == "WITHIN_ALLOCATION").sum())
@@ -146,28 +149,60 @@ def assemble_dealer_full_context(
             "inventory_gap": _safe_num(i["inventory_gap"]),
             "gap_pct": _safe_num(i["gap_pct"]),
             "finding_type": str(i["finding_type"]),
+            "scenario_id": _safe_str(i.get("scenario_id")) or "",
+            "scenario_label": _safe_str(i.get("scenario_label")) or "",
+            "data_coverage_note": _safe_str(i.get("data_coverage_note")),
         }
         for _, i in inv_match.iterrows()
     ]
 
     # --- Phase 4: payment status for this dealer -------------------------
-    pay_df = execute_query("get_payment_summary", {"mon_period": mon_period})
-    pay_match = pay_df[
-        pay_df["dealer_id"].astype(str) == distributor_code
-    ]
+    # The APDP payment view is intentionally selected outside execute_query:
+    # PAYMENT_SOURCE controls it, whereas execute_query remains the FBB
+    # sample/Presto switch. Keep this aligned with dealer_statement.py.
+    if config.PAYMENT_SOURCE == "apdp":
+        pay_df = payment_lookup(mon_period, "apdp")
+    else:
+        pay_df = execute_query("get_payment_summary", {"mon_period": mon_period})
+    pay_match = (
+        pay_df[pay_df["dealer_id"].astype(str) == distributor_code]
+        if "dealer_id" in pay_df.columns
+        else pd.DataFrame()
+    )
     payment_info: dict[str, Any] = {}
     if not pay_match.empty:
         p = pay_match.iloc[0]
-        payment_info = {
-            "commission_owed_ngn": float(p["commission_owed"]),
-            "amount_paid_ngn": float(p["amount_paid"]),
-            "amount_unpaid_ngn": float(p["amount_unpaid"]),
-            "payment_status": str(p["payment_status"]),
-            "exception_flag": _safe_str(p["exception_flag"]),
-            "payment_channel": str(p["payment_channel"]),
-            "payment_date": _safe_str(p["payment_date"]),
-            "data_source": "SIMULATED",
-        }
+        if config.PAYMENT_SOURCE == "apdp":
+            owed = float(p.get("expected_commission_ngn") or 0.0)
+            paid = float(p.get("total_settled_ngn") or 0.0)
+            reconciliation_status = str(
+                p.get("reconciliation_status") or ""
+            )
+            payment_info = {
+                "commission_owed_ngn": owed,
+                "amount_paid_ngn": paid,
+                "amount_unpaid_ngn": max(0.0, round(owed - paid, 2)),
+                "payment_status": reconciliation_status,
+                "exception_flag": (
+                    reconciliation_status
+                    if reconciliation_status != "RECONCILED"
+                    else None
+                ),
+                "payment_channel": "",
+                "payment_date": None,
+                "data_source": "APDP",
+            }
+        else:
+            payment_info = {
+                "commission_owed_ngn": float(p["commission_owed"]),
+                "amount_paid_ngn": float(p["amount_paid"]),
+                "amount_unpaid_ngn": float(p["amount_unpaid"]),
+                "payment_status": str(p["payment_status"]),
+                "exception_flag": _safe_str(p["exception_flag"]),
+                "payment_channel": str(p["payment_channel"]),
+                "payment_date": _safe_str(p["payment_date"]),
+                "data_source": "SIMULATED",
+            }
 
     # --- Zero-commission records sample (only if there are any) ----------
     zero_records_sample: list[dict[str, Any]] = []
@@ -205,6 +240,12 @@ def assemble_dealer_full_context(
         "inventory": {
             "products_in_period": int(len(inv_df[inv_df["dealer_id"].astype(str) == distributor_code])),
             "confirmed_mismatches": confirmed_count,
+            "synthetic_scenario_count": synthetic_count,
+            "source_note": (
+                "Includes fictional shared purchase scenarios, not authentic IFS evidence "
+                "or verified stock/carryover. Scenario labels describe June anchor examples."
+                if synthetic_count else ""
+            ),
             "no_invoice_records": no_invoice_count,
             "within_allocation": within_count,
             "findings": inventory_findings,

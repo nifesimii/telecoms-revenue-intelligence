@@ -79,6 +79,7 @@ export default function DealerSummaryTable({ dealers = [], loading = false, onDe
               onClick={() =>
                 setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
               }
+              aria-sort={sortDir === 'desc' ? 'descending' : 'ascending'}
               title="Sort by Commission"
             >
               Comm.

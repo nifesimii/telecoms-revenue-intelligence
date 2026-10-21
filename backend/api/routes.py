@@ -15,10 +15,14 @@ from __future__ import annotations
 
 import json
 import logging
+import csv
+import io
+from datetime import datetime, timezone
 from typing import Any
 
 import pandas as pd
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import Response
 
 from backend.agent.agent import run_agent
 from backend.agent import tool_executor
@@ -32,25 +36,74 @@ from backend.api.schemas import (
     ChatResponse,
     AuditRunResponse,
     DataCoverageTicketResponse,
+    DealerStatementResponse,
     DealerSummary,
     DisputeDraftRequest,
     DisputeDraftResponse,
     InventoryComparisonRecord,
+    InventoryComparisonPage,
+    InventoryComparisonSummary,
+    PaginationMeta,
+    PartnerHealthRecord,
+    PaymentCollectionPage,
+    PaymentAccountDetail,
+    PaymentAnalyticsPage,
     PaymentCoverageResponse,
     PaymentSummaryRecord,
     PaymentVarianceRecord,
     PeriodList,
+    OverviewResponse,
+    OverviewPayment,
 )
 from backend import config
+from backend.audit.payment_data import RECON_TO_STATUS as _RECON_TO_STATUS
+from backend.db.payment_snapshot import (
+    PaymentSourceUnavailable,
+    apdp_payment_snapshot,
+    load_payment_snapshot,
+    payment_collection,
+    row_to_payment_record,
+)
 from backend.assurance.registry import ASSURANCE_REGISTRY, is_implemented
 from backend.db import queries
 from backend.db.connection import execute_query
+from backend.api.commission_routes import router as commission_router
+from backend.api.activation_workspace_routes import router as activation_workspace_router
+from backend.api.audit_workspace_routes import router as audit_workspace_router
+from backend.api.financial_health_routes import router as financial_health_router
 
 logger = logging.getLogger(__name__)
 
+from backend.api.explanation_routes import router as explanation_router
+
 router = APIRouter()
+router.include_router(explanation_router)
+
+router.include_router(audit_workspace_router)
+router.include_router(financial_health_router)
+router.include_router(commission_router)
+router.include_router(activation_workspace_router)
 
 CHAT_FAILURE_MESSAGE = "I was unable to process that request. Please try again."
+
+_INVENTORY_SORTS = {
+    "activation_count": "activation_count",
+    "inventory_gap": "inventory_gap",
+    "dealer_name": "dealer_name",
+    "product_code": "product_code",
+}
+_PAYMENT_SORTS = {
+    "amount_unpaid": "amount_unpaid",
+    "commission_owed": "commission_owed",
+    "amount_paid": "amount_paid",
+    "dealer_name": "dealer_name",
+    "payment_status": "payment_status",
+}
+
+
+def _bounded_page(df: pd.DataFrame, limit: int, offset: int) -> pd.DataFrame:
+    """Return a defensive bounded slice; never expose an unbounded collection."""
+    return df.iloc[offset : offset + limit].copy()
 
 
 # ---------------------------------------------------------------------------
@@ -60,39 +113,34 @@ CHAT_FAILURE_MESSAGE = "I was unable to process that request. Please try again."
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest) -> ChatResponse:
-    """Drive a single agent turn and return Claude's answer + raw tool data.
+    """Drive a single scoped turn and return its validated answer and evidence.
 
-    If ``mon_period`` is on the request, prepend it to the question as
-    explicit context for the agent. The original ``conversation_history`` is
-    forwarded untouched.
+    Pass the question, reporting month and active scope separately.
+    Forward ``conversation_history`` untouched.
 
     Any internal exception is swallowed into the response envelope — this
     endpoint must never 500 on a well-formed request.
     """
-    if request.mon_period:
-        message = (
-            f"Context: reporting period is {request.mon_period}. "
-            f"Question: {request.message}"
-        )
-    else:
-        message = request.message
-
     try:
-        result = await run_agent(message, list(request.conversation_history))
+        result = await run_agent(
+            request.message, list(request.conversation_history),
+            reporting_period=request.mon_period,
+            investigation_context=request.investigation_context,
+        )
     except Exception as exc:  # noqa: BLE001 — never 500 on /chat
-        logger.exception("POST /chat: run_agent raised")
+        logger.error("POST /chat: run_agent raised (%s)", type(exc).__name__)
         return ChatResponse(
             response=CHAT_FAILURE_MESSAGE,
             tools_called=[],
             raw_data={},
-            error=f"{type(exc).__name__}: {exc}",
+            error="chat_failed",
         )
 
     return ChatResponse(
         response=result.get("response", ""),
         tools_called=list(result.get("tools_called", [])),
         raw_data=dict(result.get("raw_data", {})),
-        error=None,
+        error=result.get("error"),
     )
 
 
@@ -110,6 +158,65 @@ def list_periods() -> PeriodList:
 # ---------------------------------------------------------------------------
 # GET /dealers
 # ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/dealers/{dealer_id}/statement",
+    response_model=DealerStatementResponse,
+)
+def get_dealer_statement(
+    dealer_id: str,
+    mon_period: str = Query(pattern=r"^\d{6}$"),
+) -> DealerStatementResponse:
+    """Per-period dealer statement — Finance/RA internal view.
+
+    Composes commission entitlement + payment settlement + ORSC + linked
+    audit trails into a single call. The payment side reflects the current
+    ``PAYMENT_SOURCE`` (simulated vs apdp) — the response's data_source
+    field lets the UI badge it accordingly.
+    """
+    from backend.db.dealer_statement import compose_dealer_statement
+    result = compose_dealer_statement(dealer_id, mon_period)
+    if not result.get("found"):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No activation record for dealer {dealer_id!r} in {mon_period}. "
+                "Check the dealer ID and period."
+            ),
+        )
+    # Drop the internal ``found`` flag before Pydantic validation.
+    result.pop("found", None)
+    return DealerStatementResponse(**result)
+
+
+@router.get("/dealers/{dealer_id}/verification")
+def get_dealer_verification(
+    dealer_id: str,
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+) -> dict[str, Any]:
+    """Small on-demand evidence payload for expandable table rows."""
+    df = execute_query(
+        "get_dealer_summary",
+        {"mon_period": mon_period, "distributor_code": dealer_id},
+    )
+    if df.empty:
+        raise HTTPException(status_code=404, detail="Dealer verification data not found")
+    row = df.iloc[0]
+    total = int(row.get("total_activations") or 0)
+    zero = int(row.get("zero_commission_count") or 0)
+    qualified = max(0, total - zero)
+    return {
+        "dealer_id": str(row.get("dealer_id") or dealer_id),
+        "dealer_name": str(row.get("dealer_name") or dealer_id),
+        "account_profile_class": str(row.get("account_profile_class") or ""),
+        "activation_count": total,
+        "qualified_activation_count": qualified,
+        "non_qualified_activation_count": zero,
+        "qualification_rate_pct": round(qualified / total * 100.0, 1) if total else 0.0,
+        "activation_commission_amount": float(row.get("total_commission_ngn") or 0),
+        "zero_commission_count": zero,
+    }
 
 
 @router.get("/dealers", response_model=list[DealerSummary])
@@ -298,6 +405,8 @@ async def get_assurance_status(
             "summary": result.summary,
         }
         if implemented:
+            kwargs["finding_count"] = len(result.findings or [])
+            kwargs["findings_truncated"] = len(result.findings or []) > 50
             kwargs["high_count"] = int(result.metadata.get("high_count", 0))
             kwargs["medium_count"] = int(result.metadata.get("medium_count", 0))
             kwargs["low_count"] = int(result.metadata.get("low_count", 0))
@@ -322,6 +431,52 @@ async def get_assurance_status(
     # of registry insertion order.
     modules.sort(key=lambda m: m.phase)
     return AssuranceStatusResponse(period=period, modules=modules)
+
+
+async def _overview_snapshot(period: str, module=None, severity=None):
+    from backend.assurance.overview import UnknownOverviewPeriod, overview_snapshot
+
+    try:
+        return await overview_snapshot(period, module, severity)
+    except UnknownOverviewPeriod:
+        raise HTTPException(status_code=404, detail="No data for this reporting period") from None
+
+
+@router.get("/assurance/overview", response_model=OverviewResponse)
+async def get_overview(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    limit: int = Query(10, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    search: str = Query("", max_length=100),
+    severity: str | None = Query(None, pattern=r"^(HIGH|MEDIUM|LOW)$"),
+    module: str | None = Query(None, pattern=r"^(commission|activation|inventory|payment)$"),
+) -> OverviewResponse:
+    """Full-period totals with a bounded, deterministically ranked dealer queue."""
+    summary, queue, _ = await _overview_snapshot(mon_period, module, severity)
+    term = search.strip().casefold()
+    filtered = [r for r in queue if
+                (not term or term in r["dealer_id"].casefold() or term in r["dealer_name"].casefold())]
+    return OverviewResponse(**summary, items=filtered[offset:offset + limit],
+                            total=len(filtered), limit=limit, offset=offset)
+
+
+@router.get("/assurance/overview/export")
+async def export_overview(mon_period: str = Query(..., pattern=r"^\d{6}$")):
+    """Export the full period, never a bounded UI preview or partial run."""
+    summary, _, findings = await _overview_snapshot(mon_period)
+    if not summary["complete"]:
+        raise HTTPException(status_code=503, detail="Full export unavailable: one or more modules could not be checked.")
+    output = io.StringIO()
+    fields = ["period", "module", "severity", "dealer_id", "dealer_name", "type", "description", "recommended_action"]
+    writer = csv.DictWriter(output, fieldnames=fields, extrasaction="ignore")
+    writer.writeheader()
+    for finding in findings:
+        # Spreadsheet applications must not interpret source text as formulas.
+        row = {k: ("'" + str(v) if str(v).lstrip().startswith(("=", "+", "-", "@")) else v)
+               for k, v in finding.items()}
+        writer.writerow({**row, "period": mon_period})
+    return Response(output.getvalue(), media_type="text/csv",
+                    headers={"Content-Disposition": f'attachment; filename="assurance_findings_{mon_period}.csv"'})
 
 
 # ---------------------------------------------------------------------------
@@ -371,6 +526,76 @@ def list_inventory_comparison(
     ]
 
 
+@router.get("/inventory/comparison-page", response_model=InventoryComparisonPage)
+def get_inventory_comparison_page(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    search: str | None = Query(None, max_length=100),
+    finding_type: str | None = Query(
+        None,
+        pattern=r"^(CONFIRMED_MISMATCH|NO_INVOICE_RECORD|WITHIN_ALLOCATION)$",
+    ),
+    include_within_allocation: bool = Query(False),
+    sort_by: str = Query("activation_count"),
+    sort_direction: str = Query("desc", pattern=r"^(asc|desc)$"),
+) -> InventoryComparisonPage:
+    """Bounded, server-filtered Inventory collection for the web table."""
+    if sort_by not in _INVENTORY_SORTS:
+        raise HTTPException(status_code=422, detail="Unsupported inventory sort field")
+
+    df = execute_query("get_inventory_comparison", {"mon_period": mon_period})
+    if not include_within_allocation:
+        df = df[df["finding_type"] != "WITHIN_ALLOCATION"]
+    if finding_type:
+        df = df[df["finding_type"] == finding_type]
+    if search and search.strip():
+        q = search.strip().lower()
+        mask = pd.Series(False, index=df.index)
+        for column in ("dealer_id", "dealer_name", "product_code", "product_name", "scenario_label"):
+            mask |= df[column].fillna("").astype(str).str.lower().str.contains(q, regex=False)
+        df = df[mask]
+
+    summary = InventoryComparisonSummary(
+        distinct_dealer_count=int(df["dealer_id"].nunique()),
+        total_activation_count=int(df["activation_count"].sum()),
+        total_recorded_purchased_units=(
+            float(df["total_units_purchased"].sum())
+            if df["total_units_purchased"].notna().any() else None
+        ),
+        confirmed_mismatch_count=int((df["finding_type"] == "CONFIRMED_MISMATCH").sum()),
+        no_invoice_record_count=int((df["finding_type"] == "NO_INVOICE_RECORD").sum()),
+        within_allocation_count=int((df["finding_type"] == "WITHIN_ALLOCATION").sum()),
+        total_gap_units=float(
+            df.loc[df["finding_type"] == "CONFIRMED_MISMATCH", "inventory_gap"]
+            .fillna(0).astype(float).sum()
+        ),
+    )
+    total = len(df)
+    column = _INVENTORY_SORTS[sort_by]
+    df = df.sort_values(
+        [column, "dealer_id", "product_code"],
+        ascending=[sort_direction == "asc", True, True],
+        na_position="last",
+    )
+    page = _bounded_page(df, limit, offset)
+    items = [InventoryComparisonRecord(**row) for row in page.to_dict(orient="records")]
+    return InventoryComparisonPage(
+        source_note=(
+            "Sample data includes labelled synthetic purchase scenarios. Their fixed quantities "
+            "are shared across reporting months, not monthly purchases or verified stock. "
+            "Search Synthetic to explore them."
+            if config.USE_SAMPLE_DATA else ""
+        ),
+        items=items,
+        pagination=PaginationMeta(
+            limit=limit, offset=offset, returned=len(items), total=total,
+            has_more=offset + len(items) < total,
+        ),
+        summary=summary,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Data coverage ticket compiler (Stage 1 — no live ServiceNow submission)
 # ---------------------------------------------------------------------------
@@ -418,65 +643,10 @@ def get_data_coverage_issues(
 # ---------------------------------------------------------------------------
 
 
-def _row_to_payment_record(row: dict[str, Any]) -> PaymentSummaryRecord:
-    """Normalise NaN → None for the nullable string columns before pydantic."""
-    cleaned = {}
-    for k, v in row.items():
-        if isinstance(v, float) and pd.isna(v):
-            cleaned[k] = None
-        else:
-            cleaned[k] = v
-    return PaymentSummaryRecord(**cleaned)
-
-
-# ---------------------------------------------------------------------------
-# APDP Postgres → PaymentSummaryRecord adapter
-# ---------------------------------------------------------------------------
-# When PAYMENT_SOURCE=apdp the /payments/* endpoints read from APDP's
-# normalized.partner_settlements view instead of the simulated CSV. The
-# view's reconciliation_status drives payment_status mapping; the rest of
-# the record carries the v1.3.0 enrichment fields so the UI can show
-# sales-vs-statement-vs-settlement context.
-
-_RECON_TO_STATUS = {
-    "RECONCILED":               "FULLY_PAID",
-    "PARTIALLY_PAID":           "PARTIALLY_PAID",
-    "AMOUNT_MISMATCH":          "PARTIALLY_PAID",
-    "DISPUTED":                 "DISPUTED",
-    "STATEMENT_WITHOUT_PAYMENT": "PENDING",
-    "SALES_WITHOUT_STATEMENT":  "PENDING",
-}
-
-
-def _apdp_row_to_payment_record(row: dict[str, Any]) -> PaymentSummaryRecord:
-    owed   = float(row.get("expected_commission_ngn") or 0)
-    paid   = float(row.get("total_settled_ngn") or 0)
-    unpaid = max(0.0, round(owed - paid, 2))
-    recon  = row.get("reconciliation_status") or "RECONCILED"
-    dealer = row.get("dealer_id") or ""
-    return PaymentSummaryRecord(
-        dealer_id             = dealer,
-        dealer_name           = dealer,  # APDP view doesn't carry the name
-        account_profile_class = "",
-        report_month          = row.get("settlement_period") or "",
-        commission_owed       = round(owed, 2),
-        amount_paid           = round(paid, 2),
-        amount_unpaid         = unpaid,
-        payment_status        = _RECON_TO_STATUS.get(recon, "PENDING"),
-        payment_channel       = "",
-        payment_date          = None,
-        exception_flag        = recon if recon != "RECONCILED" else None,
-        data_source           = "APDP",
-        reconciliation_status = recon,
-        sale_count            = int(row.get("sale_count") or 0),
-        total_sales_ngn       = float(row.get("total_sales_ngn") or 0),
-        statement_gross_revenue_ngn = float(row.get("statement_gross_revenue_ngn") or 0),
-        payment_variance_ngn  = float(row.get("payment_variance_ngn") or 0),
-        paid_count            = int(row.get("paid_count") or 0),
-        partial_count         = int(row.get("partial_count") or 0),
-        disputed_count        = int(row.get("disputed_count") or 0),
-    )
-
+# The source-aware snapshot (simulated CSV or APDP partner_settlements) lives
+# in backend/db/payment_snapshot.py so Overview and Atlas share it. These
+# routes only translate its domain error into HTTP.
+_row_to_payment_record = row_to_payment_record
 
 # Status sort ranking used by the APDP exceptions endpoint and as a tie-breaker
 # elsewhere — matches the simulated path's DISPUTED → PARTIAL → PENDING order.
@@ -485,37 +655,10 @@ _STATUS_RANK = {"DISPUTED": 0, "PARTIALLY_PAID": 1, "PENDING": 2, "FULLY_PAID": 
 
 def _apdp_summary_response(period: str) -> PaymentCoverageResponse:
     """Build /payments/summary from APDP partner_settlements rows."""
-    from backend.db import apdp as apdp_db  # imported lazily to avoid psycopg2 cost in sample mode
     try:
-        raw_rows = apdp_db.get_partner_settlements(period)
-    except Exception as e:
-        logger.exception("APDP partner_settlements read failed")
-        raise HTTPException(status_code=503, detail=f"APDP unreachable: {e}")
-
-    records = [_apdp_row_to_payment_record(r) for r in raw_rows]
-
-    total_owed   = round(sum(r.commission_owed for r in records), 2)
-    total_paid   = round(sum(r.amount_paid     for r in records), 2)
-    total_unpaid = round(sum(r.amount_unpaid   for r in records), 2)
-    coverage_pct = round(total_paid / total_owed * 100.0, 1) if total_owed > 0 else 0.0
-
-    status_counts: dict[str, int] = {}
-    for r in records:
-        status_counts[r.payment_status] = status_counts.get(r.payment_status, 0) + 1
-
-    return PaymentCoverageResponse(
-        period                 = period,
-        total_commission_owed  = total_owed,
-        total_amount_paid      = total_paid,
-        total_amount_unpaid    = total_unpaid,
-        payment_coverage_pct   = coverage_pct,
-        disputed_count         = status_counts.get("DISPUTED", 0),
-        partially_paid_count   = status_counts.get("PARTIALLY_PAID", 0),
-        pending_count          = status_counts.get("PENDING", 0),
-        fully_paid_count       = status_counts.get("FULLY_PAID", 0),
-        data_source            = "APDP",
-        records                = records,
-    )
+        return apdp_payment_snapshot(period)
+    except PaymentSourceUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
 
 
 @router.get(
@@ -539,42 +682,110 @@ def get_payment_summary(
       * ``apdp``     → reads from APDP ``normalized.partner_settlements`` view
     """
     period = mon_period or _most_recent_period() or ""
+    try:
+        return load_payment_snapshot(period)
+    except PaymentSourceUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e)) from None
 
-    if config.PAYMENT_SOURCE == "apdp":
-        return _apdp_summary_response(period)
 
-    df = execute_query("get_payment_summary", {"mon_period": period})
+@router.get("/payments/position", response_model=OverviewPayment)
+def get_payment_position(mon_period: str = Query(..., pattern=r"^\d{6}$")):
+    """Aggregate-only view of the same source-aware payment snapshot."""
+    summary = get_payment_summary(mon_period)
+    return {**summary.model_dump(exclude={"records"}), "record_count": len(summary.records)}
 
-    records = [
-        _row_to_payment_record(row) for row in df.to_dict(orient="records")
-    ]
 
-    total_owed = float(df["commission_owed"].astype(float).sum()) if not df.empty else 0.0
-    total_paid = float(df["amount_paid"].astype(float).sum()) if not df.empty else 0.0
-    total_unpaid = (
-        float(df["amount_unpaid"].astype(float).sum()) if not df.empty else 0.0
+def _payment_collection(mon_period, search, payment_status, sort_by, sort_direction):
+    """One source snapshot; identical filtering and ordering for page and export."""
+    if sort_by not in _PAYMENT_SORTS:
+        raise HTTPException(status_code=422, detail="Unsupported payment sort field")
+
+    try:
+        summary = _apdp_summary_response(mon_period) if config.PAYMENT_SOURCE == "apdp" else get_payment_summary(mon_period)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Payment source unavailable")
+        raise HTTPException(503, "Payment source unavailable. Retry later.") from None
+    statuses = None
+    if payment_status:
+        statuses = {s.strip().upper() for s in payment_status.split(",") if s.strip()}
+        allowed = set(_STATUS_RANK)
+        if not statuses or not statuses <= allowed:
+            raise HTTPException(status_code=422, detail="Unsupported payment status")
+    # Atlas payment_exceptions reads the same filter/order (db layer).
+    df = payment_collection(summary, statuses=statuses, search=search,
+                            sort_column=_PAYMENT_SORTS[sort_by], direction=sort_direction)
+    return summary, df
+
+
+@router.get("/payments", response_model=PaymentCollectionPage)
+def list_payments(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    search: str | None = Query(None, max_length=100),
+    payment_status: str | None = Query(None, max_length=100),
+    sort_by: str = Query("amount_unpaid"),
+    sort_direction: str = Query("desc", pattern=r"^(asc|desc)$"),
+) -> PaymentCollectionPage:
+    """Single bounded Payment collection used by All and Exceptions views."""
+    summary, df = _payment_collection(mon_period, search, payment_status, sort_by, sort_direction)
+    total = len(df)
+    page = _bounded_page(df, limit, offset)
+    items = [_row_to_payment_record(row) for row in page.to_dict(orient="records")]
+    return PaymentCollectionPage(
+        period=mon_period,
+        record_count=len(summary.records),
+        generated_at=datetime.now(timezone.utc).isoformat(),
+        items=items,
+        pagination=PaginationMeta(
+            limit=limit, offset=offset, returned=len(items), total=total,
+            has_more=offset + len(items) < total,
+        ),
+        total_commission_owed=summary.total_commission_owed,
+        total_amount_paid=summary.total_amount_paid,
+        total_amount_unpaid=summary.total_amount_unpaid,
+        payment_coverage_pct=summary.payment_coverage_pct,
+        disputed_count=summary.disputed_count,
+        partially_paid_count=summary.partially_paid_count,
+        pending_count=summary.pending_count,
+        fully_paid_count=summary.fully_paid_count,
+        data_source=summary.data_source,
     )
-    coverage_pct = (
-        round(total_paid / total_owed * 100.0, 1) if total_owed > 0 else 0.0
-    )
 
-    status_counts = (
-        df["payment_status"].value_counts().to_dict() if not df.empty else {}
-    )
 
-    return PaymentCoverageResponse(
-        period=period,
-        total_commission_owed=round(total_owed, 2),
-        total_amount_paid=round(total_paid, 2),
-        total_amount_unpaid=round(total_unpaid, 2),
-        payment_coverage_pct=coverage_pct,
-        disputed_count=int(status_counts.get("DISPUTED", 0)),
-        partially_paid_count=int(status_counts.get("PARTIALLY_PAID", 0)),
-        pending_count=int(status_counts.get("PENDING", 0)),
-        fully_paid_count=int(status_counts.get("FULLY_PAID", 0)),
-        data_source="SIMULATED",
-        records=records,
-    )
+@router.get("/payments/export")
+def export_payments(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    search: str | None = Query(None, max_length=100),
+    payment_status: str | None = Query(None, max_length=100),
+    sort_by: str = Query("amount_unpaid"),
+    sort_direction: str = Query("desc", pattern=r"^(asc|desc)$"),
+):
+    summary, frame = _payment_collection(mon_period, search, payment_status, sort_by, sort_direction)
+    generated = datetime.now(timezone.utc).isoformat()
+    columns = ["dealer_id", "dealer_name", "commission_owed", "amount_paid", "amount_unpaid", "payment_status", "exception_flag"]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["period", "source", "retrieved_at", *columns])
+    for row in frame.to_dict(orient="records"):
+        values = [mon_period, summary.data_source, generated, *[row.get(c) for c in columns]]
+        writer.writerow([("'" + v if v.lstrip().startswith(("=", "+", "-", "@")) else v)
+                         if isinstance(v, str) else v for v in values])
+    return Response(output.getvalue(), media_type="text/csv", headers={
+        "Content-Disposition": f'attachment; filename="payment-accounts-{mon_period}.csv"'})
+
+
+@router.get("/payments/accounts/{dealer_id}", response_model=PaymentAccountDetail)
+def payment_account(dealer_id: str, mon_period: str = Query(..., pattern=r"^\d{6}$")):
+    summary, frame = _payment_collection(mon_period, None, None, "dealer_name", "asc")
+    frame = frame[frame["dealer_id"].astype(str) == dealer_id]
+    if frame.empty:
+        raise HTTPException(status_code=404, detail="No payment account recorded for this period")
+    return {"period": mon_period, "data_source": summary.data_source,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "account": _row_to_payment_record(frame.iloc[0].to_dict())}
 
 
 @router.get(
@@ -664,6 +875,95 @@ def list_payment_variance(
 
 
 # ---------------------------------------------------------------------------
+# Partner Health Scorecard
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/partner/health",
+    response_model=list[PartnerHealthRecord],
+)
+def get_partner_health(
+    period: str = Query(
+        default="202603",
+        pattern=r"^\d{6}$",
+        description="Current reporting month (YYYYMM).",
+    ),
+    prior_period: str = Query(
+        default="202602",
+        pattern=r"^\d{6}$",
+        description="Prior month for MoM delta (YYYYMM).",
+    ),
+) -> list[PartnerHealthRecord]:
+    """Composite financial health scorecard per dealer.
+
+    Returns all dealers sorted worst-first (lowest health_score first) so the
+    most at-risk partners surface immediately. Each row carries four ratios:
+    settlement_rate, commission_yield, zero_commission_rate, outstanding_ngn;
+    plus a weighted health_score (0–100) and health_band (HEALTHY/WATCH/AT RISK).
+    """
+    df = execute_query(
+        "get_health_scorecard",
+        {"current_period": period, "prior_period": prior_period},
+    )
+    records = []
+    for row in df.to_dict(orient="records"):
+        records.append(
+            PartnerHealthRecord(
+                dealer_id=str(row["dealer_id"]),
+                dealer_name=str(row["dealer_name"]),
+                account_profile_class=str(row.get("account_profile_class", "")),
+                health_score=float(row["health_score"]),
+                health_band=str(row["health_band"]),
+                settlement_rate_pct=float(row["settlement_rate_pct"]),
+                settlement_rate_delta=(
+                    float(row["settlement_rate_delta"])
+                    if row.get("settlement_rate_delta") is not None
+                    and row["settlement_rate_delta"] == row["settlement_rate_delta"]
+                    else None
+                ),
+                commission_yield_pct=float(row["commission_yield_pct"]),
+                zero_commission_rate_pct=float(row["zero_commission_rate_pct"]),
+                outstanding_ngn=float(row["outstanding_ngn"]),
+                dispute_flag=bool(row["dispute_flag"]),
+                data_source=str(row["data_source"]),
+            )
+        )
+    return records
+
+
+@router.get("/payments/analytics", response_model=PaymentAnalyticsPage)
+def payment_analytics(
+    mon_period: str = Query(..., pattern=r"^\d{6}$"),
+    prior_period: str | None = Query(None, pattern=r"^\d{6}$"),
+    view: str = Query("comparison", pattern=r"^(comparison|health)$"),
+    search: str | None = Query(None, max_length=100),
+    limit: int = Query(25, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Bounded secondary views; calculations retain their existing semantics."""
+    if prior_period and prior_period >= mon_period:
+        raise HTTPException(status_code=422, detail="Comparison must precede reporting period")
+    if view == "comparison":
+        records = list_payment_variance(prior_period, mon_period) if prior_period else []
+        records.sort(key=lambda r: (-abs(r.delta_paid), r.dealer_id))
+    else:
+        records = get_partner_health(mon_period, prior_period or "")
+        records.sort(key=lambda r: (r.health_score, r.dealer_id))
+    total_accounts = len(records)
+    q = (search or "").strip().lower()
+    if q:
+        records = [r for r in records if q in r.dealer_id.lower() or q in r.dealer_name.lower()]
+    items = records[offset:offset + limit]
+    return {"period": mon_period, "prior_period": prior_period, "view": view,
+            "source": "APDP" if config.PAYMENT_SOURCE == "apdp" else "SIMULATED",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "account_count": total_accounts, "items": items,
+            "pagination": {"limit": limit, "offset": offset, "returned": len(items),
+                           "total": len(records), "has_more": offset + len(items) < len(records)}}
+
+
+# ---------------------------------------------------------------------------
 # Dispute response generator
 # ---------------------------------------------------------------------------
 
@@ -727,7 +1027,7 @@ def run_zero_commission_audit(
         logger.exception("audit trail persistence failed")
         raise HTTPException(
             status_code=503,
-            detail=f"FBB audit Postgres unreachable: {e}",
+            detail="Saved audit evidence is unavailable. Please retry.",
         )
     return AuditRunResponse(**result)
 
@@ -752,7 +1052,7 @@ def list_zero_commission_trails(
         return audit_store.get_period_trails(mon_period)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
 
 
 @router.get("/assurance/zero-commission/trails/{partner_code}")
@@ -766,7 +1066,7 @@ def get_zero_commission_trail(
         trail = audit_store.get_partner_trail(partner_code, mon_period)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
     if trail is None:
         raise HTTPException(
             status_code=404,
@@ -786,7 +1086,7 @@ def zero_commission_breakdown(
         return audit_store.get_conclusion_breakdown(mon_period)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
 
 
 # ---------------------------------------------------------------------------
@@ -836,7 +1136,7 @@ def run_audit_module(
         )
     except Exception as e:
         logger.exception("audit trail persistence failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
     return AuditRunResponse(**result)
 
 
@@ -858,7 +1158,7 @@ def list_audit_trails(
         return audit_store.get_period_trails(mon_period, module)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
 
 
 @router.get("/assurance/audit/breakdown")
@@ -873,7 +1173,7 @@ def audit_breakdown(
         return audit_store.get_conclusion_breakdown(mon_period, module)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
 
 
 @router.get("/assurance/audit/trails/{partner_code}")
@@ -889,7 +1189,7 @@ def get_audit_trail(
         trail = audit_store.get_partner_trail(partner_code, mon_period, module)
     except Exception as e:
         logger.exception("audit trail read failed")
-        raise HTTPException(status_code=503, detail=f"FBB audit Postgres unreachable: {e}")
+        raise HTTPException(status_code=503, detail="Saved audit evidence is unavailable. Please retry.")
     if trail is None:
         raise HTTPException(
             status_code=404,
