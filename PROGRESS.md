@@ -19,9 +19,10 @@ end of each work session. Newest session on top.
   **1,163 passed, 37 skipped** (no backend files changed).
 - Review fixes: month seeded from the URL now requires `/periods` confirmation,
   and date/count display moved to `lib/format.js`. Not in CI yet.
-- Open decisions: one draft per partner and month with no discard; invented
-  1,000,000 quantity cap, issue-date-in-month and due-not-before-issue rules;
-  sample account codes as the cohort, shown even in live-read mode.
+- User accepted: one draft per partner and month with no discard; 1,000,000
+  quantity cap, issue-date-in-month and due-not-before-issue rules; sample account
+  codes as the cohort, shown even in live-read mode. These apply to the simulation
+  only and are not MTN commercial policy.
 
 ## Session — 2026-10-06 (Atlas demo reliability)
 
