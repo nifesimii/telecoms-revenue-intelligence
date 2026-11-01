@@ -10,3 +10,5 @@ dist/
 .DS_Store
 venv/
 .venv/
+test-results/
+playwright-report/

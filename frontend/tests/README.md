@@ -7,6 +7,17 @@ node --test frontend/tests/*.test.mjs
 npm --prefix frontend run build
 ```
 
+Partner Sales acceptance tests start their own Vite server and need only an
+installed Chrome: no backend, Presto or model provider. All API reads are
+fixture-routed, and non-GET requests are recorded and blocked:
+
+```sh
+npm --prefix frontend run test:acceptance
+```
+
+They run through the `@playwright/test` dev dependency instead of the
+`PLAYWRIGHT_MODULE` scripts below, so the suite is reproducible from `npm ci`.
+
 With sample-mode servers on localhost:5173 and localhost:8000:
 
 ```sh

@@ -403,6 +403,9 @@ frontend/src/
     │                       full-period summary and on-demand account evidence.
     ├── inventory/          Inventory Intelligence tab + DataCoverageTicketModal.
     ├── payment/            Payment Intelligence tab + DisputeDraftModal.
+    ├── sales/              Partner Sales presentation simulation: fictional seed data,
+    │                       session-scoped drafts and invoice preview. No backend reads
+    │                       or writes (see docs/adr/0001-partner-sales-presentation-boundary.md).
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).
     ├── audit/AuditTrailPanel.jsx            Audit Trails tab (browse verification chains).
     └── shared/HelpIcon.jsx                  Tooltip + glossary (qualified vs unqualified).
@@ -446,7 +449,9 @@ workspaces. Public view IDs remain `overview`, `commission`, `activation`,
 
 Workspace switches push history entries; initial URL normalization and period
 changes replace the current entry. `popstate` restores the URL view and month.
-Period validation waits for the available-month list. Serializable investigation
+`partner-sales` is a browser-only fictional simulation; its session-scoped drafts
+never reach the API, Atlas or other workspaces, and the header shows the synthetic
+badge there even in live-read mode. Period validation waits for the available-month list. Serializable investigation
 context/revisions live in each entry's `fbbWorkspace` history state; restoring a
 revision remounts that contextual workspace when necessary. Context is not added
 to the shareable URL. DOM focus targets for Audit returns remain in memory.

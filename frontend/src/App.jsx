@@ -1,6 +1,6 @@
 // Top-level shell. Owns:
-//   * the view switcher (Overview / Commission / Activation / Inventory / Payment)
-//   * the global reporting period selector (shared across all six panels)
+//   * the view switcher (see VIEWS)
+//   * the global reporting period selector (shared across all panels)
 //   * the data-mode badge (live Presto vs sample CSVs) driven by /health
 //   * a pending-prompt slot so the Overview can launch a templated chat
 //
@@ -19,6 +19,7 @@ const ActivationIntelligencePanel = lazy(() => import('./components/activation/A
 const AssuranceStatusPanel = lazy(() => import('./components/assurance/AssuranceStatusPanel.jsx'));
 const InventoryIntelligencePanel = lazy(() => import('./components/inventory/InventoryIntelligencePanel.jsx'));
 const PaymentIntelligencePanel = lazy(() => import('./components/payment/PaymentIntelligencePanel.jsx'));
+const PartnerSalesWorkspace = lazy(() => import('./components/sales/PartnerSalesWorkspace.jsx'));
 const AuditTrailPanel = lazy(() => import('./components/audit/AuditTrailPanel.jsx'));
 const FinancialHealthWorkspace = lazy(() => import('./components/financial/FinancialHealthWorkspace.jsx'));
 
@@ -28,7 +29,8 @@ const VIEWS = [
   { id: 'activation', label: 'Activation' },
   { id: 'inventory', label: 'Inventory' },
   { id: 'payment', label: 'Payments' },
-  { id: 'financial-health', label: 'Financial Health' },
+  { id: 'partner-sales', label: 'Partner Sales', synthetic: true },
+  { id: 'financial-health', label: 'Financial Health', synthetic: true },
   { id: 'audit', label: 'Audit Trails' },
 ];
 
@@ -40,7 +42,7 @@ function WorkspacePanel({ active, children }) {
   </div>;
 }
 
-function DataModeBadge({ financialDemo = false }) {
+function DataModeBadge({ syntheticDemo = false }) {
   const [mode, setMode] = useState(null); // null | 'sample' | 'live' | 'unknown'
 
   useEffect(() => {
@@ -56,7 +58,7 @@ function DataModeBadge({ financialDemo = false }) {
     };
   }, []);
 
-  const cfg = financialDemo ? { dot: 'bg-amber-500', label: 'Synthetic demonstration', tone: 'text-amber-700' } : {
+  const cfg = syntheticDemo ? { dot: 'bg-amber-500', label: 'Synthetic demonstration', tone: 'text-amber-700' } : {
     checking: { dot: 'bg-gray-400', label: 'Checking data mode…', tone: 'text-gray-600' },
     sample: { dot: 'bg-emerald-500', label: 'Sample data', tone: 'text-gray-500' },
     live: { dot: 'bg-amber-500', label: 'Live Presto', tone: 'text-amber-700' },
@@ -64,7 +66,7 @@ function DataModeBadge({ financialDemo = false }) {
   }[mode || 'checking'];
 
   return (
-    <span role="status" className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${cfg.tone} ${financialDemo ? 'print:hidden' : ''}`}>
+    <span role="status" className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs ${cfg.tone} ${syntheticDemo ? 'print:hidden' : ''}`}>
       <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
       {cfg.label}
     </span>
@@ -192,7 +194,7 @@ function Shell() {
             </div>
             <div className="flex w-full min-w-0 items-center justify-between gap-3 sm:w-auto sm:gap-5">
               <GlobalPeriodSelect />
-              <div className="shrink-0"><DataModeBadge financialDemo={view === 'financial-health'} /></div>
+              <div className="shrink-0"><DataModeBadge syntheticDemo={VIEWS.find((v) => v.id === view)?.synthetic} /></div>
             </div>
           </div>
           <label className="flex items-center gap-3 pb-3 lg:hidden text-sm text-gray-600">
@@ -255,6 +257,7 @@ function Shell() {
             <PaymentIntelligencePanel key={navigation.payment?.revision} navigation={navigation.payment} onNavigate={switchView} onAsk={askClaude} />
           </WorkspacePanel>
         )}
+        {mounted['partner-sales'] && <WorkspacePanel active={view === 'partner-sales'}><PartnerSalesWorkspace /></WorkspacePanel>}
         {mounted.audit && (
           <WorkspacePanel active={view === 'audit'}>
             <AuditTrailPanel key={navigation.audit?.revision} navigation={navigation.audit}

@@ -3,6 +3,26 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-01 (Partner Sales: simulated invoice draft and preview)
+
+- Implemented issue #2, the first Partner Sales slice: exact-account partner
+  selection, bounded fictional catalogue, multi-line drafts in integer kobo,
+  validation, and a preview stating seller, buyer, reference, dates, lines and
+  total, with taxes/discounts and tax-invoice limits. Issuance, invoice lists,
+  collections, commission account and reset remain later tickets.
+- Drafts are browser-only, session-scoped and keyed by partner and month. Save
+  failure and incompatible saves are visible, with retry and start-over actions.
+  No backend reads or writes; the synthetic badge also shows in live-read mode.
+- Added `npm run test:acceptance` (`@playwright/test`, installed Chrome, fixture
+  API). Latest: **20 acceptance**, **17 frontend transport** tests, production
+  build, `workspace-navigation` and `workspace-scope-regressions` passed; backend
+  **1,163 passed, 37 skipped** (no backend files changed).
+- Review fixes: month seeded from the URL now requires `/periods` confirmation,
+  and date/count display moved to `lib/format.js`. Not in CI yet.
+- Open decisions: one draft per partner and month with no discard; invented
+  1,000,000 quantity cap, issue-date-in-month and due-not-before-issue rules;
+  sample account codes as the cohort, shown even in live-read mode.
+
 ## Session — 2026-10-06 (Atlas demo reliability)
 
 - Missing account/period scope now completes a clarification without another

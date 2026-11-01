@@ -1,0 +1,31 @@
+.sales-workspace { color: #111827; }
+.sales-workspace :is(button, input, [tabindex]):focus-visible { outline: 2px solid #92400e; outline-offset: 3px; }
+.sales-paper { background: white; border: 1px solid #d1d5db; border-radius: .5rem; min-width: 0; padding: 1.25rem; }
+.sales-notice { padding: 1rem; border-left: 4px solid #d4a017; background: #fffbeb; color: #78350f; font-size: .8125rem; }
+.sales-field { display: flex; flex-direction: column; gap: .5rem; font-size: .8125rem; color: #4b5563; min-width: 0; }
+.sales-field input { min-height: 2.75rem; border: 1px solid #9ca3af; border-radius: .375rem; padding: .5rem .75rem; color: #111827; background: white; width: 100%; }
+.sales-partner { display: flex; align-items: flex-start; gap: .625rem; min-height: 2.75rem; padding: .625rem .75rem; border: 1px solid #d1d5db; border-radius: .375rem; font-size: .875rem; cursor: pointer; overflow-wrap: anywhere; }
+.sales-partner:has(input:checked) { border-color: #92400e; background: #fffbeb; }
+.sales-partner input { margin-top: .1875rem; flex-shrink: 0; }
+.sales-button { min-height: 2.75rem; padding: .5rem .875rem; border: 1px solid #9ca3af; border-radius: .375rem; font-size: .8125rem; background: white; font-weight: 500; }
+.sales-button:hover:not(:disabled) { background: #f3f4f6; }
+.sales-button:disabled { opacity: .45; cursor: not-allowed; }
+.sales-primary { background: #ffcb00; border-color: #ffcb00; color: #111827; font-weight: 600; }
+.sales-primary:hover:not(:disabled) { background: #facc15; }
+.sales-table { width: 100%; border-collapse: collapse; font-size: .8125rem; }
+.sales-table th, .sales-table td { padding: .75rem .5rem; border-bottom: 1px solid #e5e7eb; text-align: left; vertical-align: top; overflow-wrap: anywhere; font-weight: 400; }
+.sales-table thead th { font-size: .75rem; font-weight: 500; color: #4b5563; background: #f9fafb; }
+.sales-table .sales-amount { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; overflow-wrap: normal; }
+.sales-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .75rem 1rem; padding: 1rem 0; border-bottom: 1px solid #e5e7eb; font-size: .8125rem; }
+.sales-line-total { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sales-line-controls { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: flex-start; gap: .75rem; }
+.sales-line-controls .sales-field { width: 9rem; }
+.sales-error { color: #991b1b; font-size: .75rem; }
+.sales-total { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .5rem; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.sales-dates { display: grid; grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr)); gap: 1rem; margin-top: 1rem; }
+.sales-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-top: 1rem; }
+.sales-alert { padding: .75rem 1rem; border-left: 4px solid #991b1b; background: #fef2f2; color: #7f1d1d; font-size: .8125rem; margin-top: 1rem; }
+.sales-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem; margin-top: 1rem; font-size: .875rem; }
+.sales-facts dt { font-size: .75rem; color: #4b5563; }
+.sales-facts dd { margin-top: .25rem; font-weight: 500; overflow-wrap: anywhere; }
+.sales-table tfoot th, .sales-table tfoot td { font-weight: 600; font-size: .875rem; border-bottom: 0; }

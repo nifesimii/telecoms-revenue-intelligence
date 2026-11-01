@@ -19,6 +19,12 @@ export function formatNGN(n) {
   );
 }
 
+/** Format integer kobo as "NGN 1,234,567.89" without passing through a fractional number. */
+export function formatMinorNGN(minor) {
+  const whole = formatCount(Math.floor(minor / 100));
+  return `NGN ${whole}.${String(minor % 100).padStart(2, '0')}`;
+}
+
 /** Format a signed delta as "+NGN 1,234.56" / "−NGN 1,234.56" / "NGN 0.00". */
 export function formatNGNDelta(n) {
   const v = Number(n) || 0;
@@ -35,6 +41,17 @@ export function formatPeriod(p) {
   const m = parseInt(s.slice(4, 6), 10);
   const label = MONTHS[m - 1] || s.slice(4, 6);
   return `${label} ${year}`;
+}
+
+/** Date-only "YYYY-MM-DD" → "31 May 2026", without crossing time zones. */
+export function formatDate(date) {
+  const [year, month, day] = date.split('-');
+  return `${Number(day)} ${MONTHS[Number(month) - 1]} ${year}`;
+}
+
+/** Format a whole count as "1,000,000". */
+export function formatCount(n) {
+  return n.toLocaleString('en-NG');
 }
 
 /** Regex matching the canonical agent output "NGN 1,234.56". Capturing group included. */
