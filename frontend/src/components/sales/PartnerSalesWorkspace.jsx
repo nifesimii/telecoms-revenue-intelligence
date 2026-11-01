@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react';
 import { usePeriod } from '../../context/PeriodContext.jsx';
-import { formatCount, formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
-import { CATALOGUE, PARTNERS, defaultIssueDate, draftKey, draftTotalMinor, dueDateError, issueDateError, lineTotalMinor, productByCode, quantityError, referenceFor } from './salesSimulation.js';
+import { formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
+import { CATALOGUE, PARTNERS, defaultIssueDate, draftKey, draftTotalMinor, dueDateError, invoiceByReference, invoiceOpenerId, issueDateError, issueDraft, lineTotalMinor, partnerByCode, partnerLabel, partnerMatches, productByCode, quantityError, quantityLabel, referenceFor } from './salesSimulation.js';
 import useSalesSimulation from './useSalesSimulation.js';
+import { InvoiceDetail, InvoiceList, PartnerObligations } from './InvoiceViews.jsx';
 import './sales.css';
 
-const partnerLabel = (partner) => `${partner.name} · Account ${partner.code}`;
-const quantityLabel = (line, product) => `${formatCount(Number(line.quantity))} ${product.unit}${Number(line.quantity) === 1 ? '' : 's'}`;
+const detailHeadingId = (entry) => (entry.type === 'invoice' ? `sales-invoice-heading-${entry.reference}` : `sales-obligations-heading-${entry.partnerCode}`);
 
 export default function PartnerSalesWorkspace() {
   const { periods, period, loading, error } = usePeriod();
@@ -19,8 +19,8 @@ function Workspace({ period }) {
   const { simulation, setSimulation, saveFailed, incompatible, startOver, retrySave } = useSalesSimulation();
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
-  const matches = PARTNERS.filter((partner) => partner.code.includes(term) || partner.name.toLowerCase().includes(term));
-  const partner = PARTNERS.find((candidate) => candidate.code === simulation.partnerCode);
+  const matches = PARTNERS.filter((partner) => partnerMatches(partner, term));
+  const partner = partnerByCode(simulation.partnerCode);
   const key = partner ? draftKey(partner.code, period) : null;
   const draft = key ? simulation.drafts[key] : null;
   const updateDraft = (change) => setSimulation((current) => ({ ...current, drafts: { ...current.drafts, [key]: change(current.drafts[key]) } }));
@@ -32,18 +32,56 @@ function Workspace({ period }) {
     }));
     requestAnimationFrame(() => document.getElementById('sales-catalogue-heading')?.focus());
   };
+  // Open detail views, innermost last. Views underneath stay mounted but hidden,
+  // so returning finds their filters, page and opener exactly as they were.
+  const [trail, setTrail] = useState([]);
+  const focusDetail = (entry) => requestAnimationFrame(() => document.getElementById(detailHeadingId(entry))?.focus());
+  // Reopening a view already on the trail brings it forward rather than stacking
+  // a copy, so every view underneath stays mounted with its page.
+  const openDetail = (entry, openerId) => {
+    setTrail((current) => [...current.filter((other) => detailHeadingId(other) !== detailHeadingId(entry)), { ...entry, openerId }]);
+    focusDetail(entry);
+  };
+  const closeDetail = (openerId) => {
+    setTrail((current) => current.slice(0, -1));
+    requestAnimationFrame(() => (document.getElementById(openerId) ?? document.getElementById('sales-invoices-heading'))?.focus());
+  };
+  const issue = (reference) => {
+    setSimulation((current) => issueDraft(current, reference));
+    const entry = { type: 'invoice', reference, openerId: invoiceOpenerId(reference) };
+    setTrail([entry]);
+    focusDetail(entry);
+  };
+  const openDraft = (record) => {
+    setSimulation((current) => ({ ...current, partnerCode: record.partner.code }));
+    requestAnimationFrame(() => (document.getElementById('sales-draft-heading') ?? document.getElementById('sales-preview-heading'))?.focus());
+  };
+  const openInvoice = (reference, openerId) => openDetail({ type: 'invoice', reference }, openerId);
+  const openPartner = (partnerCode, openerId) => openDetail({ type: 'partner', partnerCode }, openerId);
+  const visibleTrail = trail.filter((entry) => entry.type === 'partner' || invoiceByReference(simulation, entry.reference));
   return <main className="sales-workspace h-full overflow-y-auto bg-gray-50" aria-label="Partner Sales">
     <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
       <header><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">MTN sales to trade partners</p>
         <h1 className="text-2xl font-semibold tracking-tight mt-1">Partner Sales</h1>
-        <p className="text-sm text-gray-600 mt-2">Draft and preview what MTN would invoice a trade partner in {formatPeriod(period)}.</p>
-        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. Drafts stay in this browser tab, separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p></header>
+        <p className="text-sm text-gray-600 mt-2">Draft, preview and issue what MTN would invoice a trade partner in {formatPeriod(period)}.</p>
+        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. Drafts and simulated invoices stay in this browser tab, separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p></header>
       {incompatible ? <section className="sales-paper" aria-label="Saved simulation unavailable">
         <p role="alert" className="text-sm">The saved simulation in this tab could not be restored.</p>
         <button type="button" className="sales-button mt-3" onClick={startOver}>Start a new simulation</button>
       </section> : <>
         {saveFailed && <div role="alert" className="sales-alert !mt-0">Session storage is unavailable, so this simulation could not be saved. It will be lost if this tab refreshes or closes.
           <div className="mt-2"><button type="button" className="sales-button" onClick={retrySave}>Try saving again</button></div></div>}
+        {visibleTrail.map((entry, index) => {
+          const active = index === visibleTrail.length - 1;
+          const onBack = () => closeDetail(entry.openerId);
+          const backLabel = !index ? 'Back to invoices' : visibleTrail[index - 1].type === 'partner' ? 'Back to purchase obligations' : `Back to invoice ${visibleTrail[index - 1].reference}`;
+          return <div key={detailHeadingId(entry)} className={active ? '' : 'hidden'}>
+            {entry.type === 'invoice'
+              ? <InvoiceDetail invoice={invoiceByReference(simulation, entry.reference)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenPartner={openPartner} />
+              : <PartnerObligations simulation={simulation} partner={partnerByCode(entry.partnerCode)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenInvoice={openInvoice} />}
+          </div>;
+        })}
+        <div className={visibleTrail.length ? 'hidden' : 'flex flex-col gap-6'}>
         <section className="sales-paper" aria-labelledby="sales-partner-heading">
           <h2 id="sales-partner-heading" className="text-lg font-semibold">Trade partner</h2>
           <label className="sales-field mt-4">Find a partner
@@ -54,19 +92,22 @@ function Workspace({ period }) {
               <span>{partnerLabel(candidate)}</span>
             </label>)}</div>
           </fieldset> : <p role="status" className="text-sm text-gray-600 mt-4">No partners match your search. Try another name or account code.</p>}
+          {partner && <button id="sales-partner-obligations" type="button" className="sales-button mt-4" onClick={() => openPartner(partner.code, 'sales-partner-obligations')}>View purchase obligations for {partnerLabel(partner)}</button>}
         </section>
         {!partner ? <p className="sales-paper text-sm text-gray-600">Select a trade partner to create a draft.</p>
           : !draft ? <section className="sales-paper" aria-label="No draft">
             <p className="text-sm text-gray-600">No draft for {partnerLabel(partner)} in {formatPeriod(period)}.</p>
             <button type="button" className="sales-button sales-primary mt-3" onClick={createDraft}>Create draft</button>
           </section>
-          : <DraftEditor key={key} draft={draft} partner={partner} onChange={updateDraft} />}
+          : <DraftEditor key={key} draft={draft} partner={partner} onChange={updateDraft} onIssue={issue} />}
+        <InvoiceList simulation={simulation} period={period} onOpenInvoice={openInvoice} onOpenPartner={openPartner} onOpenDraft={openDraft} />
+        </div>
       </>}
     </div>
   </main>;
 }
 
-function DraftEditor({ draft, partner, onChange }) {
+function DraftEditor({ draft, partner, onChange, onIssue }) {
   const [previewing, setPreviewing] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const previewOpener = useRef(null);
@@ -101,7 +142,7 @@ function DraftEditor({ draft, partner, onChange }) {
     requestAnimationFrame(() => previewHeading.current?.focus());
   };
   if (previewing) {
-    return <InvoicePreview draft={draft} partner={partner} total={total} headingRef={previewHeading} onBack={() => {
+    return <InvoicePreview draft={draft} partner={partner} total={total} headingRef={previewHeading} onIssue={() => onIssue(draft.reference)} onBack={() => {
       setPreviewing(false);
       requestAnimationFrame(() => previewOpener.current?.focus());
     }} />;
@@ -157,7 +198,7 @@ function DraftEditor({ draft, partner, onChange }) {
   </>;
 }
 
-function InvoicePreview({ draft, partner, total, headingRef, onBack }) {
+function InvoicePreview({ draft, partner, total, headingRef, onIssue, onBack }) {
   return <section className="sales-paper" aria-labelledby="sales-preview-heading">
     <p className="text-xs font-semibold tracking-widest uppercase text-amber-800">Fictional simulation</p>
     <h2 id="sales-preview-heading" ref={headingRef} tabIndex={-1} className="text-lg font-semibold mt-1">Simulated invoice preview</h2>
@@ -176,8 +217,8 @@ function InvoicePreview({ draft, partner, total, headingRef, onBack }) {
         const product = productByCode(line.productCode);
         return <tr key={line.productCode}>
           <th scope="row"><span className="block font-semibold">{product.code}</span> <span className="block">{product.description}</span>
-            <span className="block sm:hidden text-gray-600 mt-1">{quantityLabel(line, product)} × {formatMinorNGN(product.priceMinor)}</span></th>
-          <td className="sales-amount hidden sm:table-cell">{quantityLabel(line, product)}</td>
+            <span className="block sm:hidden text-gray-600 mt-1">{quantityLabel(Number(line.quantity), product.unit)} × {formatMinorNGN(product.priceMinor)}</span></th>
+          <td className="sales-amount hidden sm:table-cell">{quantityLabel(Number(line.quantity), product.unit)}</td>
           <td className="sales-amount hidden sm:table-cell">{formatMinorNGN(product.priceMinor)}</td>
           <td className="sales-amount">{formatMinorNGN(lineTotalMinor(line))}</td>
         </tr>;
@@ -185,6 +226,8 @@ function InvoicePreview({ draft, partner, total, headingRef, onBack }) {
       <tfoot><tr><th scope="row">Total</th><td className="hidden sm:table-cell" /><td className="hidden sm:table-cell" /><td className="sales-amount">{formatMinorNGN(total)}</td></tr></tfoot>
     </table>
     <p className="sales-notice mt-5">Simplified fictional demonstration with fictional prices. Taxes and discounts are not modeled, and this is not an operational tax invoice. This preview does not create an invoice obligation or commission.</p>
-    <div className="sales-actions"><button type="button" className="sales-button" onClick={onBack}>Back to draft</button></div>
+    <div className="sales-actions"><button type="button" className="sales-button sales-primary" onClick={onIssue}>Issue simulated invoice</button>
+      <button type="button" className="sales-button" onClick={onBack}>Back to draft</button>
+      <p className="text-xs text-gray-600">Issuing fixes the buyer, lines and total and starts an unpaid purchase obligation. It never creates commission.</p></div>
   </section>;
 }

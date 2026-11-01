@@ -3,6 +3,22 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-01 (Partner Sales: issue invoices and inspect obligations)
+
+- Implemented issue #3: explicit one-time issuance from the preview freezes buyer,
+  lines, prices and total as an unpaid invoice and consumes the draft. The invoice
+  list is scoped by issue month (drafts by intended month), with partner/code search,
+  status filter, fixed ordering, 25/50/100 rows and totals over the whole matching set.
+- Partner detail shows one exact account's invoices across all months. Its balance
+  is as of the latest simulated invoice activity, is not a month-end balance, excludes
+  drafts, and is labelled apart from commission. Returning restores filters, page and
+  focus; refresh returns to the list with filters cleared. Opening a draft from the
+  list moves focus to its editor and has no separate return path.
+- Saved simulations moved to version 2, so an older tab save shows the existing
+  recovery state. Statuses are Draft and Unpaid until collections (next ticket).
+- Latest: **40 acceptance**, **17 frontend transport** tests, production build; backend
+  **1,163 passed, 37 skipped** (no backend files changed).
+
 ## Session — 2026-11-01 (Partner Sales: simulated invoice draft and preview)
 
 - Implemented issue #2, the first Partner Sales slice: exact-account partner

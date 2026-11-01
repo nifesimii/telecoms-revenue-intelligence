@@ -26,6 +26,12 @@ export const CATALOGUE = [
 ];
 export const productByCode = (code) => CATALOGUE.find((product) => product.code === code);
 
+export const partnerByCode = (code) => PARTNERS.find((partner) => partner.code === code);
+
+export const partnerLabel = (partner) => `${partner.name} · Account ${partner.code}`;
+export const quantityLabel = (quantity, unit) => `${formatCount(quantity)} ${unit}${quantity === 1 ? '' : 's'}`;
+export const partnerMatches = (partner, term) => partner.code.includes(term) || partner.name.toLowerCase().includes(term);
+
 // Keeps every line and draft total well inside Number.MAX_SAFE_INTEGER kobo.
 const MAX_QUANTITY = 1000000;
 
@@ -73,4 +79,76 @@ export function issueDateError(draft, periodLabel) {
 
 export function dueDateError(draft) {
   return draft.dueDate && draft.issueDate && draft.dueDate < draft.issueDate ? 'Due date cannot be before the issue date.' : null;
+}
+
+const isIssuable = (draft) => draft.lines.length > 0 && draftTotalMinor(draft) !== null && !issueDateError(draft, '') && !dueDateError(draft);
+
+// Copies catalogue facts onto the invoice so nothing later can reprice it.
+function freezeInvoice(draft) {
+  const partner = partnerByCode(draft.partnerCode);
+  return {
+    reference: draft.reference,
+    seller: 'MTN',
+    buyer: { code: partner.code, name: partner.name },
+    period: draft.period,
+    issueDate: draft.issueDate,
+    dueDate: draft.dueDate,
+    currency: 'NGN',
+    lines: draft.lines.map((line) => {
+      const product = productByCode(line.productCode);
+      return { productCode: product.code, description: product.description, unit: product.unit, quantity: Number(line.quantity), unitPriceMinor: product.priceMinor, lineTotalMinor: lineTotalMinor(line) };
+    }),
+    totalMinor: draftTotalMinor(draft),
+  };
+}
+
+// Issuing consumes the draft, so a repeated action for its reference finds
+// nothing to issue and returns the simulation unchanged.
+export function issueDraft(simulation, reference) {
+  const [key, draft] = Object.entries(simulation.drafts).find(([, candidate]) => candidate.reference === reference) ?? [];
+  if (!draft || !isIssuable(draft)) return simulation;
+  const drafts = { ...simulation.drafts };
+  delete drafts[key];
+  return { ...simulation, drafts, invoices: [...simulation.invoices, freezeInvoice(draft)] };
+}
+
+// The list row that opens an invoice, where focus returns after its detail closes.
+export const invoiceOpenerId = (reference) => `sales-open-${reference}`;
+
+// Every issued invoice is unpaid until collections exist.
+export const invoiceStatus = () => 'Unpaid';
+
+export const invoiceByReference = (simulation, reference) => simulation.invoices.find((invoice) => invoice.reference === reference);
+
+export const sequenceOf = (reference) => Number(reference.slice('SIM-INV-'.length));
+// References are unique, so this is a total order: latest date first, then latest reference.
+const newestFirst = (a, b) => b.date.localeCompare(a.date) || sequenceOf(b.reference) - sequenceOf(a.reference);
+
+const invoiceRecord = (invoice) => ({ reference: invoice.reference, status: invoiceStatus(invoice), partner: invoice.buyer, date: invoice.issueDate, amountMinor: invoice.totalMinor, period: invoice.period });
+const draftRecord = (draft) => ({ reference: draft.reference, status: 'Draft', partner: partnerByCode(draft.partnerCode), date: draft.issueDate, amountMinor: draftTotalMinor(draft), period: draft.period });
+
+export const STATUSES = ['Draft', 'Unpaid'];
+
+// Invoices belong to their issue month and drafts to their intended issue month.
+export function matchingRecords(simulation, { period, search, status }) {
+  const term = search.trim().toLowerCase();
+  return [...simulation.invoices.map(invoiceRecord), ...Object.values(simulation.drafts).map(draftRecord)]
+    .filter((record) => record.period === period && (!status || record.status === status) && partnerMatches(record.partner, term))
+    .sort(newestFirst);
+}
+
+const issuedOf = (records) => records.filter((record) => record.status !== 'Draft');
+const outstandingOf = (records) => issuedOf(records).reduce((sum, record) => sum + record.amountMinor, 0);
+
+export function summarizeRecords(records) {
+  const issued = issuedOf(records).length;
+  return { count: records.length, issued, drafts: records.length - issued, outstandingMinor: outstandingOf(records) };
+}
+
+// One exact account across every month. The balance runs to the account's
+// latest simulated activity, not to the end of any reporting month.
+export function partnerObligations(simulation, partnerCode) {
+  const invoices = simulation.invoices.filter((invoice) => invoice.buyer.code === partnerCode).map(invoiceRecord).sort(newestFirst);
+  const drafts = Object.values(simulation.drafts).filter((draft) => draft.partnerCode === partnerCode).map(draftRecord).sort(newestFirst);
+  return { invoices, drafts, outstandingMinor: outstandingOf(invoices), asOf: invoices.reduce((latest, invoice) => (invoice.date > latest ? invoice.date : latest), '') };
 }
