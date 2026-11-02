@@ -194,6 +194,13 @@ function Shell() {
     switchView('commission');
   };
 
+  // A reset forgets the account Partner Sales was asked to reopen, here and in this
+  // history entry, so neither a later visit nor a refresh brings it back.
+  const clearSalesNavigation = useCallback(() => {
+    setNavigation((current) => ({ ...current, 'partner-sales': undefined }));
+    window.history.replaceState({ ...window.history.state, fbbWorkspace: { view: 'partner-sales' } }, '', window.location.href);
+  }, []);
+
   const salesOrigin = navigation[view]?.origin;
 
   return (
@@ -274,7 +281,7 @@ function Shell() {
             <PaymentIntelligencePanel key={navigation.payment?.revision} navigation={navigation.payment} onNavigate={switchView} onAsk={askClaude} />
           </WorkspacePanel>
         )}
-        {mounted['partner-sales'] && <WorkspacePanel active={view === 'partner-sales'}><PartnerSalesWorkspace navigation={navigation['partner-sales']} onNavigate={switchView} /></WorkspacePanel>}
+        {mounted['partner-sales'] && <WorkspacePanel active={view === 'partner-sales'}><PartnerSalesWorkspace navigation={navigation['partner-sales']} onNavigate={switchView} onClearNavigation={clearSalesNavigation} /></WorkspacePanel>}
         {mounted.audit && (
           <WorkspacePanel active={view === 'audit'}>
             <AuditTrailPanel key={navigation.audit?.revision} navigation={navigation.audit}

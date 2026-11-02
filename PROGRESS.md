@@ -3,6 +3,28 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-02 (Partner Sales: reset and replay)
+
+- Implemented GitHub issue #6: an inline-confirmed **Reset simulation** clears drafts, invoices,
+  collections, the selected partner, filters and open views, and restarts references. It touches
+  only the simulation's session key, makes no backend request, and also forgets the account a
+  returned explanation would otherwise reopen on refresh.
+- An explanation left open keeps its return banner after a reset (other workspaces are untouched);
+  returning reopens the same fictional statement, with no invoices or selected partner restored.
+- Default chosen here: the "versioned seed" is the empty simulation at the current save version
+  over the fixed cohort, catalogue and statements. No invoices are pre-seeded, because the
+  presentation creates its own and the references are then deterministic.
+- Storage recovery: a reset that cannot remove the save overwrites it; if neither works the alert
+  says the earlier simulation may return. Recovery moves focus rather than dropping it.
+- `docs/PARTNER_SALES_REHEARSAL.md` records the presenter sequence and expected results.
+- Verification: 92 Partner Sales acceptance tests, 17 transport tests, `workspace-navigation` and
+  `workspace-scope-regressions` passed; backend suite 1,167 passed and 37 skipped; production build
+  passed. The rehearsal was also run twice against the sample-mode API with no non-GET requests.
+- Test flakiness under load (load average about 10): the older refresh-return test asserted focus on the
+  heading, but focus legitimately lands on the link if it has already rendered, so it now asserts focus
+  within the account. "collections stay on their invoice" failed once in a full run and did not repeat
+  in 5 reruns or the next full run; a repeat-run failure was not captured. Cause not established.
+
 ## Session — 2026-11-02 (Partner Sales: Partner Commission Account)
 
 - Implemented GitHub issue #5: partner detail opens a fictional dated commission statement

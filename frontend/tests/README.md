@@ -17,6 +17,8 @@ npm --prefix frontend run test:acceptance
 
 They run through the `@playwright/test` dev dependency instead of the
 `PLAYWRIGHT_MODULE` scripts below, so the suite is reproducible from `npm ci`.
+They include the complete presenter sequence in
+`docs/PARTNER_SALES_REHEARSAL.md`, replayed after a reset and run by keyboard at 320px.
 
 With sample-mode servers on localhost:5173 and localhost:8000:
 

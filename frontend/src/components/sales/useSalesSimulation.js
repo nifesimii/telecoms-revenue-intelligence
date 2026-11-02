@@ -1,5 +1,7 @@
 // Session-scoped Partner Sales state. One browser tab owns its simulation:
-// sessionStorage survives refresh and nothing leaves the browser.
+// sessionStorage survives refresh and nothing leaves the browser. The starting
+// seed is versioned with the save format: an empty simulation over the fixed
+// cohort, catalogue and statements, with references restarting at 0001.
 
 import { useEffect, useRef, useState } from 'react';
 import { CATALOGUE, PARTNERS, collectionSequenceOf, draftKey, dueDateError, isDate, issueDateError, sequenceOf } from './salesSimulation.js';
@@ -85,26 +87,49 @@ function save(simulation) {
   }
 }
 
+function clear() {
+  try {
+    window.sessionStorage.removeItem(STORAGE_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export default function useSalesSimulation() {
   const [initial] = useState(load);
   const [simulation, setSimulation] = useState(initial.simulation);
   const [saveFailed, setSaveFailed] = useState(initial.saveFailed);
   const [incompatible, setIncompatible] = useState(initial.incompatible);
+  const [clearFailed, setClearFailed] = useState(false);
   const lastPersisted = useRef(initial.simulation);
+
+  // Any successful save replaces whatever a failed reset left behind.
+  const persist = (current) => {
+    const saved = save(current);
+    setSaveFailed(!saved);
+    if (saved) setClearFailed(false);
+    return saved;
+  };
 
   useEffect(() => {
     if (simulation === lastPersisted.current) return;
     lastPersisted.current = simulation;
-    setSaveFailed(!save(simulation));
+    persist(simulation);
   }, [simulation]);
 
+  // Touches only this simulation's key. A save that survives would return on
+  // refresh, so it is overwritten if it cannot be removed, and reported if neither works.
   const startOver = () => {
-    try { window.sessionStorage.removeItem(STORAGE_KEY); } catch { /* The next save reports any failure. */ }
     const fresh = newSimulation();
+    const cleared = clear() || save(fresh);
     lastPersisted.current = fresh;
     setSimulation(fresh);
     setIncompatible(false);
+    setSaveFailed(!cleared);
+    setClearFailed(!cleared);
+    return fresh;
   };
 
-  return { simulation, setSimulation, saveFailed, incompatible, startOver, retrySave: () => setSaveFailed(!save(simulation)) };
+  return { simulation, setSimulation, saveFailed, clearFailed, incompatible, startOver, retrySave: () => persist(simulation) };
 }

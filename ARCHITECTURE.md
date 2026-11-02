@@ -408,8 +408,10 @@ frontend/src/
     │                       idempotent invoice collections, a bounded invoice list and partner
     │                       purchase obligations. Collections never touch commission. A separate
     │                       fictional Partner Commission Account links to existing explanations
-    │                       only after read-only sample evidence reconciles to the kobo. No writes
-    │                       (see docs/adr/0001-partner-sales-presentation-boundary.md).
+    │                       only after read-only sample evidence reconciles to the kobo. An explicit
+    │                       reset restores the versioned starting seed for this tab only. No writes
+    │                       (see docs/adr/0001-partner-sales-presentation-boundary.md and
+    │                       docs/PARTNER_SALES_REHEARSAL.md).
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).
     ├── audit/AuditTrailPanel.jsx            Audit Trails tab (browse verification chains).
     └── shared/HelpIcon.jsx                  Tooltip + glossary (qualified vs unqualified).

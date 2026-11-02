@@ -1498,7 +1498,9 @@ test('restores sales context after a browser back and after refreshing an explan
   await expect(returnToSales(page)).toBeVisible();
   await page.reload();
   await returnToSales(page).click();
-  await expect(commissionAccount(page).getByRole('heading', { name: /River Isle Ventures · Account 296065/ })).toBeFocused();
+  // Focus returns to the link if it has rendered by the next frame, otherwise to the heading.
+  await expect(commissionAccount(page).getByRole('heading', { name: /River Isle Ventures · Account 296065/ })).toBeVisible();
+  await expect(commissionAccount(page).locator(':focus')).toHaveCount(1);
   await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 822,582.53');
 });
 
@@ -1670,4 +1672,450 @@ test('operates by keyboard and fits a narrow screen', async ({ page }) => {
     expect(await overflow()).toEqual([0, 0]);
     await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
   }
+});
+
+// Reset and replay. The presentation values are the specification's worked example:
+// 2 x 50,000.00 + 100 x 100.00 = 110,000.00; 110,000.00 - 40,000.00 = 70,000.00.
+const resetButton = (page) => workspace(page).getByRole('button', { name: 'Reset simulation', exact: true });
+const resetPanel = (page) => workspace(page).getByRole('group', { name: 'Confirm simulation reset' });
+const confirmReset = (page) => resetPanel(page).getByRole('button', { name: 'Reset to starting point' });
+const resetNotice = (page) => workspace(page).getByRole('status').filter({ hasText: 'Simulation reset' });
+const matchingRecordCount = (page) => fact(invoiceList(page), 'Matching records');
+
+test('reset clears drafts, invoices and collections, restarts references and leaves everything else alone', async ({ page }) => {
+  const { mutations, requests } = await mockApi(page);
+  await openSales(page);
+  await page.evaluate(() => sessionStorage.setItem('unrelated.user.state', 'kept'));
+  await issueMixedInvoice(page);
+  await recordCollection(page, '2026-05-31', '40000');
+  await back(page).click();
+  await workspace(page).getByRole('searchbox', { name: 'Search invoices by partner or account code' }).fill('296065');
+  await startDraft(page, 'Stone Light Networks · Account 74050');
+  await workspace(page).getByRole('searchbox', { name: 'Find a partner' }).fill('Stone');
+  await page.waitForLoadState('networkidle');
+  requests.length = 0;
+
+  await resetButton(page).click();
+  await expect(resetPanel(page)).toContainText('1 draft, 1 invoice and 1 collection');
+  await expect(resetPanel(page)).toContainText('Recorded commission, payment and inventory evidence');
+  await expect(matchingRecordCount(page)).toHaveText('1');
+  await confirmReset(page).click();
+
+  await expect(resetNotice(page)).toBeFocused();
+  await expect(workspace(page).getByText('Select a trade partner to create a draft.')).toBeVisible();
+  await expect(workspace(page).getByRole('radio', { checked: true })).toHaveCount(0);
+  await expect(workspace(page).getByRole('searchbox', { name: 'Find a partner' })).toHaveValue('');
+  await expect(workspace(page).getByRole('searchbox', { name: 'Search invoices by partner or account code' })).toHaveValue('');
+  await expect(matchingRecordCount(page)).toHaveText('0');
+  await expect(workspace(page).getByText('No invoices or drafts for May 2026.')).toBeVisible();
+
+  await page.reload();
+  await expect(workspace(page).getByText('Select a trade partner to create a draft.')).toBeVisible();
+  await expect(matchingRecordCount(page)).toHaveText('0');
+  expect(await page.evaluate(() => sessionStorage.getItem('unrelated.user.state'))).toBe('kept');
+  await expect(page.getByRole('combobox', { name: /Reporting period/ })).toHaveValue('202605');
+
+  await startDraft(page);
+  await expect(workspace(page).getByText('SIM-INV-0001 · May 2026')).toBeVisible();
+  await addLine(page, 'FBB-5G-ROUTER', '2');
+  await previewButton(page).click();
+  await workspace(page).getByRole('button', { name: 'Issue simulated invoice' }).click();
+  await workspace(page).getByLabel('Amount in NGN').fill('1');
+  await workspace(page).getByRole('button', { name: 'Record collection' }).click();
+  await expect(workspace(page).getByText('Recorded SIM-PAY-0001 for NGN 1.00.')).toBeVisible();
+  expect(mutations).toEqual([]);
+  expect(requests.filter((path) => !['/periods', '/health'].includes(path))).toEqual([]);
+});
+
+test('keeping the simulation changes nothing, and resetting from an open detail returns to the start', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+
+  await resetButton(page).click();
+  await resetPanel(page).getByRole('button', { name: 'Keep simulation' }).click();
+  await expect(resetButton(page)).toBeFocused();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0001'), 'Status')).toHaveText('Unpaid');
+
+  await resetButton(page).click();
+  await confirmReset(page).click();
+  await expect(issuedInvoice(page, 'SIM-INV-0001')).toHaveCount(0);
+  await expect(resetNotice(page)).toBeFocused();
+  await choosePartner(page, 'Stone Light Networks · Account 74050');
+  await expect(resetNotice(page)).toHaveCount(0);
+});
+
+test('a reset after an explanation does not reopen that account on refresh or revisit', async ({ page }) => {
+  await mockApi(page, { reads: explanationReads([]) });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+  await explanationLink(page, 'Explain settlement').click();
+  await returnToSales(page).click();
+  await expect(commissionAccount(page)).toBeVisible();
+
+  await resetButton(page).click();
+  await confirmReset(page).click();
+  await expect(commissionAccount(page)).toHaveCount(0);
+
+  await nav(page, 'Payments');
+  await nav(page, 'Partner Sales');
+  await expect(commissionAccount(page)).toHaveCount(0);
+  await page.reload();
+  await expect(workspace(page).getByText('Select a trade partner to create a draft.')).toBeVisible();
+  await expect(commissionAccount(page)).toHaveCount(0);
+});
+
+test('a reset leaves an open explanation alone, and returning from it shows the same fictional statement', async ({ page }) => {
+  await mockApi(page, { reads: explanationReads([]) });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+  await explanationLink(page, 'Explain settlement').click();
+  await returnToSales(page).click();
+  await resetButton(page).click();
+  await confirmReset(page).click();
+
+  await nav(page, 'Payments');
+  await expect(page.getByText('Opened from the Partner Sales simulation for exact account 296065, May 2026.')).toBeVisible();
+  await returnToSales(page).click();
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 822,582.53');
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+  await expect(matchingRecordCount(page)).toHaveText('0');
+  await expect(workspace(page).getByRole('radio', { checked: true })).toHaveCount(0);
+});
+
+// Session storage only. Other storage keeps working, and tests can break or mend it mid-run.
+const failStorage = (page, methods, broken = false) => page.addInitScript(({ names, startBroken }) => {
+  window.__storageBroken = startBroken;
+  for (const name of names) {
+    const original = Storage.prototype[name];
+    Storage.prototype[name] = function (...args) {
+      if (this === window.sessionStorage && window.__storageBroken) throw new DOMException('Denied', 'SecurityError');
+      return original.apply(this, args);
+    };
+  }
+}, { names: methods, startBroken: broken });
+const breakStorage = (page, broken = true) => page.evaluate((value) => { window.__storageBroken = value; }, broken);
+
+test('a reset that cannot remove the save overwrites it, so a refresh still starts clean', async ({ page }) => {
+  await failStorage(page, ['removeItem']);
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  await breakStorage(page);
+  await resetButton(page).click();
+  await confirmReset(page).click();
+  await expect(resetNotice(page)).toBeVisible();
+  await expect(workspace(page).getByRole('alert')).toHaveCount(0);
+  await page.reload();
+  await expect(workspace(page).getByText('Select a trade partner to create a draft.')).toBeVisible();
+  await expect(matchingRecordCount(page)).toHaveText('0');
+});
+
+test('a reset that cannot clear the save says the earlier simulation may return, and recovers on retry', async ({ page }) => {
+  await failStorage(page, ['removeItem', 'setItem']);
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  await breakStorage(page);
+  await resetButton(page).click();
+  await confirmReset(page).click();
+
+  const alert = workspace(page).getByRole('alert');
+  await expect(alert).toContainText('this reset could not be saved');
+  await expect(alert).toContainText('earlier simulation may return');
+  await expect(matchingRecordCount(page)).toHaveText('0');
+
+  await workspace(page).getByRole('button', { name: 'Try saving again' }).click();
+  await expect(alert).toContainText('earlier simulation may return');
+  await breakStorage(page, false);
+  await workspace(page).getByRole('button', { name: 'Try saving again' }).click();
+  await expect(alert).toHaveCount(0);
+  await expect(workspace(page).getByRole('heading', { name: 'Partner Sales', level: 1 })).toBeFocused();
+
+  // The save now holds the reset, so a later failure loses only later work.
+  await breakStorage(page);
+  await choosePartner(page, 'Stone Light Networks · Account 74050');
+  await expect(alert).toContainText('It will be lost if this tab refreshes or closes');
+  await expect(alert).not.toContainText('earlier simulation');
+  await breakStorage(page, false);
+  await page.reload();
+  await expect(matchingRecordCount(page)).toHaveText('0');
+});
+
+test('with storage fully unavailable the reset still works in this page and implies no persistence', async ({ page }) => {
+  await failStorage(page, ['getItem', 'setItem', 'removeItem'], true);
+  await mockApi(page);
+  await openSales(page);
+  await expect(workspace(page).getByRole('alert')).toContainText('could not be saved');
+  await startDraft(page);
+  await resetButton(page).click();
+  await confirmReset(page).click();
+  await expect(resetNotice(page)).toBeVisible();
+  await expect(workspace(page).getByRole('alert')).toBeVisible();
+  await expect(workspace(page).getByRole('radio', { checked: true })).toHaveCount(0);
+});
+
+test('recovering from an incompatible save explains itself, moves focus and survives a refresh', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await buildMixedDraft(page);
+  await page.evaluate(() => {
+    sessionStorage.setItem('unrelated.user.state', 'kept');
+    for (let i = 0; i < sessionStorage.length; i++) if (sessionStorage.key(i) !== 'unrelated.user.state') sessionStorage.setItem(sessionStorage.key(i), 'not json');
+  });
+  await page.reload();
+
+  await expect(workspace(page).getByRole('alert')).toContainText('Nothing outside this simulation is affected');
+  await expect(resetButton(page)).toHaveCount(0);
+  await workspace(page).getByRole('button', { name: 'Start a new simulation' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(resetNotice(page)).toBeFocused();
+  await page.reload();
+  await expect(workspace(page).getByRole('alert')).toHaveCount(0);
+  await expect(workspace(page).getByText('Select a trade partner to create a draft.')).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem('unrelated.user.state'))).toBe('kept');
+});
+
+// The rehearsal in docs/PARTNER_SALES_REHEARSAL.md. Opening 250,000.00 + earnings
+// 954,922.38 - settlements 382,339.85 closes at 822,582.53, whatever the invoice does.
+const RIVER_ISLE = 'River Isle Ventures · Account 296065';
+const expectStatementUnchanged = async (page) => {
+  await expect(statementFact(page, 'Opening outstanding')).toHaveText('NGN 250,000.00');
+  await expect(statementFact(page, 'Period earnings')).toHaveText('NGN 954,922.38');
+  await expect(statementFact(page, 'Period settlements')).toHaveText('NGN 382,339.85');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 822,582.53');
+  await expect(commissionAccount(page).getByText('SIM-INV')).toHaveCount(0);
+  await expect(commissionAccount(page).getByText('SIM-PAY')).toHaveCount(0);
+};
+const expectFictional = async (page) => {
+  await expect(workspace(page).getByText('Fictional simulation using sample partner identities')).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: 'Synthetic demonstration' })).toBeVisible();
+  await expect(page.getByText('Live Presto')).toHaveCount(0);
+  await expect(workspace(page).getByRole('button', { name: /offset|net balance|from commission|reserve|stock/i })).toHaveCount(0);
+  await expect(workspace(page).getByText(/net balance|commission wallet|reserved stock|available stock/i)).toHaveCount(0);
+};
+const pressEnter = async (page, locator) => {
+  await locator.focus();
+  await page.keyboard.press('Enter');
+};
+const pressSpace = async (page, locator) => {
+  await locator.focus();
+  await page.keyboard.press('Space');
+};
+const clickWithPointer = (_page, locator) => locator.click();
+const noOverflow = (page) => workspace(page).evaluate((scroller) => [scroller.scrollWidth - scroller.clientWidth, document.documentElement.scrollWidth - document.documentElement.clientWidth]);
+
+async function createAndCollect(page, act) {
+  await act(page, workspace(page).getByRole('button', { name: 'Create draft' }));
+  for (const [code, units] of [['FBB-5G-ROUTER', '2'], ['RCC-0100', '100']]) {
+    await act(page, add(page, code));
+    await expect(quantity(page, code)).toBeFocused();
+    await quantity(page, code).fill(units);
+  }
+  await expect(draftTotal(page)).toContainText('NGN 110,000.00');
+  await act(page, previewButton(page));
+  await expect(preview(page).getByRole('heading', { name: 'Simulated invoice preview' })).toBeFocused();
+  await expect(preview(page).getByRole('row', { name: /Total.*NGN 110,000\.00/ })).toBeVisible();
+  await act(page, issueButton(page));
+
+  const invoice = issuedInvoice(page, 'SIM-INV-0001');
+  await expect(invoice.getByRole('heading', { level: 2 })).toBeFocused();
+  await expect(fact(invoice, 'Status')).toHaveText('Unpaid');
+  await expectFictional(page);
+
+  await collectionAmount(page).fill('40000');
+  await act(page, recordButton(page));
+  await expect(fact(invoice, 'Status')).toHaveText('Partially paid');
+  await expect(fact(invoice, 'Outstanding as of 31 May 2026')).toHaveText('NGN 70,000.00');
+
+  // A refresh keeps the obligation and returns to the list, where it can be reopened.
+  await page.reload();
+  await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('Partially paid');
+  await expect(workspace(page).getByRole('radio', { name: RIVER_ISLE })).toBeChecked();
+  await act(page, invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0001' }));
+  await expect(invoice.getByRole('heading', { level: 2 })).toBeFocused();
+  await expect(fact(invoice, 'Outstanding as of 31 May 2026')).toHaveText('NGN 70,000.00');
+
+  await collectionAmount(page).fill('70000');
+  await act(page, recordButton(page));
+  await expect(fact(invoice, 'Status')).toHaveText('Paid');
+  await expect(fact(invoice, 'Collected')).toHaveText('NGN 110,000.00');
+  await expect(fact(invoice, 'Outstanding as of 31 May 2026')).toHaveText('NGN 0.00');
+  const rows = history(page).getByRole('row');
+  await expect(rows.filter({ hasText: 'SIM-PAY-0001' })).toContainText('NGN 70,000.00');
+  await expect(rows.filter({ hasText: 'SIM-PAY-0002' })).toContainText('NGN 0.00');
+  await expectFictional(page);
+}
+
+async function runPresentation(page, act, keyboard = false) {
+  const partner = workspace(page).getByRole('radio', { name: RIVER_ISLE });
+  if (keyboard) await pressSpace(page, partner);
+  else await partner.check();
+  await expect(partner).toBeChecked();
+  await createAndCollect(page, act);
+
+  const invoice = issuedInvoice(page, 'SIM-INV-0001');
+  await act(page, invoice.getByRole('button', { name: `View purchase obligations for ${RIVER_ISLE}` }));
+  await act(page, workspace(page).getByRole('button', { name: `View commission account for ${RIVER_ISLE}` }));
+  await expect(commissionAccount(page).getByRole('heading', { level: 2 })).toBeFocused();
+  await expectStatementUnchanged(page);
+  await expectFictional(page);
+
+  for (const name of ['Explain activation commission', 'Explain subscription commission', 'Explain settlement']) {
+    await act(page, explanationLink(page, name));
+    await expect(page.getByText(`Opened from the Partner Sales simulation for exact account 296065, May 2026.`)).toBeVisible();
+    await expect(page.getByText('This workspace shows existing evidence, not the fictional statement.')).toBeVisible();
+    await expect(page.getByRole('combobox', { name: /Reporting period/ }).first()).toHaveValue('202605');
+    await act(page, returnToSales(page));
+    await expect(explanationLink(page, name)).toBeFocused();
+    await expectStatementUnchanged(page);
+  }
+
+  // The return entry names the account, so a refresh here still lands on it.
+  await page.reload();
+  await expect(commissionAccount(page)).toBeVisible();
+  await expectStatementUnchanged(page);
+  await act(page, commissionAccount(page).getByRole('button', { name: 'Back to invoices' }));
+
+  const status = invoiceList(page).getByRole('combobox', { name: 'Status' });
+  if (keyboard) {
+    await status.focus();
+    await page.keyboard.type('Pai');
+  } else await status.selectOption('Paid');
+  await expect(status).toHaveValue('Paid');
+  await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('NGN 110,000.00');
+  await expect(fact(invoiceList(page), 'Outstanding purchase obligation')).toHaveText('NGN 0.00');
+  const opener = invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0001' });
+  await act(page, opener);
+  await act(page, issuedInvoice(page, 'SIM-INV-0001').getByRole('button', { name: 'Back to invoices' }));
+  await expect(opener).toBeFocused();
+  await expect(invoiceList(page).getByRole('combobox', { name: 'Status' })).toHaveValue('Paid');
+  await expectFictional(page);
+}
+
+const resetBy = async (page, act) => {
+  await act(page, resetButton(page));
+  await act(page, confirmReset(page));
+  await expect(resetNotice(page)).toBeFocused();
+  await expect(matchingRecordCount(page)).toHaveText('0');
+};
+
+test('the complete presentation replays identically after a reset, with no writes or agent calls', async ({ page }) => {
+  const { mutations, requests } = await mockApi(page, { reads: explanationReads([]) });
+  await openSales(page);
+  await runPresentation(page, clickWithPointer);
+  await resetBy(page, clickWithPointer);
+  await runPresentation(page, clickWithPointer);
+  expect(mutations).toEqual([]);
+  expect(requests.filter((path) => path.includes('chat'))).toEqual([]);
+});
+
+test('the complete presentation works by keyboard on a narrow screen', async ({ page }) => {
+  const { mutations } = await mockApi(page, { reads: explanationReads([]) });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto('/?period=202605&view=partner-sales');
+  await expect(workspace(page)).toBeVisible();
+  await runPresentation(page, pressEnter, true);
+  expect(await noOverflow(page)).toEqual([0, 0]);
+
+  // Reached and operated by Tab alone, from the top of the workspace.
+  await workspace(page).getByRole('heading', { name: 'Partner Sales', level: 1 }).focus();
+  await page.keyboard.press('Tab');
+  await expect(resetButton(page)).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(resetPanel(page).getByRole('button', { name: 'Keep simulation' })).toBeFocused();
+  expect(await noOverflow(page)).toEqual([0, 0]);
+  await page.keyboard.press('Shift+Tab');
+  await expect(confirmReset(page)).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(resetNotice(page)).toBeFocused();
+  expect(await noOverflow(page)).toEqual([0, 0]);
+  expect(mutations).toEqual([]);
+});
+
+test('in live-read mode the invoice story runs, stays fictional and asks live sources nothing', async ({ page }) => {
+  const { mutations, requests } = await mockApi(page, { health: { sample_data_mode: false }, reads: statementRead() });
+  await openSales(page);
+  await choosePartner(page, RIVER_ISLE);
+  await createAndCollect(page, clickWithPointer);
+  await issuedInvoice(page, 'SIM-INV-0001').getByRole('button', { name: `View purchase obligations for ${RIVER_ISLE}` }).click();
+  await workspace(page).getByRole('button', { name: `View commission account for ${RIVER_ISLE}` }).click();
+  await expectStatementUnchanged(page);
+  await expect(evidenceLinks(page)).toContainText('reading live data');
+  await expect(evidenceLinks(page).getByRole('button')).toHaveCount(0);
+  await expectFictional(page);
+  await resetBy(page, clickWithPointer);
+  await expectFictional(page);
+  expect(requests.filter((path) => path.startsWith('/dealers') || path.startsWith('/commissions') || path.startsWith('/payments') || path.includes('chat'))).toEqual([]);
+  expect(mutations).toEqual([]);
+});
+
+test('an explanation whose evidence fails stays on the exact account and can return or retry', async ({ page }) => {
+  let failing = true;
+  const reads = explanationReads([]);
+  await mockApi(page, { reads: (pathname, params) => (failing && pathname === '/commissions/296065/detail' && params.get('stream') === 'activation' ? { status: 503, json: { detail: 'Unavailable' } } : reads(pathname, params)) });
+  await openSales(page);
+  await openCommissionAccount(page, RIVER_ISLE);
+  await explanationLink(page, 'Explain activation commission').click();
+
+  const commission = page.getByRole('main', { name: 'Commission intelligence' });
+  await expect(page.getByText('Opened from the Partner Sales simulation for exact account 296065, May 2026.')).toBeVisible();
+  await expect(commission.getByRole('alert').filter({ hasText: 'Requested account unavailable' })).toBeVisible();
+  await expect(commission.getByRole('heading', { name: 'River Isle Ventures' })).toHaveCount(0);
+  failing = false;
+  await commission.getByRole('button', { name: 'Retry account' }).click();
+  await expect(commission.getByRole('heading', { name: 'River Isle Ventures' })).toBeVisible();
+  await returnToSales(page).click();
+  await expect(explanationLink(page, 'Explain activation commission')).toBeFocused();
+  await expectStatementUnchanged(page);
+});
+
+test('a simulation survives reporting periods being unavailable, and returns once a reload succeeds', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await buildMixedDraft(page);
+  await page.route('http://localhost:8000/periods', (route) => route.fulfill({ status: 503, headers: cors, json: { detail: 'Unavailable' } }));
+  await page.reload();
+  await expect(page.getByText('Reporting periods unavailable. Reload to retry.')).toBeVisible();
+  await page.unroute('http://localhost:8000/periods');
+  await page.reload();
+  await expectRestoredDraft(page);
+});
+
+test('a settlement explanation whose evidence fails stays on the exact account and can retry or return', async ({ page }) => {
+  let failing = true;
+  const reads = explanationReads([]);
+  await mockApi(page, { reads: (pathname, params) => (failing && pathname === '/payments/accounts/296065' ? { status: 503, json: { detail: 'Unavailable' } } : reads(pathname, params)) });
+  await openSales(page);
+  await openCommissionAccount(page, RIVER_ISLE);
+  await explanationLink(page, 'Explain settlement').click();
+
+  await expect(page.getByText('Opened from the Partner Sales simulation for exact account 296065, May 2026.')).toBeVisible();
+  const payments = page.getByRole('main').filter({ hasText: 'Payment Intelligence' });
+  await expect(payments.getByRole('heading', { name: 'Account 296065' })).toBeVisible();
+  await expect(payments.getByRole('alert').filter({ hasText: 'Payment position unavailable' })).toBeVisible();
+  await expect(payments.getByRole('heading', { name: 'River Isle Ventures' })).toHaveCount(0);
+  failing = false;
+  await payments.getByRole('button', { name: 'Retry payment' }).click();
+  await expect(payments.getByRole('heading', { name: 'River Isle Ventures' })).toBeVisible();
+  await returnToSales(page).click();
+  await expect(explanationLink(page, 'Explain settlement')).toBeFocused();
+});
+
+test('invoice filters survive an explanation handoff and its return', async ({ page }) => {
+  await mockApi(page, { reads: explanationReads([]) });
+  await openSales(page);
+  await issueMixedInvoice(page);
+  await back(page).click();
+  await invoiceList(page).getByRole('combobox', { name: 'Status' }).selectOption('Unpaid');
+  await invoiceList(page).getByRole('searchbox', { name: 'Search invoices by partner or account code' }).fill('296065');
+
+  await workspace(page).getByRole('button', { name: `View commission account for ${RIVER_ISLE}` }).click();
+  await explanationLink(page, 'Explain settlement').click();
+  await returnToSales(page).click();
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+
+  await expect(invoiceList(page).getByRole('combobox', { name: 'Status' })).toHaveValue('Unpaid');
+  await expect(invoiceList(page).getByRole('searchbox', { name: 'Search invoices by partner or account code' })).toHaveValue('296065');
+  await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('Unpaid');
 });

@@ -10,15 +10,48 @@ import './sales.css';
 const detailHeadingId = (entry) => (entry.type === 'invoice' ? `sales-invoice-heading-${entry.reference}` : entry.type === 'commission' ? `sales-commission-heading-${entry.partnerCode}` : `sales-obligations-heading-${entry.partnerCode}`);
 const backLabelTo = (entry) => (entry.type === 'partner' ? 'Back to purchase obligations' : entry.type === 'commission' ? 'Back to commission account' : `Back to invoice ${entry.reference}`);
 
-export default function PartnerSalesWorkspace({ navigation, onNavigate }) {
+export default function PartnerSalesWorkspace({ navigation, onNavigate, onClearNavigation }) {
   const { periods, period, loading, error } = usePeriod();
   // A month seeded from the URL only counts once /periods confirms it.
   if (loading || !periods.includes(period)) return <p role="status" className="p-6">{loading ? 'Loading reporting periods…' : error ? 'Reporting periods unavailable. Reload to retry.' : 'No reporting periods available.'}</p>;
-  return <Workspace period={period} navigation={navigation} onNavigate={onNavigate} />;
+  return <Workspace period={period} navigation={navigation} onNavigate={onNavigate} onClearNavigation={onClearNavigation} />;
 }
 
-function Workspace({ period, navigation, onNavigate }) {
-  const { simulation, setSimulation, saveFailed, incompatible, startOver, retrySave } = useSalesSimulation();
+// Asks first, in place: a browser dialog would stop the presentation, and an
+// accidental reset would lose the rehearsal so far.
+function SimulationReset({ simulation, onReset }) {
+  const [confirming, setConfirming] = useState(false);
+  const cancel = () => {
+    setConfirming(false);
+    requestAnimationFrame(() => document.getElementById('sales-reset')?.focus());
+  };
+  const reset = () => {
+    setConfirming(false);
+    onReset();
+  };
+  const open = () => {
+    setConfirming(true);
+    requestAnimationFrame(() => document.getElementById('sales-reset-keep')?.focus());
+  };
+  const contents = `${quantityLabel(Object.keys(simulation.drafts).length, 'draft')}, ${quantityLabel(simulation.invoices.length, 'invoice')} and ${quantityLabel(simulation.collections.length, 'collection')}`;
+  return <div className="mt-3">
+    {!confirming ? <button id="sales-reset" type="button" className="sales-button" onClick={open}>Reset simulation</button>
+      : <div role="group" aria-label="Confirm simulation reset" className="sales-paper">
+        <p className="text-sm">Reset this tab's simulation to its starting point? This clears {contents}, and the selected partner and filters. Recorded commission, payment and inventory evidence, other workspaces and the reporting month stay as they are.</p>
+        <div className="sales-actions">
+          <button type="button" className="sales-button sales-primary" onClick={reset}>Reset to starting point</button>
+          <button id="sales-reset-keep" type="button" className="sales-button" onClick={cancel}>Keep simulation</button>
+        </div>
+      </div>}
+  </div>;
+}
+
+function Workspace({ period, navigation, onNavigate, onClearNavigation }) {
+  const { simulation, setSimulation, saveFailed, clearFailed, incompatible, startOver, retrySave } = useSalesSimulation();
+  // Remounts the invoice list, so a reset also drops its filters and page.
+  const [invoiceListKey, setInvoiceListKey] = useState(0);
+  // The notice lasts until the first change to the simulation it describes.
+  const [simulationAtReset, setSimulationAtReset] = useState(null);
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
   const matches = PARTNERS.filter((partner) => partnerMatches(partner, term));
@@ -74,19 +107,33 @@ function Workspace({ period, navigation, onNavigate }) {
   const openInvoice = (reference, openerId) => openDetail({ type: 'invoice', reference }, openerId);
   const openPartner = (partnerCode, openerId) => openDetail({ type: 'partner', partnerCode }, openerId);
   const openCommission = (partnerCode, openerId) => openDetail({ type: 'commission', partnerCode }, openerId);
+  const reset = () => {
+    setSimulationAtReset(startOver());
+    setSearch('');
+    setTrail([]);
+    setInvoiceListKey((current) => current + 1);
+    onClearNavigation();
+    requestAnimationFrame(() => document.getElementById('sales-reset-notice')?.focus());
+  };
+  // A successful retry removes the alert and the button holding focus.
+  const retry = () => {
+    if (retrySave()) document.getElementById('sales-workspace-heading')?.focus();
+  };
   const visibleTrail = trail.filter((entry) => entry.type !== 'invoice' || invoiceByReference(simulation, entry.reference));
   return <main className="sales-workspace h-full overflow-y-auto bg-gray-50" aria-label="Partner Sales">
     <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
       <header><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">MTN sales to trade partners</p>
-        <h1 className="text-2xl font-semibold tracking-tight mt-1">Partner Sales</h1>
+        <h1 id="sales-workspace-heading" tabIndex={-1} className="text-2xl font-semibold tracking-tight mt-1">Partner Sales</h1>
         <p className="text-sm text-gray-600 mt-2">Draft, preview and issue what MTN would invoice a trade partner in {formatPeriod(period)}, record fictional collections against issued invoices, and explain a partner's fictional commission account.</p>
-        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. Drafts, simulated invoices and collections stay in this browser tab, separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p></header>
+        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. Drafts, simulated invoices and collections stay in this browser tab, separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p>
+        {!incompatible && <SimulationReset simulation={simulation} onReset={reset} />}
+        {simulation === simulationAtReset && <p id="sales-reset-notice" role="status" tabIndex={-1} className="sales-notice mt-3">Simulation reset to its starting point: no drafts, invoices or collections, and references restart at SIM-INV-0001.</p>}</header>
       {incompatible ? <section className="sales-paper" aria-label="Saved simulation unavailable">
-        <p role="alert" className="text-sm">The saved simulation in this tab could not be restored.</p>
-        <button type="button" className="sales-button mt-3" onClick={startOver}>Start a new simulation</button>
+        <p role="alert" className="text-sm">The saved simulation in this tab could not be restored. Starting a new simulation replaces it with the starting point. Nothing outside this simulation is affected.</p>
+        <button type="button" className="sales-button mt-3" onClick={reset}>Start a new simulation</button>
       </section> : <>
-        {saveFailed && <div role="alert" className="sales-alert !mt-0">Session storage is unavailable, so this simulation could not be saved. It will be lost if this tab refreshes or closes.
-          <div className="mt-2"><button type="button" className="sales-button" onClick={retrySave}>Try saving again</button></div></div>}
+        {saveFailed && <div role="alert" className="sales-alert !mt-0">{clearFailed ? 'Session storage is unavailable, so this reset could not be saved. The earlier simulation may return if this tab refreshes.' : 'Session storage is unavailable, so this simulation could not be saved. It will be lost if this tab refreshes or closes.'}
+          <div className="mt-2"><button type="button" className="sales-button" onClick={retry}>Try saving again</button></div></div>}
         {visibleTrail.map((entry, index) => {
           const active = index === visibleTrail.length - 1;
           const onBack = () => closeDetail(entry.openerId);
@@ -122,7 +169,7 @@ function Workspace({ period, navigation, onNavigate }) {
             <button type="button" className="sales-button sales-primary mt-3" onClick={createDraft}>Create draft</button>
           </section>
           : <DraftEditor key={key} draft={draft} partner={partner} onChange={updateDraft} onIssue={issue} />}
-        <InvoiceList simulation={simulation} period={period} onOpenInvoice={openInvoice} onOpenPartner={openPartner} onOpenDraft={openDraft} />
+        <InvoiceList key={invoiceListKey} simulation={simulation} period={period} onOpenInvoice={openInvoice} onOpenPartner={openPartner} onOpenDraft={openDraft} />
         </div>
       </>}
     </div>
