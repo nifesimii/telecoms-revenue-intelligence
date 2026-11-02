@@ -19,7 +19,7 @@ end of each work session. Newest session on top.
   Invalid saved collections also show it. No backend requests; commission is untouched.
 - Defaults chosen here, not MTN policy: references are generated rather than typed;
   backdating and future dates are allowed provided the date is not before issue.
-- Latest: **58 acceptance**, **17 frontend transport** tests, production build; backend
+- Latest: **61 acceptance**, **17 frontend transport** tests, production build; backend
   **1,163 passed, 37 skipped** (no backend files changed).
 
 ## Session — 2026-11-01 (Partner Sales: issue invoices and inspect obligations)

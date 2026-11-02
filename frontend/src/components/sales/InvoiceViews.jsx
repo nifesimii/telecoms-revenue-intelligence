@@ -133,7 +133,12 @@ export function PartnerObligations({ simulation, partner, headingId, backLabel, 
   </section>;
 }
 
-function InvoiceCollections({ invoice, balance, nextSequence, onRecord }) {
+// The second click of a double click lands on a form the first has just cleared.
+const ignoreRepeatClick = (event) => {
+  if (event.detail > 1) event.preventDefault();
+};
+
+function InvoiceCollections({ invoice, balance, nextCollectionSequence, onRecord }) {
   const [date, setDate] = useState(balance.asOf);
   const [amount, setAmount] = useState('');
   const [attempted, setAttempted] = useState(false);
@@ -150,15 +155,13 @@ function InvoiceCollections({ invoice, balance, nextSequence, onRecord }) {
   };
   const submit = (event) => {
     event.preventDefault();
-    // The second click of a double click lands on the form this action just cleared.
-    if (recorded && !amount) return;
     setAttempted(true);
     if (errors.date || errors.amount) {
       document.getElementById(`sales-collection-${errors.date ? 'date' : 'amount'}-${invoice.reference}`)?.focus();
       return;
     }
-    onRecord({ actionId: collectionActionId(invoice.reference, nextSequence), invoiceReference: invoice.reference, date, amount });
-    setRecorded({ reference: collectionReferenceFor(nextSequence), amountMinor: parseAmountMinor(amount) });
+    onRecord({ actionId: collectionActionId(invoice.reference, nextCollectionSequence), invoiceReference: invoice.reference, date, amount });
+    setRecorded({ reference: collectionReferenceFor(nextCollectionSequence), amountMinor: parseAmountMinor(amount) });
     setAmount('');
     setAttempted(false);
     // Paying in full removes the form and the button holding focus.
@@ -187,12 +190,12 @@ function InvoiceCollections({ invoice, balance, nextSequence, onRecord }) {
     {balance.status === 'Paid' ? <p className="text-sm font-medium mt-4">Paid in full. No further collections can be recorded.</p>
       : <form noValidate className="mt-4" aria-label={`Record a collection against ${invoice.reference}`} onSubmit={submit}>
         <div className="sales-dates">
-          <div className="flex flex-col gap-2"><label className="sales-field">Collection date<input id={`sales-collection-date-${invoice.reference}`} type="date" min={invoice.issueDate} aria-invalid={Boolean(errors.date)} aria-describedby={errors.date ? dateErrorId : undefined} value={date} onChange={edit(setDate)} /></label>
+          <div className="flex flex-col gap-2"><label className="sales-field">Collection date<input id={`sales-collection-date-${invoice.reference}`} type="date" min={invoice.issueDate} max="9999-12-31" aria-invalid={Boolean(errors.date)} aria-describedby={errors.date ? dateErrorId : undefined} value={date} onChange={edit(setDate)} /></label>
             {errors.date && <span id={dateErrorId} className="sales-error">{errors.date}</span>}</div>
           <div className="flex flex-col gap-2"><label className="sales-field">Amount in NGN<input id={`sales-collection-amount-${invoice.reference}`} type="text" inputMode="decimal" autoComplete="off" aria-invalid={Boolean(amountError)} aria-describedby={amountError ? amountErrorId : undefined} value={amount} onChange={edit(setAmount)} /></label>
             {amountError && <span id={amountErrorId} className="sales-error">{amountError}</span>}</div>
         </div>
-        <div className="sales-actions"><button type="submit" className="sales-button sales-primary">Record collection</button>
+        <div className="sales-actions"><button type="submit" className="sales-button sales-primary" onClick={ignoreRepeatClick}>Record collection</button>
           <p className="text-xs text-gray-600">Up to {formatMinorNGN(balance.outstandingMinor)} outstanding. Collections cannot be refunded or reversed in this simulation.</p></div>
       </form>}
   </section>;
@@ -227,7 +230,7 @@ export function InvoiceDetail({ invoice, simulation, headingId, backLabel, onBac
       </tr>)}</tbody>
       <tfoot><tr><th scope="row">Total</th><td className="hidden sm:table-cell" /><td className="hidden sm:table-cell" /><td className="sales-amount">{formatMinorNGN(invoice.totalMinor)}</td></tr></tfoot>
     </table>
-    <InvoiceCollections invoice={invoice} balance={balance} nextSequence={simulation.nextCollectionSequence} onRecord={onRecordCollection} />
+    <InvoiceCollections invoice={invoice} balance={balance} nextCollectionSequence={simulation.nextCollectionSequence} onRecord={onRecordCollection} />
     <p className="sales-notice mt-5">Simplified fictional demonstration with fictional prices: not an actual purchase obligation or an operational tax invoice. Taxes and discounts are not modeled. {PURCHASE_NOTE} These details stay fixed after issue, whichever reporting month is selected.</p>
     <div className="sales-actions">
       <button type="button" className="sales-button" onClick={onBack}>{backLabel}</button>

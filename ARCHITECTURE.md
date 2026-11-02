@@ -451,8 +451,8 @@ workspaces. Public view IDs remain `overview`, `commission`, `activation`,
 
 Workspace switches push history entries; initial URL normalization and period
 changes replace the current entry. `popstate` restores the URL view and month.
-`partner-sales` is a browser-only fictional simulation; its session-scoped drafts
-and invoices never reach the API, Atlas or other workspaces, and the header shows the synthetic
+`partner-sales` is a browser-only fictional simulation; its session-scoped drafts,
+invoices and collections never reach the API, Atlas or other workspaces, and the header shows the synthetic
 badge there even in live-read mode. Period validation waits for the available-month list. Serializable investigation
 context/revisions live in each entry's `fbbWorkspace` history state; restoring a
 revision remounts that contextual workspace when necessary. Context is not added

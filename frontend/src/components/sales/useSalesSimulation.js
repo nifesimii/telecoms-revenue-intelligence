@@ -2,7 +2,7 @@
 // sessionStorage survives refresh and nothing leaves the browser.
 
 import { useEffect, useRef, useState } from 'react';
-import { CATALOGUE, PARTNERS, collectionSequenceOf, draftKey, dueDateError, issueDateError, sequenceOf } from './salesSimulation.js';
+import { CATALOGUE, PARTNERS, collectionSequenceOf, draftKey, dueDateError, isDate, issueDateError, sequenceOf } from './salesSimulation.js';
 
 const STORAGE_KEY = 'fbb.partner-sales.simulation';
 const STORAGE_VERSION = 3;
@@ -10,7 +10,6 @@ const newSimulation = () => ({ version: STORAGE_VERSION, nextSequence: 1, nextCo
 
 const REFERENCE = /^SIM-INV-\d{4,}$/;
 const COLLECTION_REFERENCE = /^SIM-PAY-\d{4,}$/;
-const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 function isDraft(key, draft) {
   if (!draft || !REFERENCE.test(draft.reference) || !/^\d{6}$/.test(draft.period)) return false;

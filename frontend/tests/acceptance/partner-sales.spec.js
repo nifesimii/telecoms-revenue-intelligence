@@ -947,6 +947,67 @@ test('rejects invalid amounts and dates, leaving the valid balance unchanged', a
   await expect(history(page).getByRole('row', { name: /10 Jun 2026.*SIM-PAY-0001.*NGN 40,000\.00.*NGN 36,666\.57/ })).toBeVisible();
 });
 
+test('rejects a five-digit collection year, so the saved simulation still restores', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  // Chrome accepts this value unless the field caps the year, so set it as a stray keystroke would.
+  await collectionDate(page).evaluate((input) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '20261-10-06');
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await collectionAmount(page).fill('40000');
+  await recordButton(page).click();
+  await expect(collections(page).getByText('Enter a valid collection date.')).toBeVisible();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0001'), 'Status')).toHaveText('Unpaid');
+
+  await page.reload();
+  await expect(workspace(page).getByRole('alert')).toHaveCount(0);
+  await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('Unpaid');
+});
+
+test('an empty amount straight after a success is still explained', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  await recordCollection(page, '2026-06-10', '40000');
+  await expect(collections(page).getByRole('heading', { name: 'Invoice collections' })).toBeFocused();
+  await recordButton(page).click();
+  await expect(collections(page).getByText('Enter a positive NGN amount')).toBeVisible();
+  await expect(collectionAmount(page)).toBeFocused();
+  await expect(history(page).locator('tbody tr')).toHaveCount(1);
+});
+
+test('a collection never reaches the same-name account', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  await back(page).click();
+  await startDraft(page, 'River Isle Ventures · Account 353072');
+  await addLine(page, 'RCC-0100', '1');
+  await previewButton(page).click();
+  await issueButton(page).click();
+  await expect(issuedInvoice(page, 'SIM-INV-0002')).toBeVisible();
+  await back(page).click();
+
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0001' }).click();
+  await recordCollection(page, '2026-06-10', '40000');
+  await back(page).click();
+
+  // 110,000.00 less 40,000.00 on 296065, plus 100.00 untouched on 353072.
+  await expect(summary(page, 'Outstanding purchase obligation')).toHaveText('NGN 70,100.00');
+  await invoiceList(page).getByRole('searchbox').fill('353072');
+  await expect(summary(page, 'Outstanding purchase obligation')).toHaveText('NGN 100.00');
+  await expect(invoiceRow(page, 'SIM-INV-0002')).toContainText('Unpaid');
+  await invoiceList(page).getByRole('button', { name: /^View purchase obligations/ }).click();
+  const other = workspace(page).getByRole('region', { name: 'Purchase obligations for River Isle Ventures · Account 353072' });
+  await expect(fact(other, 'Outstanding as of 31 May 2026')).toHaveText('NGN 100.00');
+  await expect(other.getByRole('row', { name: /SIM-INV-0001/ })).toHaveCount(0);
+  await other.getByRole('button', { name: 'Open invoice SIM-INV-0002' }).click();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0002'), 'Status')).toHaveText('Unpaid');
+  await expect(collections(page, 'SIM-INV-0002')).toContainText('No collections recorded');
+});
+
 test('a draft has no collection path, and repeating an action has one effect', async ({ page }) => {
   await mockApi(page);
   await openSales(page);
@@ -1057,7 +1118,7 @@ test('collections stay on their invoice and exact account, and show all recorded
 
   await invoiceList(page).getByRole('button', { name: 'View purchase obligations for River Isle Ventures · Account 296065 from SIM-INV-0205' }).click();
   const detail = workspace(page).getByRole('region', { name: 'Purchase obligations for River Isle Ventures · Account 296065' });
-  // 10,300.00 less 30.00. Same-name account 353072 has nothing.
+  // 10,300.00 less 30.00.
   await expect(fact(detail, 'Outstanding as of 1 Jun 2026')).toHaveText('NGN 10,270.00');
   await back(page).click();
 
@@ -1127,8 +1188,14 @@ test('records a collection with the keyboard alone', async ({ page }) => {
   await mockApi(page);
   await openSales(page);
   await issueMixedInvoice(page);
-  // Chrome tabs through each date segment, so start from the amount field.
-  await collectionAmount(page).focus();
+  // Typed segment by segment, then on to the amount. Day and month match, because
+  // Chrome orders those segments by locale.
+  await collectionDate(page).focus();
+  await page.keyboard.type('06062026');
+  await expect(collectionDate(page)).toHaveValue('2026-06-06');
+  await page.keyboard.press('Tab');
+  await page.keyboard.press('Tab');
+  await expect(collectionAmount(page)).toBeFocused();
 
   // Enter submits from the field, and an error returns focus there.
   await page.keyboard.type('nope');

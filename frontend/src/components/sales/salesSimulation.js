@@ -1,4 +1,4 @@
-// Fictional Partner Sales seed data. Browser-only presentation simulation (see
+// Fictional Partner Sales seed data and rules. Browser-only presentation simulation (see
 // docs/adr/0001-partner-sales-presentation-boundary.md): nothing here is read
 // from, or written to, a financial source.
 
@@ -68,6 +68,10 @@ export function draftTotalMinor(draft) {
 }
 
 export const referenceFor = (sequence) => `SIM-INV-${String(sequence).padStart(4, '0')}`;
+
+// A date input yields five-digit years unless capped, and those neither compare
+// correctly as strings nor restore from a save.
+export const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 // Date-only values compare correctly as strings and never shift across time zones.
 const inMonth = (date, period) => date.slice(0, 7) === `${period.slice(0, 4)}-${period.slice(4, 6)}`;
@@ -150,7 +154,7 @@ export function parseAmountMinor(text) {
 export function collectionErrors(invoice, outstandingMinor, { date, amount }) {
   const amountMinor = parseAmountMinor(amount);
   return {
-    date: !date ? 'Enter a collection date.' : date < invoice.issueDate ? `A collection cannot be dated before the issue date, ${formatDate(invoice.issueDate)}.` : null,
+    date: !date ? 'Enter a collection date.' : !isDate(date) ? 'Enter a valid collection date.' : date < invoice.issueDate ? `A collection cannot be dated before the issue date, ${formatDate(invoice.issueDate)}.` : null,
     amount: !amountMinor ? 'Enter a positive NGN amount with at most two decimal places.' : amountMinor > outstandingMinor ? `Enter ${formatMinorNGN(outstandingMinor)} or less, the outstanding balance.` : null,
   };
 }
@@ -166,6 +170,7 @@ export function recordCollection(simulation, { actionId, invoiceReference, date,
   const collection = { actionId, reference: collectionReferenceFor(simulation.nextCollectionSequence), invoiceReference, date, amountMinor: parseAmountMinor(amount) };
   return { ...simulation, nextCollectionSequence: simulation.nextCollectionSequence + 1, collections: [...simulation.collections, collection] };
 }
+
 // References are unique, so this is a total order: latest date first, then latest reference.
 const newestFirst = (a, b) => b.date.localeCompare(a.date) || sequenceOf(b.reference) - sequenceOf(a.reference);
 
