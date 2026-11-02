@@ -2,13 +2,14 @@
 // sessionStorage survives refresh and nothing leaves the browser.
 
 import { useEffect, useRef, useState } from 'react';
-import { CATALOGUE, PARTNERS, draftKey, dueDateError, issueDateError, sequenceOf } from './salesSimulation.js';
+import { CATALOGUE, PARTNERS, collectionSequenceOf, draftKey, dueDateError, issueDateError, sequenceOf } from './salesSimulation.js';
 
 const STORAGE_KEY = 'fbb.partner-sales.simulation';
-const STORAGE_VERSION = 2;
-const newSimulation = () => ({ version: STORAGE_VERSION, nextSequence: 1, partnerCode: '', drafts: {}, invoices: [] });
+const STORAGE_VERSION = 3;
+const newSimulation = () => ({ version: STORAGE_VERSION, nextSequence: 1, nextCollectionSequence: 1, partnerCode: '', drafts: {}, invoices: [], collections: [] });
 
 const REFERENCE = /^SIM-INV-\d{4,}$/;
+const COLLECTION_REFERENCE = /^SIM-PAY-\d{4,}$/;
 const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 
 function isDraft(key, draft) {
@@ -30,12 +31,31 @@ function isInvoice(invoice) {
   return reconciles && invoice.lines.reduce((sum, line) => sum + line.lineTotalMinor, 0) === invoice.totalMinor;
 }
 
+// Each collection names one issued invoice, on or after its issue date, and
+// together they never take that invoice below zero.
+function areCollections(saved) {
+  const { collections, invoices, nextCollectionSequence } = saved;
+  if (!Array.isArray(collections) || !Number.isInteger(nextCollectionSequence) || nextCollectionSequence < 1) return false;
+  const issued = new Map(invoices.map((invoice) => [invoice.reference, invoice]));
+  const collected = new Map();
+  for (const collection of collections) {
+    const invoice = issued.get(collection?.invoiceReference);
+    if (!invoice || typeof collection.actionId !== 'string' || !collection.actionId || !COLLECTION_REFERENCE.test(collection.reference)) return false;
+    if (!isDate(collection.date) || collection.date < invoice.issueDate || !isAmount(collection.amountMinor) || collectionSequenceOf(collection.reference) >= nextCollectionSequence) return false;
+    const total = (collected.get(invoice.reference) ?? 0) + collection.amountMinor;
+    if (total > invoice.totalMinor) return false;
+    collected.set(invoice.reference, total);
+  }
+  return new Set(collections.map((collection) => collection.actionId)).size === collections.length && new Set(collections.map((collection) => collection.reference)).size === collections.length;
+}
+
 function isSimulation(saved) {
   if (saved?.version !== STORAGE_VERSION || !Number.isInteger(saved.nextSequence) || saved.nextSequence < 1) return false;
   if (saved.partnerCode !== '' && !PARTNERS.some((partner) => partner.code === saved.partnerCode)) return false;
   if (!saved.drafts || typeof saved.drafts !== 'object') return false;
   if (!Array.isArray(saved.invoices) || !saved.invoices.every(isInvoice)) return false;
   if (!Object.entries(saved.drafts).every(([key, draft]) => isDraft(key, draft))) return false;
+  if (!areCollections(saved)) return false;
   // A reference names one obligation: never two invoices, a draft already issued,
   // or a sequence the next draft would reuse.
   const references = [...saved.invoices, ...Object.values(saved.drafts)].map((record) => record.reference);

@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
-import { CATALOGUE, PARTNERS, defaultIssueDate, draftKey, draftTotalMinor, dueDateError, invoiceByReference, invoiceOpenerId, issueDateError, issueDraft, lineTotalMinor, partnerByCode, partnerLabel, partnerMatches, productByCode, quantityError, quantityLabel, referenceFor } from './salesSimulation.js';
+import { CATALOGUE, PARTNERS, defaultIssueDate, draftKey, draftTotalMinor, dueDateError, invoiceByReference, invoiceOpenerId, issueDateError, issueDraft, lineTotalMinor, partnerByCode, partnerLabel, partnerMatches, productByCode, quantityError, quantityLabel, recordCollection, referenceFor } from './salesSimulation.js';
 import useSalesSimulation from './useSalesSimulation.js';
 import { InvoiceDetail, InvoiceList, PartnerObligations } from './InvoiceViews.jsx';
 import './sales.css';
@@ -52,6 +52,7 @@ function Workspace({ period }) {
     setTrail([entry]);
     focusDetail(entry);
   };
+  const recordInvoiceCollection = (action) => setSimulation((current) => recordCollection(current, action));
   const openDraft = (record) => {
     setSimulation((current) => ({ ...current, partnerCode: record.partner.code }));
     requestAnimationFrame(() => (document.getElementById('sales-draft-heading') ?? document.getElementById('sales-preview-heading'))?.focus());
@@ -63,8 +64,8 @@ function Workspace({ period }) {
     <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
       <header><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">MTN sales to trade partners</p>
         <h1 className="text-2xl font-semibold tracking-tight mt-1">Partner Sales</h1>
-        <p className="text-sm text-gray-600 mt-2">Draft, preview and issue what MTN would invoice a trade partner in {formatPeriod(period)}.</p>
-        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. Drafts and simulated invoices stay in this browser tab, separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p></header>
+        <p className="text-sm text-gray-600 mt-2">Draft, preview and issue what MTN would invoice a trade partner in {formatPeriod(period)}, and record fictional collections against issued invoices.</p>
+        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. Drafts, simulated invoices and collections stay in this browser tab, separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p></header>
       {incompatible ? <section className="sales-paper" aria-label="Saved simulation unavailable">
         <p role="alert" className="text-sm">The saved simulation in this tab could not be restored.</p>
         <button type="button" className="sales-button mt-3" onClick={startOver}>Start a new simulation</button>
@@ -77,7 +78,7 @@ function Workspace({ period }) {
           const backLabel = !index ? 'Back to invoices' : visibleTrail[index - 1].type === 'partner' ? 'Back to purchase obligations' : `Back to invoice ${visibleTrail[index - 1].reference}`;
           return <div key={detailHeadingId(entry)} className={active ? '' : 'hidden'}>
             {entry.type === 'invoice'
-              ? <InvoiceDetail invoice={invoiceByReference(simulation, entry.reference)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenPartner={openPartner} />
+              ? <InvoiceDetail invoice={invoiceByReference(simulation, entry.reference)} simulation={simulation} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenPartner={openPartner} onRecordCollection={recordInvoiceCollection} />
               : <PartnerObligations simulation={simulation} partner={partnerByCode(entry.partnerCode)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenInvoice={openInvoice} />}
           </div>;
         })}

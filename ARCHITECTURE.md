@@ -404,8 +404,9 @@ frontend/src/
     ├── inventory/          Inventory Intelligence tab + DataCoverageTicketModal.
     ├── payment/            Payment Intelligence tab + DisputeDraftModal.
     ├── sales/              Partner Sales presentation simulation: fictional seed data,
-    │                       session-scoped drafts, one-time issuance of frozen invoices, a
-    │                       bounded invoice list and partner purchase obligations. No backend
+    │                       session-scoped drafts, one-time issuance of frozen invoices,
+    │                       idempotent invoice collections, a bounded invoice list and partner
+    │                       purchase obligations. Collections never touch commission. No backend
     │                       reads or writes (see docs/adr/0001-partner-sales-presentation-boundary.md).
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).
     ├── audit/AuditTrailPanel.jsx            Audit Trails tab (browse verification chains).

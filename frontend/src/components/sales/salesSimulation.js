@@ -2,7 +2,7 @@
 // docs/adr/0001-partner-sales-presentation-boundary.md): nothing here is read
 // from, or written to, a financial source.
 
-import { formatCount } from '../../lib/format.js';
+import { formatCount, formatDate, formatMinorNGN } from '../../lib/format.js';
 
 // Sample dealer identities. Same-name accounts stay separate; the account code
 // is the identity.
@@ -115,40 +115,89 @@ export function issueDraft(simulation, reference) {
 // The list row that opens an invoice, where focus returns after its detail closes.
 export const invoiceOpenerId = (reference) => `sales-open-${reference}`;
 
-// Every issued invoice is unpaid until collections exist.
-export const invoiceStatus = () => 'Unpaid';
-
 export const invoiceByReference = (simulation, reference) => simulation.invoices.find((invoice) => invoice.reference === reference);
 
 export const sequenceOf = (reference) => Number(reference.slice('SIM-INV-'.length));
+
+export const collectionReferenceFor = (sequence) => `SIM-PAY-${String(sequence).padStart(4, '0')}`;
+export const collectionSequenceOf = (reference) => Number(reference.slice('SIM-PAY-'.length));
+// The sequence only advances when a collection is recorded, so a form keeps one
+// action until it succeeds and the next collection is a different action.
+export const collectionActionId = (invoiceReference, sequence) => `collect-${invoiceReference}-${sequence}`;
+
+// Status derives from collections, never stored. Collections run oldest first, so
+// each one states the balance it left and backdating cannot misorder the history.
+export function invoiceBalance(simulation, invoice) {
+  let outstandingMinor = invoice.totalMinor;
+  const history = simulation.collections
+    .filter((collection) => collection.invoiceReference === invoice.reference)
+    .sort((a, b) => a.date.localeCompare(b.date) || collectionSequenceOf(a.reference) - collectionSequenceOf(b.reference))
+    .map((collection) => {
+      outstandingMinor -= collection.amountMinor;
+      return { ...collection, outstandingAfterMinor: outstandingMinor };
+    });
+  const status = !history.length ? 'Unpaid' : outstandingMinor ? 'Partially paid' : 'Paid';
+  return { history, status, outstandingMinor, collectedMinor: invoice.totalMinor - outstandingMinor, asOf: history.length ? history[history.length - 1].date : invoice.issueDate };
+}
+
+// Exact kobo from typed text, never through a fractional number. Null when the
+// text is not a money amount, which includes any sign.
+export function parseAmountMinor(text) {
+  const match = /^(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d{1,2}))?$/.exec(text.trim());
+  return match ? Number(match[1].replaceAll(',', '')) * 100 + Number((match[2] ?? '').padEnd(2, '0')) : null;
+}
+
+export function collectionErrors(invoice, outstandingMinor, { date, amount }) {
+  const amountMinor = parseAmountMinor(amount);
+  return {
+    date: !date ? 'Enter a collection date.' : date < invoice.issueDate ? `A collection cannot be dated before the issue date, ${formatDate(invoice.issueDate)}.` : null,
+    amount: !amountMinor ? 'Enter a positive NGN amount with at most two decimal places.' : amountMinor > outstandingMinor ? `Enter ${formatMinorNGN(outstandingMinor)} or less, the outstanding balance.` : null,
+  };
+}
+
+// Repeating an action finds it already recorded and returns the simulation
+// unchanged, as does anything invalid or naming something other than an issued invoice.
+export function recordCollection(simulation, { actionId, invoiceReference, date, amount }) {
+  if (simulation.collections.some((collection) => collection.actionId === actionId)) return simulation;
+  const invoice = invoiceByReference(simulation, invoiceReference);
+  if (!invoice) return simulation;
+  const errors = collectionErrors(invoice, invoiceBalance(simulation, invoice).outstandingMinor, { date, amount });
+  if (errors.date || errors.amount) return simulation;
+  const collection = { actionId, reference: collectionReferenceFor(simulation.nextCollectionSequence), invoiceReference, date, amountMinor: parseAmountMinor(amount) };
+  return { ...simulation, nextCollectionSequence: simulation.nextCollectionSequence + 1, collections: [...simulation.collections, collection] };
+}
 // References are unique, so this is a total order: latest date first, then latest reference.
 const newestFirst = (a, b) => b.date.localeCompare(a.date) || sequenceOf(b.reference) - sequenceOf(a.reference);
 
-const invoiceRecord = (invoice) => ({ reference: invoice.reference, status: invoiceStatus(invoice), partner: invoice.buyer, date: invoice.issueDate, amountMinor: invoice.totalMinor, period: invoice.period });
+function invoiceRecord(simulation, invoice) {
+  const { status, outstandingMinor, asOf } = invoiceBalance(simulation, invoice);
+  return { reference: invoice.reference, status, partner: invoice.buyer, date: invoice.issueDate, amountMinor: invoice.totalMinor, outstandingMinor, asOf, period: invoice.period };
+}
 const draftRecord = (draft) => ({ reference: draft.reference, status: 'Draft', partner: partnerByCode(draft.partnerCode), date: draft.issueDate, amountMinor: draftTotalMinor(draft), period: draft.period });
 
-export const STATUSES = ['Draft', 'Unpaid'];
+export const STATUSES = ['Draft', 'Unpaid', 'Partially paid', 'Paid'];
 
 // Invoices belong to their issue month and drafts to their intended issue month.
 export function matchingRecords(simulation, { period, search, status }) {
   const term = search.trim().toLowerCase();
-  return [...simulation.invoices.map(invoiceRecord), ...Object.values(simulation.drafts).map(draftRecord)]
+  return [...simulation.invoices.map((invoice) => invoiceRecord(simulation, invoice)), ...Object.values(simulation.drafts).map(draftRecord)]
     .filter((record) => record.period === period && (!status || record.status === status) && partnerMatches(record.partner, term))
     .sort(newestFirst);
 }
 
 const issuedOf = (records) => records.filter((record) => record.status !== 'Draft');
-const outstandingOf = (records) => issuedOf(records).reduce((sum, record) => sum + record.amountMinor, 0);
+const outstandingOf = (records) => issuedOf(records).reduce((sum, record) => sum + record.outstandingMinor, 0);
+const latestActivityOf = (records) => issuedOf(records).reduce((latest, record) => (record.asOf > latest ? record.asOf : latest), '');
 
 export function summarizeRecords(records) {
   const issued = issuedOf(records).length;
-  return { count: records.length, issued, drafts: records.length - issued, outstandingMinor: outstandingOf(records) };
+  return { count: records.length, issued, drafts: records.length - issued, outstandingMinor: outstandingOf(records), asOf: latestActivityOf(records) };
 }
 
 // One exact account across every month. The balance runs to the account's
 // latest simulated activity, not to the end of any reporting month.
 export function partnerObligations(simulation, partnerCode) {
-  const invoices = simulation.invoices.filter((invoice) => invoice.buyer.code === partnerCode).map(invoiceRecord).sort(newestFirst);
+  const invoices = simulation.invoices.filter((invoice) => invoice.buyer.code === partnerCode).map((invoice) => invoiceRecord(simulation, invoice)).sort(newestFirst);
   const drafts = Object.values(simulation.drafts).filter((draft) => draft.partnerCode === partnerCode).map(draftRecord).sort(newestFirst);
-  return { invoices, drafts, outstandingMinor: outstandingOf(invoices), asOf: invoices.reduce((latest, invoice) => (invoice.date > latest ? invoice.date : latest), '') };
+  return { invoices, drafts, outstandingMinor: outstandingOf(invoices), asOf: latestActivityOf(invoices) };
 }

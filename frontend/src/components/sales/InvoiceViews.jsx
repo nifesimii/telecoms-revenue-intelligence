@@ -1,10 +1,11 @@
 // Partner Sales invoice browsing: the bounded list, one partner's purchase
-// obligations and a frozen invoice. Reads the simulation only; it never edits one.
+// obligations and a frozen invoice with its collections. Recording a collection
+// goes through onRecordCollection; nothing here edits the simulation directly.
 
 import { useState } from 'react';
 import PaginationControls from '../shared/PaginationControls.jsx';
 import { formatCount, formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
-import { STATUSES, invoiceOpenerId, invoiceStatus, matchingRecords, partnerLabel, partnerObligations, quantityLabel, summarizeRecords } from './salesSimulation.js';
+import { STATUSES, collectionActionId, collectionErrors, collectionReferenceFor, invoiceBalance, invoiceOpenerId, matchingRecords, parseAmountMinor, partnerLabel, partnerObligations, quantityLabel, summarizeRecords } from './salesSimulation.js';
 
 const displayDate = (date) => (date ? formatDate(date) : 'Not set');
 const recordDate = (record) => (record.status === 'Draft' ? `Intended ${displayDate(record.date)}` : displayDate(record.date));
@@ -64,22 +65,25 @@ export function InvoiceList({ simulation, period, onOpenInvoice, onOpenPartner, 
       <div><dt>Drafts (excluded from outstanding)</dt><dd>{formatCount(summary.drafts)}</dd></div>
       <div><dt>Outstanding purchase obligation</dt><dd>{formatMinorNGN(summary.outstandingMinor)}</dd></div>
     </dl>
+    {summary.issued > 0 && <p className="text-xs text-gray-600 mt-2">Outstanding counts every collection recorded up to {formatDate(summary.asOf)}, including any dated after {periodLabel}. It is not a month-end balance for {periodLabel}.</p>}
     {!records.length ? <div role="status" className="text-sm text-gray-600 mt-4">
       {filtered ? <>No invoices or drafts in {periodLabel} match your search and status. <button type="button" className="sales-button mt-2 block" onClick={clearFilters}>Clear filters</button></>
         : `No invoices or drafts for ${periodLabel}. Issued invoices stay in their issue month.`}
     </div> : <>
       <table className="sales-table mt-4">
         <caption className="sr-only">Invoices and drafts for {periodLabel}</caption>
-        <thead><tr><th scope="col">Reference</th><th scope="col" className="hidden md:table-cell">Partner</th><th scope="col" className="hidden md:table-cell">Issue date</th><th scope="col" className="hidden md:table-cell">Status</th><th scope="col" className="sales-amount hidden md:table-cell">Amount</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
+        <thead><tr><th scope="col">Reference</th><th scope="col" className="hidden md:table-cell">Partner</th><th scope="col" className="hidden md:table-cell">Issue date</th><th scope="col" className="hidden md:table-cell">Status</th><th scope="col" className="sales-amount hidden md:table-cell">Amount and outstanding</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{visible.map((record) => <tr key={record.reference}>
           <th scope="row"><span className="block font-semibold">{record.reference}</span>
             <span className="block md:hidden mt-1">{partnerLabel(record.partner)}</span>
             <span className="block md:hidden text-gray-600 mt-1">{recordDate(record)} · {record.status}</span>
-            <span className="block md:hidden font-semibold mt-1 whitespace-nowrap">{displayAmount(record.amountMinor)}</span></th>
+            <span className="block md:hidden font-semibold mt-1 whitespace-nowrap">{displayAmount(record.amountMinor)}</span>
+            {record.status !== 'Draft' && <span className="block md:hidden text-gray-600 mt-1">Outstanding <span className="whitespace-nowrap">{formatMinorNGN(record.outstandingMinor)}</span></span>}</th>
           <td className="hidden md:table-cell">{partnerLabel(record.partner)}</td>
           <td className="hidden md:table-cell">{recordDate(record)}</td>
           <td className="hidden md:table-cell">{record.status}</td>
-          <td className="sales-amount hidden md:table-cell">{displayAmount(record.amountMinor)}</td>
+          <td className="sales-amount hidden md:table-cell">{displayAmount(record.amountMinor)}
+            {record.status !== 'Draft' && <span className="block text-gray-600 mt-1">Outstanding {formatMinorNGN(record.outstandingMinor)}</span>}</td>
           <td><div className="sales-row-actions">
             {record.status === 'Draft'
               ? <button type="button" className="sales-button" aria-label={`Open draft ${record.reference}`} onClick={() => onOpenDraft(record)}>Open</button>
@@ -105,17 +109,17 @@ export function PartnerObligations({ simulation, partner, headingId, backLabel, 
         <div><dt>Issued invoices</dt><dd>{formatCount(invoices.length)}</dd></div>
         <div><dt>{`Outstanding as of ${formatDate(asOf)}`}</dt><dd>{formatMinorNGN(outstandingMinor)}</dd></div>
       </dl>
-      <p className="text-xs text-gray-600 mt-2">This balance covers this account's invoices from every issue month, up to its latest simulated invoice activity on {formatDate(asOf)}. It is not a month-end balance for any reporting month.</p>
+      <p className="text-xs text-gray-600 mt-2">This balance covers this account's invoices from every issue month, up to its latest simulated issue or collection on {formatDate(asOf)}. It is not a month-end balance for any reporting month.</p>
       <table className="sales-table mt-4">
         <caption className="sr-only">Issued invoices for {partnerLabel(partner)}</caption>
         <thead><tr><th scope="col">Reference</th><th scope="col" className="hidden sm:table-cell">Issue date</th><th scope="col" className="hidden sm:table-cell">Status</th><th scope="col" className="sales-amount hidden sm:table-cell">Outstanding</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead>
         <tbody>{visible.map((record) => <tr key={record.reference}>
           <th scope="row"><span className="block font-semibold">{record.reference}</span>
             <span className="block sm:hidden text-gray-600 mt-1">{formatDate(record.date)} · {record.status} · Outstanding</span>
-            <span className="block sm:hidden font-semibold mt-1 whitespace-nowrap">{formatMinorNGN(record.amountMinor)}</span></th>
+            <span className="block sm:hidden font-semibold mt-1 whitespace-nowrap">{formatMinorNGN(record.outstandingMinor)}</span></th>
           <td className="hidden sm:table-cell whitespace-nowrap">{formatDate(record.date)}</td>
           <td className="hidden sm:table-cell">{record.status}</td>
-          <td className="sales-amount hidden sm:table-cell">{formatMinorNGN(record.amountMinor)}</td>
+          <td className="sales-amount hidden sm:table-cell">{formatMinorNGN(record.outstandingMinor)}</td>
           <td className="text-right"><button id={`sales-partner-open-${record.reference}`} type="button" className="sales-button" aria-label={`Open invoice ${record.reference}`} onClick={() => onOpenInvoice(record.reference, `sales-partner-open-${record.reference}`)}>Open</button></td>
         </tr>)}</tbody>
       </table>
@@ -129,20 +133,88 @@ export function PartnerObligations({ simulation, partner, headingId, backLabel, 
   </section>;
 }
 
-export function InvoiceDetail({ invoice, headingId, backLabel, onBack, onOpenPartner }) {
+function InvoiceCollections({ invoice, balance, nextSequence, onRecord }) {
+  const [date, setDate] = useState(balance.asOf);
+  const [amount, setAmount] = useState('');
+  const [attempted, setAttempted] = useState(false);
+  const [recorded, setRecorded] = useState(null);
+  const headingId = `sales-collections-heading-${invoice.reference}`;
+  const dateErrorId = `sales-collection-date-error-${invoice.reference}`;
+  const amountErrorId = `sales-collection-amount-error-${invoice.reference}`;
+  const { visible, controls } = useBoundedPage(balance.history, invoice.reference, headingId);
+  const errors = collectionErrors(invoice, balance.outstandingMinor, { date, amount });
+  const amountError = attempted || amount ? errors.amount : null;
+  const edit = (setter) => (event) => {
+    setter(event.target.value);
+    setRecorded(null);
+  };
+  const submit = (event) => {
+    event.preventDefault();
+    // The second click of a double click lands on the form this action just cleared.
+    if (recorded && !amount) return;
+    setAttempted(true);
+    if (errors.date || errors.amount) {
+      document.getElementById(`sales-collection-${errors.date ? 'date' : 'amount'}-${invoice.reference}`)?.focus();
+      return;
+    }
+    onRecord({ actionId: collectionActionId(invoice.reference, nextSequence), invoiceReference: invoice.reference, date, amount });
+    setRecorded({ reference: collectionReferenceFor(nextSequence), amountMinor: parseAmountMinor(amount) });
+    setAmount('');
+    setAttempted(false);
+    // Paying in full removes the form and the button holding focus.
+    requestAnimationFrame(() => document.getElementById(headingId)?.focus());
+  };
+  return <section className="mt-6" aria-labelledby={headingId}>
+    <h3 id={headingId} tabIndex={-1} className="text-base font-semibold">Invoice collections</h3>
+    <p className="text-xs text-gray-600 mt-1">Fictional collections reduce only this invoice's purchase obligation. They never generate commission or offset commission outstanding, and no money moves.</p>
+    {recorded && <p role="status" className="sales-notice mt-3">Recorded {recorded.reference} for {formatMinorNGN(recorded.amountMinor)}.</p>}
+    {balance.history.length ? <>
+      <table className="sales-table mt-3">
+        <caption className="sr-only">Collections recorded against {invoice.reference}</caption>
+        <thead><tr><th scope="col">Date</th><th scope="col" className="hidden md:table-cell">Reference</th><th scope="col" className="sales-amount hidden md:table-cell">Amount</th><th scope="col" className="sales-amount hidden md:table-cell">Outstanding after</th></tr></thead>
+        <tbody>{visible.map((collection) => <tr key={collection.reference}>
+          <th scope="row"><span className="block whitespace-nowrap">{formatDate(collection.date)}</span>
+            <span className="block md:hidden font-semibold mt-1">{collection.reference}</span>
+            <span className="block md:hidden mt-1">Amount <span className="whitespace-nowrap">{formatMinorNGN(collection.amountMinor)}</span></span>
+            <span className="block md:hidden text-gray-600 mt-1">Outstanding after <span className="whitespace-nowrap">{formatMinorNGN(collection.outstandingAfterMinor)}</span></span></th>
+          <td className="hidden md:table-cell font-semibold">{collection.reference}</td>
+          <td className="sales-amount hidden md:table-cell">{formatMinorNGN(collection.amountMinor)}</td>
+          <td className="sales-amount hidden md:table-cell">{formatMinorNGN(collection.outstandingAfterMinor)}</td>
+        </tr>)}</tbody>
+      </table>
+      {controls}
+    </> : <p className="text-sm text-gray-600 mt-3">No collections recorded against this invoice yet.</p>}
+    {balance.status === 'Paid' ? <p className="text-sm font-medium mt-4">Paid in full. No further collections can be recorded.</p>
+      : <form noValidate className="mt-4" aria-label={`Record a collection against ${invoice.reference}`} onSubmit={submit}>
+        <div className="sales-dates">
+          <div className="flex flex-col gap-2"><label className="sales-field">Collection date<input id={`sales-collection-date-${invoice.reference}`} type="date" min={invoice.issueDate} aria-invalid={Boolean(errors.date)} aria-describedby={errors.date ? dateErrorId : undefined} value={date} onChange={edit(setDate)} /></label>
+            {errors.date && <span id={dateErrorId} className="sales-error">{errors.date}</span>}</div>
+          <div className="flex flex-col gap-2"><label className="sales-field">Amount in NGN<input id={`sales-collection-amount-${invoice.reference}`} type="text" inputMode="decimal" autoComplete="off" aria-invalid={Boolean(amountError)} aria-describedby={amountError ? amountErrorId : undefined} value={amount} onChange={edit(setAmount)} /></label>
+            {amountError && <span id={amountErrorId} className="sales-error">{amountError}</span>}</div>
+        </div>
+        <div className="sales-actions"><button type="submit" className="sales-button sales-primary">Record collection</button>
+          <p className="text-xs text-gray-600">Up to {formatMinorNGN(balance.outstandingMinor)} outstanding. Collections cannot be refunded or reversed in this simulation.</p></div>
+      </form>}
+  </section>;
+}
+
+export function InvoiceDetail({ invoice, simulation, headingId, backLabel, onBack, onOpenPartner, onRecordCollection }) {
   const openerId = `sales-invoice-partner-${invoice.reference}`;
+  const balance = invoiceBalance(simulation, invoice);
   return <section className="sales-paper" aria-labelledby={headingId}>
     <p className="text-xs font-semibold tracking-widest uppercase text-amber-800">Fictional simulation</p>
     <h2 id={headingId} tabIndex={-1} className="text-lg font-semibold mt-1">Simulated invoice {invoice.reference}</h2>
     <dl className="sales-facts">
-      <div><dt>Status</dt><dd>{invoiceStatus(invoice)}</dd></div>
+      <div><dt>Status</dt><dd>{balance.status}</dd></div>
       <div><dt>Seller</dt><dd>{invoice.seller}</dd></div>
       <div><dt>Buyer</dt><dd>{partnerLabel(invoice.buyer)}</dd></div>
       <div><dt>Issue date</dt><dd>{formatDate(invoice.issueDate)}</dd></div>
       <div><dt>Due date</dt><dd>{displayDate(invoice.dueDate)}</dd></div>
       <div><dt>Currency</dt><dd>{invoice.currency}</dd></div>
-      <div><dt>{`Outstanding as of ${formatDate(invoice.issueDate)}`}</dt><dd>{formatMinorNGN(invoice.totalMinor)}</dd></div>
+      <div><dt>Collected</dt><dd>{formatMinorNGN(balance.collectedMinor)}</dd></div>
+      <div><dt>{`Outstanding as of ${formatDate(balance.asOf)}`}</dt><dd>{formatMinorNGN(balance.outstandingMinor)}</dd></div>
     </dl>
+    <p className="text-xs text-gray-600 mt-2">This balance includes every collection recorded up to {formatDate(balance.asOf)}. It is not a month-end balance for any reporting month.</p>
     <table className="sales-table mt-5">
       <caption className="sr-only">Invoice lines for {invoice.reference}</caption>
       <thead><tr><th scope="col">Product</th><th scope="col" className="sales-amount hidden sm:table-cell">Quantity</th><th scope="col" className="sales-amount hidden sm:table-cell">Unit price</th><th scope="col" className="sales-amount">Line total</th></tr></thead>
@@ -155,6 +227,7 @@ export function InvoiceDetail({ invoice, headingId, backLabel, onBack, onOpenPar
       </tr>)}</tbody>
       <tfoot><tr><th scope="row">Total</th><td className="hidden sm:table-cell" /><td className="hidden sm:table-cell" /><td className="sales-amount">{formatMinorNGN(invoice.totalMinor)}</td></tr></tfoot>
     </table>
+    <InvoiceCollections invoice={invoice} balance={balance} nextSequence={simulation.nextCollectionSequence} onRecord={onRecordCollection} />
     <p className="sales-notice mt-5">Simplified fictional demonstration with fictional prices: not an actual purchase obligation or an operational tax invoice. Taxes and discounts are not modeled. {PURCHASE_NOTE} These details stay fixed after issue, whichever reporting month is selected.</p>
     <div className="sales-actions">
       <button type="button" className="sales-button" onClick={onBack}>{backLabel}</button>

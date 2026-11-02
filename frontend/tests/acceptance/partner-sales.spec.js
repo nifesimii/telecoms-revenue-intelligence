@@ -69,6 +69,8 @@ const startDraft = async (page, partner = 'River Isle Ventures · Account 296065
 };
 const addLine = async (page, code, units) => {
   await add(page, code).click();
+  // Adding moves focus on the next frame; let it land so it cannot steal later focus.
+  await expect(quantity(page, code)).toBeFocused();
   await quantity(page, code).fill(units);
 };
 
@@ -277,7 +279,7 @@ test('shows when session storage cannot be read and still works in this page', a
 for (const [label, saved] of [
   ['unreadable', 'not json'],
   ['from another version', '{"version":999}'],
-  ['naming an unknown product', '{"version":2,"nextSequence":2,"partnerCode":"296065","invoices":[],"drafts":{"296065|202605":{"reference":"SIM-INV-0001","partnerCode":"296065","period":"202605","issueDate":"2026-05-31","dueDate":"","lines":[{"productCode":"NOPE","quantity":"1"}]}}}'],
+  ['naming an unknown product', '{"version":3,"nextSequence":2,"nextCollectionSequence":1,"partnerCode":"296065","invoices":[],"collections":[],"drafts":{"296065|202605":{"reference":"SIM-INV-0001","partnerCode":"296065","period":"202605","issueDate":"2026-05-31","dueDate":"","lines":[{"productCode":"NOPE","quantity":"1"}]}}}'],
 ]) {
   test(`offers recovery when the saved simulation is ${label}`, async ({ page }) => {
     await mockApi(page);
@@ -431,7 +433,10 @@ test('issuing freezes a valid draft as an unpaid invoice and clears the draft', 
   await expect(invoice.getByRole('row', { name: /Total.*NGN 110,000\.00/ })).toBeVisible();
   await expect(invoice).toContainText('Fictional simulation');
   await expect(invoice).toContainText('not an actual purchase obligation');
-  await expect(invoice.getByRole('textbox')).toHaveCount(0);
+  // Only the collection date and amount are editable; the commercial details are not.
+  await expect(invoice.getByRole('textbox')).toHaveCount(2);
+  await expect(collectionDate(page)).toBeVisible();
+  await expect(collectionAmount(page)).toBeVisible();
 
   await back(page).click();
   await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('Unpaid');
@@ -442,7 +447,7 @@ const issueMixedInvoice = async (page) => {
   await buildMixedDraft(page);
   await previewButton(page).click();
   await issueButton(page).click();
-  await expect(issuedInvoice(page, 'SIM-INV-0001')).toBeVisible();
+  await expect(issuedInvoice(page, 'SIM-INV-0001').getByRole('heading', { name: 'Simulated invoice SIM-INV-0001' })).toBeFocused();
 };
 const summary = (page, term) => fact(invoiceList(page), term);
 const period = (page) => page.getByRole('combobox', { name: /Reporting period/ });
@@ -522,13 +527,15 @@ const seed = (page, simulation) => page.addInitScript((saved) => {
   sessionStorage.setItem('fbb.partner-sales.simulation', JSON.stringify(saved));
 }, simulation);
 const seededSimulation = () => ({
-  version: 2,
+  version: 3,
   nextSequence: 208,
+  nextCollectionSequence: 1,
+  collections: [],
   partnerCode: '',
   drafts: { '296065|202605': { reference: 'SIM-INV-0207', partnerCode: '296065', period: '202605', issueDate: '2026-05-31', dueDate: '', lines: [{ productCode: 'FBB-5G-ROUTER', quantity: '1' }] } },
   invoices: [...Array.from({ length: 205 }, (_, index) => seededInvoice(index + 1)), seededInvoice(206, '2026-06-02')],
 });
-const firstReferences = (page, count) => invoiceList(page).locator('tbody tr th span:first-child').evaluateAll((cells, n) => cells.slice(0, n).map((cell) => cell.textContent), count);
+const firstReferences = (page, count) => invoiceList(page).locator('tbody tr th > span:first-child').evaluateAll((cells, n) => cells.slice(0, n).map((cell) => cell.textContent), count);
 const rows = (page) => invoiceList(page).locator('tbody tr');
 
 test('pages at most 100 records in a fixed order while totals describe the whole matching set', async ({ page }) => {
@@ -644,7 +651,7 @@ test('reopening an invoice from its partner keeps the way back and the partner p
 
   const reopen = detail.getByRole('button', { name: 'Open invoice SIM-INV-0155' });
   await reopen.click();
-  await expect(issuedInvoice(page, 'SIM-INV-0155').getByRole('heading')).toBeFocused();
+  await expect(issuedInvoice(page, 'SIM-INV-0155').getByRole('heading', { name: 'Simulated invoice SIM-INV-0155' })).toBeFocused();
   await workspace(page).getByRole('button', { name: 'Back to purchase obligations' }).click();
   await expect(reopen).toBeFocused();
   await workspace(page).getByRole('button', { name: 'Back to invoices' }).click();
@@ -664,7 +671,7 @@ test('returning from detail restores filters, page and focus', async ({ page }) 
 
   const opener = invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0153' });
   await opener.click();
-  await expect(issuedInvoice(page, 'SIM-INV-0153').getByRole('heading')).toBeFocused();
+  await expect(issuedInvoice(page, 'SIM-INV-0153').getByRole('heading', { name: 'Simulated invoice SIM-INV-0153' })).toBeFocused();
   await expect(invoiceList(page)).toBeHidden();
   await workspace(page).getByRole('button', { name: 'Back to invoices' }).click();
 
@@ -804,9 +811,10 @@ test('issues, finds and returns from an invoice with the keyboard alone', async 
   await page.keyboard.press('Tab');
   await expect(issueButton(page)).toBeFocused();
   await page.keyboard.press('Enter');
-  await expect(issuedInvoice(page, 'SIM-INV-0001').getByRole('heading')).toBeFocused();
+  await expect(issuedInvoice(page, 'SIM-INV-0001').getByRole('heading', { name: 'Simulated invoice SIM-INV-0001' })).toBeFocused();
   await page.keyboard.press('Tab');
-  await expect(back(page)).toBeFocused();
+  await expect(collectionDate(page)).toBeFocused();
+  await back(page).focus();
   await page.keyboard.press('Enter');
 
   const opener = invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0001' });
@@ -848,6 +856,323 @@ for (const width of [320, 768, 1024, 1440]) {
     const obligation = workspace(page).getByRole('region', { name: /^Purchase obligations/ }).getByRole('row', { name: /SIM-INV-0001/ });
     await expect(obligation).toContainText('NGN 83,833,330,000.00');
     await expect(obligation).toContainText('Outstanding');
+    expect(await contained()).toBe(true);
+  });
+}
+
+const collections = (page, reference = 'SIM-INV-0001') => issuedInvoice(page, reference).getByRole('region', { name: 'Invoice collections' });
+const history = (page, reference) => collections(page, reference).getByRole('table', { name: /^Collections recorded/ });
+const collectionDate = (page, reference) => collections(page, reference).getByLabel('Collection date');
+const collectionAmount = (page, reference) => collections(page, reference).getByRole('textbox', { name: 'Amount in NGN' });
+const recordButton = (page, reference) => collections(page, reference).getByRole('button', { name: 'Record collection' });
+const recordCollection = async (page, date, amount, reference) => {
+  await collectionDate(page, reference).fill(date);
+  await collectionAmount(page, reference).fill(amount);
+  await recordButton(page, reference).click();
+};
+
+test('records a partial then a full collection, moving the invoice from unpaid to paid', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  const invoice = issuedInvoice(page, 'SIM-INV-0001');
+
+  await expect(fact(invoice, 'Status')).toHaveText('Unpaid');
+  await expect(collections(page)).toContainText('No collections recorded');
+
+  await recordCollection(page, '2026-06-10', '40000');
+  await expect(fact(invoice, 'Status')).toHaveText('Partially paid');
+  await expect(fact(invoice, 'Collected')).toHaveText('NGN 40,000.00');
+  await expect(fact(invoice, 'Outstanding as of 10 Jun 2026')).toHaveText('NGN 70,000.00');
+  await expect(history(page).getByRole('row', { name: /10 Jun 2026.*SIM-PAY-0001.*NGN 40,000\.00.*NGN 70,000\.00/ })).toBeVisible();
+  await expect(collections(page).getByRole('status')).toContainText('Recorded SIM-PAY-0001');
+
+  await recordCollection(page, '2026-07-02', '70,000.00');
+  await expect(fact(invoice, 'Status')).toHaveText('Paid');
+  await expect(fact(invoice, 'Outstanding as of 2 Jul 2026')).toHaveText('NGN 0.00');
+  await expect(history(page).getByRole('row', { name: /2 Jul 2026.*SIM-PAY-0002.*NGN 70,000\.00.*NGN 0\.00/ })).toBeVisible();
+  await expect(history(page).getByRole('row', { name: /SIM-PAY-0001/ })).toBeVisible();
+  // A paid invoice offers no further collection.
+  await expect(collectionAmount(page)).toHaveCount(0);
+  await expect(collections(page)).toContainText('Paid in full');
+});
+
+test('rejects invalid amounts and dates, leaving the valid balance unchanged', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  await recordCollection(page, '2026-06-10', '40000');
+  await expect(collections(page).getByRole('heading', { name: 'Invoice collections' })).toBeFocused();
+  const invoice = issuedInvoice(page, 'SIM-INV-0001');
+  const expectUnchanged = async () => {
+    await expect(fact(invoice, 'Status')).toHaveText('Partially paid');
+    await expect(fact(invoice, 'Outstanding as of 10 Jun 2026')).toHaveText('NGN 70,000.00');
+    await expect(history(page).locator('tbody tr')).toHaveCount(1);
+  };
+
+  for (const bad of ['0', '0.00', '-1', '-40000', 'abc', '1.234', '1,00', '1e3', '']) {
+    await collectionAmount(page).fill(bad);
+    await recordButton(page).click();
+    await expect(collections(page).getByText('Enter a positive NGN amount')).toBeVisible();
+    await expect(collectionAmount(page)).toHaveAttribute('aria-invalid', 'true');
+    await expect(collectionAmount(page)).toBeFocused();
+    await expectUnchanged();
+  }
+
+  // One kobo over the remaining balance.
+  await collectionAmount(page).fill('70000.01');
+  await recordButton(page).click();
+  await expect(collections(page).getByText('Enter NGN 70,000.00 or less')).toBeVisible();
+  await expectUnchanged();
+
+  await collectionAmount(page).fill('10');
+  await collectionDate(page).fill('2026-05-30');
+  await recordButton(page).click();
+  await expect(collections(page).getByText('cannot be dated before the issue date, 31 May 2026')).toBeVisible();
+  await expect(collectionDate(page)).toBeFocused();
+  await expectUnchanged();
+
+  await collectionDate(page).fill('');
+  await recordButton(page).click();
+  await expect(collections(page).getByText('Enter a collection date.')).toBeVisible();
+  await expectUnchanged();
+
+  // Exact kobo: 70,000.00 - 0.10 - 33,333.33 = 36,666.57. Issue day itself is allowed.
+  await recordCollection(page, '2026-05-31', '0.10');
+  await recordCollection(page, '2026-05-31', '33,333.33');
+  await expect(fact(invoice, 'Outstanding as of 10 Jun 2026')).toHaveText('NGN 36,666.57');
+  // Backdated collections run in date order, each with the balance it left.
+  await expect(history(page).locator('tbody tr').first()).toContainText('SIM-PAY-0002');
+  await expect(history(page).getByRole('row', { name: /31 May 2026.*SIM-PAY-0002.*NGN 0\.10.*NGN 109,999\.90/ })).toBeVisible();
+  await expect(history(page).getByRole('row', { name: /10 Jun 2026.*SIM-PAY-0001.*NGN 40,000\.00.*NGN 36,666\.57/ })).toBeVisible();
+});
+
+test('a draft has no collection path, and repeating an action has one effect', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await buildMixedDraft(page);
+  await expect(workspace(page).getByRole('region', { name: 'Invoice collections' })).toHaveCount(0);
+  await previewButton(page).click();
+  await expect(workspace(page).getByRole('region', { name: 'Invoice collections' })).toHaveCount(0);
+  await issueButton(page).click();
+  const invoice = issuedInvoice(page, 'SIM-INV-0001');
+
+  // Two submissions in one tick carry the same action.
+  await collectionDate(page).fill('2026-06-10');
+  await collectionAmount(page).fill('40000');
+  await recordButton(page).evaluate((button) => { button.click(); button.click(); });
+  await expect(fact(invoice, 'Outstanding as of 10 Jun 2026')).toHaveText('NGN 70,000.00');
+  await expect(history(page).locator('tbody tr')).toHaveCount(1);
+
+  // An ordinary double click records once and shows no validation error.
+  await collectionAmount(page).fill('1000');
+  await recordButton(page).dblclick();
+  await expect(fact(invoice, 'Collected')).toHaveText('NGN 41,000.00');
+  await expect(history(page).locator('tbody tr')).toHaveCount(2);
+  await expect(collections(page).getByRole('status')).toContainText('Recorded SIM-PAY-0002');
+  await expect(collections(page).getByText('Enter a positive NGN amount')).toHaveCount(0);
+
+  // Double clicking the final payment records it once and stays on the invoice.
+  await collectionAmount(page).fill('69000');
+  await recordButton(page).dblclick();
+  await expect(fact(invoice, 'Status')).toHaveText('Paid');
+  await expect(history(page).locator('tbody tr')).toHaveCount(3);
+  await expect(invoice).toBeVisible();
+});
+
+test('history, detail and matching-set summaries agree after refresh and navigation', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  await recordCollection(page, '2026-06-10', '40000');
+
+  const expectAgreement = async () => {
+    await expect(summary(page, 'Outstanding purchase obligation')).toHaveText('NGN 70,000.00');
+    await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('Partially paid');
+    await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('NGN 110,000.00');
+    await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('Outstanding NGN 70,000.00');
+    await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0001' }).click();
+    await expect(fact(issuedInvoice(page, 'SIM-INV-0001'), 'Status')).toHaveText('Partially paid');
+    await expect(fact(issuedInvoice(page, 'SIM-INV-0001'), 'Outstanding as of 10 Jun 2026')).toHaveText('NGN 70,000.00');
+    await expect(history(page).getByRole('row', { name: /SIM-PAY-0001.*NGN 40,000\.00.*NGN 70,000\.00/ })).toBeVisible();
+    await back(page).click();
+  };
+
+  await back(page).click();
+  await expectAgreement();
+  await page.reload();
+  await expectAgreement();
+  await nav(page, 'Payments');
+  await nav(page, 'Partner Sales');
+  await expectAgreement();
+
+  const status = invoiceList(page).getByLabel('Status');
+  await status.selectOption('Unpaid');
+  await expect(invoiceList(page).getByRole('status')).toContainText('match your search and status');
+  await status.selectOption('Partially paid');
+  await expect(summary(page, 'Matching records')).toHaveText('1');
+  await expect(summary(page, 'Outstanding purchase obligation')).toHaveText('NGN 70,000.00');
+  await status.selectOption('');
+
+  // A reference is never reused after a reload.
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0001' }).click();
+  await recordCollection(page, '2026-06-11', '70000');
+  await expect(history(page).getByRole('row', { name: /11 Jun 2026.*SIM-PAY-0002/ })).toBeVisible();
+  await back(page).click();
+  await status.selectOption('Paid');
+  await expect(summary(page, 'Matching records')).toHaveText('1');
+  await expect(summary(page, 'Outstanding purchase obligation')).toHaveText('NGN 0.00');
+});
+
+test('a later collection is dated, and is not presented as a month-end balance', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  await recordCollection(page, '2026-07-02', '40000');
+  await expect(issuedInvoice(page, 'SIM-INV-0001')).toContainText('not a month-end balance');
+  await back(page).click();
+
+  // The invoice stays in its May issue month, and May's total says what it includes.
+  await expect(invoiceList(page).getByRole('heading', { name: 'Invoices for May 2026' })).toBeVisible();
+  await expect(invoiceList(page)).toContainText('every collection recorded up to 2 Jul 2026, including any dated after May 2026');
+  await expect(invoiceList(page)).toContainText('not a month-end balance for May 2026');
+});
+
+test('collections stay on their invoice and exact account, and show all recorded across pages', async ({ page }) => {
+  await mockApi(page);
+  const simulation = seededSimulation();
+  // Hand-worked: invoice 1 (account 296065) is NGN 100.00, paid in 30 collections of
+  // 1.00, leaving 70.00. Invoice 2 (account 74050) and its same-priced peers are untouched.
+  simulation.nextCollectionSequence = 31;
+  simulation.collections = Array.from({ length: 30 }, (_, index) => ({ actionId: `seeded-${index}`, reference: `SIM-PAY-${String(index + 1).padStart(4, '0')}`, invoiceReference: 'SIM-INV-0001', date: '2026-06-01', amountMinor: 100 }));
+  await seed(page, simulation);
+  await openSales(page);
+
+  // 20,500.00 across May less 30.00 collected.
+  await expect(summary(page, 'Outstanding purchase obligation')).toHaveText('NGN 20,470.00');
+  await invoiceList(page).getByRole('searchbox').fill('74050');
+  await expect(summary(page, 'Outstanding purchase obligation')).toHaveText('NGN 10,200.00');
+  await invoiceList(page).getByRole('searchbox').fill('296065');
+  await expect(summary(page, 'Outstanding purchase obligation')).toHaveText('NGN 10,270.00');
+
+  await invoiceList(page).getByRole('button', { name: 'View purchase obligations for River Isle Ventures · Account 296065 from SIM-INV-0205' }).click();
+  const detail = workspace(page).getByRole('region', { name: 'Purchase obligations for River Isle Ventures · Account 296065' });
+  // 10,300.00 less 30.00. Same-name account 353072 has nothing.
+  await expect(fact(detail, 'Outstanding as of 1 Jun 2026')).toHaveText('NGN 10,270.00');
+  await back(page).click();
+
+  await invoiceList(page).getByRole('searchbox').fill('');
+  await invoiceList(page).getByRole('combobox', { name: 'Rows per page' }).selectOption('100');
+  for (let next = 0; next < 2; next++) await invoiceList(page).getByRole('button', { name: 'Next' }).click();
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0001' }).click();
+  const invoice = issuedInvoice(page, 'SIM-INV-0001');
+  await expect(fact(invoice, 'Status')).toHaveText('Partially paid');
+  await expect(history(page).locator('tbody tr')).toHaveCount(25);
+  await collections(page).getByRole('button', { name: 'Next' }).click();
+  await expect(history(page).locator('tbody tr')).toHaveCount(5);
+  await expect(history(page).getByRole('row', { name: /SIM-PAY-0030.*NGN 1\.00.*NGN 70\.00/ })).toBeVisible();
+  await expect(collections(page).getByRole('heading', { name: 'Invoice collections' })).toBeFocused();
+  await back(page).click();
+  await invoiceList(page).getByRole('searchbox').fill('74050');
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0204' }).click();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0204'), 'Status')).toHaveText('Unpaid');
+  await expect(collections(page, 'SIM-INV-0204')).toContainText('No collections recorded');
+});
+
+test('collects in live-read mode without any backend request, and says commission is unaffected', async ({ page }) => {
+  const { mutations, requests } = await mockApi(page, { health: { sample_data_mode: false } });
+  await page.goto('/?view=partner-sales&period=202605');
+  await expect(page.getByRole('status').filter({ hasText: 'Synthetic demonstration' })).toBeVisible();
+  await page.waitForLoadState('networkidle');
+  requests.length = 0;
+
+  await issueMixedInvoice(page);
+  await recordCollection(page, '2026-06-10', '40000');
+  await recordCollection(page, '2026-06-11', '70000');
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0001'), 'Status')).toHaveText('Paid');
+  await expect(issuedInvoice(page, 'SIM-INV-0001')).toContainText('Fictional simulation');
+  await expect(collections(page)).toContainText('never generate commission or offset commission outstanding');
+  await page.waitForTimeout(200);
+
+  expect(requests).toEqual([]);
+  expect(mutations).toEqual([]);
+});
+
+for (const [label, change] of [
+  ['that overpays its invoice', (saved) => { saved.collections[0].amountMinor = saved.invoices[0].totalMinor + 1; }],
+  ['dated before its invoice was issued', (saved) => { saved.collections[0].date = '2026-05-30'; }],
+  ['that names no issued invoice', (saved) => { saved.collections[0].invoiceReference = 'SIM-INV-9999'; }],
+  ['whose amount is not positive', (saved) => { saved.collections[0].amountMinor = 0; }],
+  ['whose reference the next collection would reuse', (saved) => { saved.nextCollectionSequence = 1; }],
+  ['repeating an action', (saved) => { saved.nextCollectionSequence = 3; saved.collections.push({ ...saved.collections[0], reference: 'SIM-PAY-0002', amountMinor: 1 }); }],
+]) {
+  test(`offers recovery from a saved collection ${label}`, async ({ page }) => {
+    await mockApi(page);
+    await openSales(page);
+    await issueMixedInvoice(page);
+    await recordCollection(page, '2026-06-10', '40000');
+    await page.evaluate((source) => {
+      const key = sessionStorage.key(0);
+      const saved = JSON.parse(sessionStorage.getItem(key));
+      new Function('saved', `(${source})(saved)`)(saved);
+      sessionStorage.setItem(key, JSON.stringify(saved));
+    }, change.toString());
+    await page.reload();
+    await expect(workspace(page).getByRole('alert')).toContainText('could not be restored');
+    await expect(invoiceList(page)).toHaveCount(0);
+  });
+}
+
+test('records a collection with the keyboard alone', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await issueMixedInvoice(page);
+  // Chrome tabs through each date segment, so start from the amount field.
+  await collectionAmount(page).focus();
+
+  // Enter submits from the field, and an error returns focus there.
+  await page.keyboard.type('nope');
+  await page.keyboard.press('Enter');
+  await expect(collectionAmount(page)).toBeFocused();
+  await expect(collections(page).getByText('Enter a positive NGN amount')).toBeVisible();
+
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('40000');
+  await page.keyboard.press('Tab');
+  await expect(recordButton(page)).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(collections(page).getByRole('heading', { name: 'Invoice collections' })).toBeFocused();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0001'), 'Collected')).toHaveText('NGN 40,000.00');
+
+  // Paying in full removes the form, and focus does not fall to the page.
+  await collectionAmount(page).fill('70000');
+  await page.keyboard.press('Tab');
+  await collectionAmount(page).press('Enter');
+  await expect(collections(page).getByRole('heading', { name: 'Invoice collections' })).toBeFocused();
+  await expect(collectionAmount(page)).toHaveCount(0);
+});
+
+for (const width of [320, 768, 1024, 1440]) {
+  test(`fits collections with the largest amounts at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    await mockApi(page);
+    await page.goto('/?view=partner-sales&period=202605');
+    await startDraft(page);
+    await addLine(page, 'FBB-5G-ROUTER', '1000000');
+    await addLine(page, 'FBB-MIFI', '1000000');
+    await addLine(page, 'RCC-0500', '1000000');
+    await previewButton(page).click();
+    await issueButton(page).click();
+    const contained = () => page.evaluate(() => [document.documentElement, document.querySelector('main[aria-label="Partner Sales"]')]
+      .every((element) => element.scrollWidth <= element.clientWidth));
+
+    // 83,833,330,000.00 less 3,333,330,000.00 leaves 80,500,000,000.00.
+    await recordCollection(page, '2026-06-10', '3,333,330,000.00');
+    await expect(fact(issuedInvoice(page, 'SIM-INV-0001'), 'Outstanding as of 10 Jun 2026')).toHaveText('NGN 80,500,000,000.00');
+    await expect(history(page).getByRole('row', { name: /SIM-PAY-0001/ })).toContainText('NGN 80,500,000,000.00');
+    expect(await contained()).toBe(true);
+    await back(page).click();
+    await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('NGN 80,500,000,000.00');
     expect(await contained()).toBe(true);
   });
 }

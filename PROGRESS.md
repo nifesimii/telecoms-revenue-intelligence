@@ -3,6 +3,25 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-02 (Partner Sales: invoice collections)
+
+- Implemented issue #4: invoice detail records fictional collections with a date,
+  generated `SIM-PAY` reference, exact kobo amount and stable action identifier.
+  Status derives from collections: Unpaid, Partially paid, Paid. History runs in date
+  order, with the balance after each collection, in pages of up to 100 rows.
+- Non-positive amounts, overpayments, dates before issue, and paid invoices are
+  rejected or offer no form; drafts have no collection path. Repeating an action has
+  one effect. Refunds and reversals are not offered.
+- The list, partner detail and invoice detail now show outstanding net of collections
+  with an explicit as-of date, and say it is not a month-end balance. Invoices stay in
+  their issue month, so a later collection reduces that month's listed outstanding.
+- Saved simulations moved to version 3, so an older tab save shows the recovery state.
+  Invalid saved collections also show it. No backend requests; commission is untouched.
+- Defaults chosen here, not MTN policy: references are generated rather than typed;
+  backdating and future dates are allowed provided the date is not before issue.
+- Latest: **58 acceptance**, **17 frontend transport** tests, production build; backend
+  **1,163 passed, 37 skipped** (no backend files changed).
+
 ## Session — 2026-11-01 (Partner Sales: issue invoices and inspect obligations)
 
 - Implemented issue #3: explicit one-time issuance from the preview freezes buyer,
