@@ -9,11 +9,11 @@ import { STATUSES, collectionActionId, collectionErrors, collectionReferenceFor,
 
 const displayDate = (date) => (date ? formatDate(date) : 'Not set');
 const recordDate = (record) => (record.status === 'Draft' ? `Intended ${displayDate(record.date)}` : displayDate(record.date));
-const displayAmount = (minor) => (minor === null ? 'Unavailable' : formatMinorNGN(minor));
+export const displayAmount = (minor) => (minor === null ? 'Unavailable' : formatMinorNGN(minor));
 
 // One bounded page of an in-browser set. A new scope starts at the first page; a
 // set that shrinks falls back to its last page.
-function useBoundedPage(items, scope, headingId) {
+export function useBoundedPage(items, scope, headingId) {
   const [limit, setLimit] = useState(25);
   const [position, setPosition] = useState({ scope, offset: 0 });
   const wanted = position.scope === scope ? position.offset : 0;
@@ -97,7 +97,7 @@ export function InvoiceList({ simulation, period, onOpenInvoice, onOpenPartner, 
   </section>;
 }
 
-export function PartnerObligations({ simulation, partner, headingId, backLabel, onBack, onOpenInvoice }) {
+export function PartnerObligations({ simulation, partner, headingId, backLabel, onBack, onOpenInvoice, onOpenCommission }) {
   const { invoices, drafts, outstandingMinor, asOf } = partnerObligations(simulation, partner.code);
   const { visible, controls } = useBoundedPage(invoices, partner.code, headingId);
   return <section className="sales-paper" aria-labelledby={headingId}>
@@ -129,7 +129,8 @@ export function PartnerObligations({ simulation, partner, headingId, backLabel, 
       <h3 className="text-sm font-semibold">Drafts excluded from outstanding</h3>
       <ul aria-label="Drafts excluded from outstanding" className="mt-2 text-sm text-gray-600">{drafts.map((draft) => <li key={draft.reference}>{draft.reference} · intended {formatPeriod(draft.period)} · {displayAmount(draft.amountMinor)}</li>)}</ul>
     </div>}
-    <div className="sales-actions"><button type="button" className="sales-button" onClick={onBack}>{backLabel}</button></div>
+    <div className="sales-actions"><button type="button" className="sales-button" onClick={onBack}>{backLabel}</button>
+      <button id={`sales-obligations-commission-${partner.code}`} type="button" className="sales-button" onClick={() => onOpenCommission(partner.code, `sales-obligations-commission-${partner.code}`)}>View commission account for {partnerLabel(partner)}</button></div>
   </section>;
 }
 

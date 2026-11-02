@@ -3,6 +3,32 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-02 (Partner Sales: Partner Commission Account)
+
+- Implemented GitHub issue #5: partner detail opens a fictional dated commission statement
+  for the selected month. Closing is opening plus earnings less settlements; the independent
+  example closes at NGN 25,000.00 (20,000.00 + 15,000.00 - 10,000.00).
+- Activation and subscription commission stay separate, subscription revenue enters no total,
+  and recharge-card commission is excluded. Missing evidence shows Unavailable and blocks the
+  totals it affects; recorded zeros and no-source-records states stay distinct. Activity pages
+  at up to 100 rows in date-then-reference order, with totals over all entries.
+- Links to Commission and Payments appear only when `GET /dealers/{id}/statement` and
+  `GET /commissions/{id}/detail?stream=orsc` match the fixture to the kobo in sample mode.
+  Otherwise the handoff explains why and offers no other account. No API contract changed:
+  the statement response omits subscription commission, so the detail read supplies it.
+- `backend/tests/test_partner_commission_fixtures.py` holds the linked fixtures in
+  `linkedCommissionStatements.json` to the public API, so sample changes fail a test.
+- Defaults chosen here, not MTN policy: all opening balances, activity dates and references are
+  authored fictional values. Linked statements divide recorded monthly totals into fictional dated
+  entries, which the statement notice discloses; this needs owner confirmation against the spec's
+  "never manufacture transaction dates". A stream with no entries is unavailable, not zero. Statement fixtures cover May-June 2026
+  only, for selected accounts; other months show the no-statement state.
+- Browser back to Partner Sales does not restore focus; the Return button does. Returning after a
+  month change opens the statement for the newly selected month, following the global period.
+- Verification: 77 Partner Sales acceptance tests passed, 17 transport tests passed, backend
+  suite 1,167 passed and 37 skipped; production build passed. An earlier run under heavy machine
+  load failed two handoff tests; after a focus wait in the test helper they passed three repeats.
+
 ## Session — 2026-11-02 (Partner Sales: invoice collections)
 
 - Implemented issue #4: invoice detail records fictional collections with a date,

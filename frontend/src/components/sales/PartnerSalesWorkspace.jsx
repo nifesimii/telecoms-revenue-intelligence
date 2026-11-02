@@ -1,21 +1,23 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
 import { CATALOGUE, PARTNERS, defaultIssueDate, draftKey, draftTotalMinor, dueDateError, invoiceByReference, invoiceOpenerId, issueDateError, issueDraft, lineTotalMinor, partnerByCode, partnerLabel, partnerMatches, productByCode, quantityError, quantityLabel, recordCollection, referenceFor } from './salesSimulation.js';
 import useSalesSimulation from './useSalesSimulation.js';
 import { InvoiceDetail, InvoiceList, PartnerObligations } from './InvoiceViews.jsx';
+import CommissionAccount from './CommissionAccount.jsx';
 import './sales.css';
 
-const detailHeadingId = (entry) => (entry.type === 'invoice' ? `sales-invoice-heading-${entry.reference}` : `sales-obligations-heading-${entry.partnerCode}`);
+const detailHeadingId = (entry) => (entry.type === 'invoice' ? `sales-invoice-heading-${entry.reference}` : entry.type === 'commission' ? `sales-commission-heading-${entry.partnerCode}` : `sales-obligations-heading-${entry.partnerCode}`);
+const backLabelTo = (entry) => (entry.type === 'partner' ? 'Back to purchase obligations' : entry.type === 'commission' ? 'Back to commission account' : `Back to invoice ${entry.reference}`);
 
-export default function PartnerSalesWorkspace() {
+export default function PartnerSalesWorkspace({ navigation, onNavigate }) {
   const { periods, period, loading, error } = usePeriod();
   // A month seeded from the URL only counts once /periods confirms it.
   if (loading || !periods.includes(period)) return <p role="status" className="p-6">{loading ? 'Loading reporting periods…' : error ? 'Reporting periods unavailable. Reload to retry.' : 'No reporting periods available.'}</p>;
-  return <Workspace period={period} />;
+  return <Workspace period={period} navigation={navigation} onNavigate={onNavigate} />;
 }
 
-function Workspace({ period }) {
+function Workspace({ period, navigation, onNavigate }) {
   const { simulation, setSimulation, saveFailed, incompatible, startOver, retrySave } = useSalesSimulation();
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
@@ -46,6 +48,18 @@ function Workspace({ period }) {
     setTrail((current) => current.slice(0, -1));
     requestAnimationFrame(() => (document.getElementById(openerId) ?? document.getElementById('sales-invoices-heading'))?.focus());
   };
+  // The explanation's history entry names the account, so returning restores it even
+  // after a refresh emptied the trail. An account still open keeps its opener.
+  useEffect(() => {
+    const partnerCode = navigation?.commission_partner;
+    if (!partnerByCode(partnerCode)) return;
+    const entry = { type: 'commission', partnerCode };
+    setTrail((current) => {
+      const open = current.find((other) => detailHeadingId(other) === detailHeadingId(entry));
+      return [...current.filter((other) => other !== open), open ?? { ...entry, openerId: 'sales-partner-commission' }];
+    });
+    requestAnimationFrame(() => (document.getElementById(navigation.opener_id) ?? document.getElementById(detailHeadingId(entry)))?.focus());
+  }, [navigation?.revision]);
   const issue = (reference) => {
     setSimulation((current) => issueDraft(current, reference));
     const entry = { type: 'invoice', reference, openerId: invoiceOpenerId(reference) };
@@ -59,12 +73,13 @@ function Workspace({ period }) {
   };
   const openInvoice = (reference, openerId) => openDetail({ type: 'invoice', reference }, openerId);
   const openPartner = (partnerCode, openerId) => openDetail({ type: 'partner', partnerCode }, openerId);
-  const visibleTrail = trail.filter((entry) => entry.type === 'partner' || invoiceByReference(simulation, entry.reference));
+  const openCommission = (partnerCode, openerId) => openDetail({ type: 'commission', partnerCode }, openerId);
+  const visibleTrail = trail.filter((entry) => entry.type !== 'invoice' || invoiceByReference(simulation, entry.reference));
   return <main className="sales-workspace h-full overflow-y-auto bg-gray-50" aria-label="Partner Sales">
     <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
       <header><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">MTN sales to trade partners</p>
         <h1 className="text-2xl font-semibold tracking-tight mt-1">Partner Sales</h1>
-        <p className="text-sm text-gray-600 mt-2">Draft, preview and issue what MTN would invoice a trade partner in {formatPeriod(period)}, and record fictional collections against issued invoices.</p>
+        <p className="text-sm text-gray-600 mt-2">Draft, preview and issue what MTN would invoice a trade partner in {formatPeriod(period)}, record fictional collections against issued invoices, and explain a partner's fictional commission account.</p>
         <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. Drafts, simulated invoices and collections stay in this browser tab, separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p></header>
       {incompatible ? <section className="sales-paper" aria-label="Saved simulation unavailable">
         <p role="alert" className="text-sm">The saved simulation in this tab could not be restored.</p>
@@ -75,11 +90,14 @@ function Workspace({ period }) {
         {visibleTrail.map((entry, index) => {
           const active = index === visibleTrail.length - 1;
           const onBack = () => closeDetail(entry.openerId);
-          const backLabel = !index ? 'Back to invoices' : visibleTrail[index - 1].type === 'partner' ? 'Back to purchase obligations' : `Back to invoice ${visibleTrail[index - 1].reference}`;
+          const backLabel = !index ? 'Back to invoices' : backLabelTo(visibleTrail[index - 1]);
           return <div key={detailHeadingId(entry)} className={active ? '' : 'hidden'}>
-            {entry.type === 'invoice'
+            {entry.type === 'commission'
+              ? <CommissionAccount partner={partnerByCode(entry.partnerCode)} period={period} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenObligations={openPartner}
+                onExplain={(view, context, openerId) => onNavigate(view, { ...context, origin: { commission_partner: entry.partnerCode, opener_id: openerId } })} />
+              : entry.type === 'invoice'
               ? <InvoiceDetail invoice={invoiceByReference(simulation, entry.reference)} simulation={simulation} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenPartner={openPartner} onRecordCollection={recordInvoiceCollection} />
-              : <PartnerObligations simulation={simulation} partner={partnerByCode(entry.partnerCode)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenInvoice={openInvoice} />}
+              : <PartnerObligations simulation={simulation} partner={partnerByCode(entry.partnerCode)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenInvoice={openInvoice} onOpenCommission={openCommission} />}
           </div>;
         })}
         <div className={visibleTrail.length ? 'hidden' : 'flex flex-col gap-6'}>
@@ -93,7 +111,10 @@ function Workspace({ period }) {
               <span>{partnerLabel(candidate)}</span>
             </label>)}</div>
           </fieldset> : <p role="status" className="text-sm text-gray-600 mt-4">No partners match your search. Try another name or account code.</p>}
-          {partner && <button id="sales-partner-obligations" type="button" className="sales-button mt-4" onClick={() => openPartner(partner.code, 'sales-partner-obligations')}>View purchase obligations for {partnerLabel(partner)}</button>}
+          {partner && <div className="sales-actions">
+            <button id="sales-partner-obligations" type="button" className="sales-button" onClick={() => openPartner(partner.code, 'sales-partner-obligations')}>View purchase obligations for {partnerLabel(partner)}</button>
+            <button id="sales-partner-commission" type="button" className="sales-button" onClick={() => openCommission(partner.code, 'sales-partner-commission')}>View commission account for {partnerLabel(partner)}</button>
+          </div>}
         </section>
         {!partner ? <p className="sales-paper text-sm text-gray-600">Select a trade partner to create a draft.</p>
           : !draft ? <section className="sales-paper" aria-label="No draft">

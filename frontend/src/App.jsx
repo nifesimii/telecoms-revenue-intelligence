@@ -96,6 +96,19 @@ function GlobalPeriodSelect() {
   );
 }
 
+// Shown while a workspace opened from Partner Sales is on screen, so its evidence is
+// never mistaken for the fictional statement that linked to it.
+function SalesReturn({ context, period, onReturn }) {
+  return (
+    <div role="region" aria-label="Opened from Partner Sales" className="shrink-0 border-b border-amber-200 bg-amber-50 text-sm text-amber-900 print:hidden">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2 sm:px-6 lg:px-8">
+        <p>Opened from the Partner Sales simulation for exact account {context.dealer_id}, {formatPeriod(context.mon_period)}.{period !== context.mon_period && ` The reporting month is now ${formatPeriod(period)}.`} This workspace shows existing evidence, not the fictional statement.</p>
+        <button type="button" className="min-h-11 rounded-md border border-amber-700 bg-white px-3 py-2 font-medium" onClick={onReturn}>Return to Partner Sales</button>
+      </div>
+    </div>
+  );
+}
+
 // Read ?view= from the URL, fall back to the landing view.
 function _readViewFromUrl() {
   if (typeof window === 'undefined') return 'overview';
@@ -181,6 +194,8 @@ function Shell() {
     switchView('commission');
   };
 
+  const salesOrigin = navigation[view]?.origin;
+
   return (
     <div className="h-full flex flex-col">
       <header className="app-header shrink-0 border-b border-gray-200 bg-white">
@@ -222,6 +237,8 @@ function Shell() {
         </div>
       </header>
 
+      {salesOrigin && <SalesReturn context={navigation[view]} period={period} onReturn={() => switchView('partner-sales', salesOrigin)} />}
+
       <div className="flex-1 overflow-hidden">
         {mounted['financial-health'] && <WorkspacePanel active={view === 'financial-health'}><FinancialHealthWorkspace /></WorkspacePanel>}
         {mounted.overview && (
@@ -257,7 +274,7 @@ function Shell() {
             <PaymentIntelligencePanel key={navigation.payment?.revision} navigation={navigation.payment} onNavigate={switchView} onAsk={askClaude} />
           </WorkspacePanel>
         )}
-        {mounted['partner-sales'] && <WorkspacePanel active={view === 'partner-sales'}><PartnerSalesWorkspace /></WorkspacePanel>}
+        {mounted['partner-sales'] && <WorkspacePanel active={view === 'partner-sales'}><PartnerSalesWorkspace navigation={navigation['partner-sales']} onNavigate={switchView} /></WorkspacePanel>}
         {mounted.audit && (
           <WorkspacePanel active={view === 'audit'}>
             <AuditTrailPanel key={navigation.audit?.revision} navigation={navigation.audit}

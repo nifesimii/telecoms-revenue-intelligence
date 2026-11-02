@@ -406,8 +406,10 @@ frontend/src/
     ├── sales/              Partner Sales presentation simulation: fictional seed data,
     │                       session-scoped drafts, one-time issuance of frozen invoices,
     │                       idempotent invoice collections, a bounded invoice list and partner
-    │                       purchase obligations. Collections never touch commission. No backend
-    │                       reads or writes (see docs/adr/0001-partner-sales-presentation-boundary.md).
+    │                       purchase obligations. Collections never touch commission. A separate
+    │                       fictional Partner Commission Account links to existing explanations
+    │                       only after read-only sample evidence reconciles to the kobo. No writes
+    │                       (see docs/adr/0001-partner-sales-presentation-boundary.md).
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).
     ├── audit/AuditTrailPanel.jsx            Audit Trails tab (browse verification chains).
     └── shared/HelpIcon.jsx                  Tooltip + glossary (qualified vs unqualified).
@@ -453,7 +455,9 @@ Workspace switches push history entries; initial URL normalization and period
 changes replace the current entry. `popstate` restores the URL view and month.
 `partner-sales` is a browser-only fictional simulation; its session-scoped drafts,
 invoices and collections never reach the API, Atlas or other workspaces, and the header shows the synthetic
-badge there even in live-read mode. Period validation waits for the available-month list. Serializable investigation
+badge there even in live-read mode. Its commission statements are fixtures too; only the account and month leave
+the browser, in existing GET reads that are skipped in live-read mode. Explanation handoffs carry a serializable
+`origin`, so the shell offers a return that restores the statement, including after a refresh. Period validation waits for the available-month list. Serializable investigation
 context/revisions live in each entry's `fbbWorkspace` history state; restoring a
 revision remounts that contextual workspace when necessary. Context is not added
 to the shareable URL. DOM focus targets for Audit returns remain in memory.

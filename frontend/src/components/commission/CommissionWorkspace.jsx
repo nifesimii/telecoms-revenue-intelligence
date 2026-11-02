@@ -15,7 +15,7 @@ const CommissionAssistant = lazy(() => import('./CommissionAssistant.jsx'));
 
 export default function CommissionWorkspace(props) {
   const { period, error, loading } = usePeriod();
-  const [stream, setStream] = useState('activation');
+  const [stream, setStream] = useState(props.navigation?.stream === 'orsc' ? 'orsc' : 'activation');
   // Dealer selection outlives the period-specific figures and comparison state.
   const [selected, setSelected] = useState(null);
   const navigationConsumed = useRef(false);

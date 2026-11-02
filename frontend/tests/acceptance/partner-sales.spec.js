@@ -6,12 +6,12 @@ import { expect, test } from '@playwright/test';
 const API = 'http://localhost:8000/**';
 const cors = { 'access-control-allow-origin': '*' };
 
-async function mockApi(page, { health = { sample_data_mode: true }, periods = ['202606', '202605'] } = {}) {
+async function mockApi(page, { health = { sample_data_mode: true }, periods = ['202606', '202605'], reads = () => undefined } = {}) {
   const mutations = [];
   const requests = [];
   await page.route(API, async (route) => {
     const request = route.request();
-    const { pathname } = new URL(request.url());
+    const { pathname, searchParams } = new URL(request.url());
     requests.push(pathname);
     if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': '*' } });
     if (request.method() !== 'GET') {
@@ -20,6 +20,8 @@ async function mockApi(page, { health = { sample_data_mode: true }, periods = ['
     }
     if (pathname === '/periods') return periods ? route.fulfill({ headers: cors, json: { periods } }) : route.fulfill({ status: 503, headers: cors, json: { detail: 'Unavailable' } });
     if (pathname === '/health') return route.fulfill({ headers: cors, json: health });
+    const read = reads(pathname, searchParams);
+    if (read) return route.fulfill({ headers: cors, ...read });
     return route.fulfill({ status: 503, headers: cors, json: { detail: 'Unavailable in acceptance fixture' } });
   });
   return { mutations, requests };
@@ -1256,4 +1258,416 @@ test('explains when no reporting months exist', async ({ page }) => {
   await page.goto('/?view=partner-sales');
   await expect(page.getByText('No reporting periods available.')).toBeVisible();
   await expect(page.getByRole('radio')).toHaveCount(0);
+});
+
+// Partner Commission Account. Expected amounts are worked by hand from the fixture
+// statements, never recomputed here.
+const openCommissionAccount = async (page, partner) => {
+  await choosePartner(page, partner);
+  await workspace(page).getByRole('button', { name: `View commission account for ${partner}` }).click();
+  // Opening moves focus on the next frame; let it land so its scroll cannot swallow a click.
+  await expect(commissionAccount(page).getByRole('heading', { level: 2 })).toBeFocused();
+};
+const commissionAccount = (page) => workspace(page).getByRole('region', { name: /^Partner Commission Account for/ });
+const statementFact = (page, name) => commissionAccount(page).getByRole('definition').filter({ has: page.locator(`xpath=preceding-sibling::dt[normalize-space()="${name}"]`) }).first();
+
+test('reconciles opening, earnings and settlements to the closing commission outstanding', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await openCommissionAccount(page, 'Stone Light Networks · Account 74050');
+
+  await expect(commissionAccount(page).getByRole('heading', { name: 'Partner Commission Account for Stone Light Networks · Account 74050' })).toBeFocused();
+  await expect(commissionAccount(page).getByText('Statement for May 2026')).toBeVisible();
+  await expect(commissionAccount(page).getByText('Fictional simulation', { exact: true })).toBeVisible();
+  await expect(commissionAccount(page).getByText('Source reference SIM-OPEN-74050-202605')).toBeVisible();
+  await expect(statementFact(page, 'Opening outstanding')).toHaveText('NGN 20,000.00');
+  await expect(statementFact(page, 'Period earnings')).toHaveText('NGN 15,000.00');
+  await expect(statementFact(page, 'Period settlements')).toHaveText('NGN 10,000.00');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 25,000.00');
+});
+
+test('keeps missing evidence unavailable and a recorded zero distinct from it', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+
+  // Settlements recorded at zero: 5,000.00 + 12,000.00 - 0.00.
+  await openCommissionAccount(page, 'Ember Hill Networks · Account 98052');
+  await expect(statementFact(page, 'Period settlements')).toHaveText('NGN 0.00');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 17,000.00');
+  await expect(commissionAccount(page).getByRole('row', { name: /SIM-SET-98052-0501.*Recorded zero/ })).toContainText('NGN 0.00');
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+
+  // Missing settlements: earnings alone must not become a closing balance.
+  await openCommissionAccount(page, 'Sunset Crest Communications · Account 205044');
+  await expect(statementFact(page, 'Opening outstanding')).toHaveText('NGN 10,000.00');
+  await expect(statementFact(page, 'Period earnings')).toHaveText('NGN 30,000.00');
+  await expect(statementFact(page, 'Period settlements')).toHaveText('Unavailable');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('Unavailable');
+  await expect(commissionAccount(page).getByText('Closing outstanding is unavailable because settlements lack evidence.')).toBeVisible();
+  await expect(commissionAccount(page).getByText('All 1 entry across every page: earnings NGN 30,000.00, settlements unavailable.')).toBeVisible();
+  await expect(commissionAccount(page).getByRole('table', { name: 'Commission by stream' }).getByText('NGN 0.00')).toHaveCount(0);
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+
+  // Missing opening: the period figures stand, the closing balance does not.
+  await openCommissionAccount(page, 'River Isle Ventures · Account 353072');
+  await expect(statementFact(page, 'Opening outstanding')).toHaveText('Unavailable');
+  await expect(statementFact(page, 'Period earnings')).toHaveText('NGN 53,999.83');
+  await expect(statementFact(page, 'Period settlements')).toHaveText('NGN 48,599.85');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('Unavailable');
+  await expect(commissionAccount(page).getByText('Closing outstanding is unavailable because the opening balance lacks evidence.')).toBeVisible();
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+
+  // Missing subscription earnings: activation alone would be a misleading partial total.
+  await page.getByRole('combobox', { name: /Reporting period/ }).selectOption('202606');
+  await openCommissionAccount(page, 'Ember Hill Networks · Account 98052');
+  await expect(statementFact(page, 'Period earnings')).toHaveText('Unavailable');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('Unavailable');
+  await expect(commissionAccount(page).getByRole('row', { name: /^Subscription commission/ })).toContainText('Unavailable');
+  await expect(commissionAccount(page).getByRole('row', { name: /^Activation commission/ })).toContainText('NGN 8,000.00');
+  // No subscription settlement entry is missing evidence, not a settlement of zero.
+  await expect(commissionAccount(page).getByRole('row', { name: /^Subscription commission/ })).not.toContainText('NGN 0.00');
+  await expect(statementFact(page, 'Period settlements')).toHaveText('Unavailable');
+  await expect(commissionAccount(page).getByText(/earnings unavailable, settlements unavailable/)).toBeVisible();
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+
+  // No statement for this account and month: nothing is shown as zero.
+  await openCommissionAccount(page, 'River Isle Ventures · Account 353072');
+  await expect(commissionAccount(page).getByText('No fictional statement exists for River Isle Ventures · Account 353072 in Jun 2026.')).toBeVisible();
+  for (const fact of ['Opening outstanding', 'Period earnings', 'Period settlements', 'Closing outstanding']) await expect(statementFact(page, fact)).toHaveText('Unavailable');
+  await expect(commissionAccount(page).getByText('NGN 0.00')).toHaveCount(0);
+});
+
+test('keeps activation and subscription commission apart from subscription revenue and recharge cards', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await openCommissionAccount(page, 'Stone Light Networks · Account 74050');
+
+  const streams = commissionAccount(page).getByRole('table', { name: 'Commission by stream' });
+  await expect(streams.getByRole('row', { name: /^Activation commission/ })).toContainText('NGN 9,000.00');
+  await expect(streams.getByRole('row', { name: /^Activation commission/ })).toContainText('NGN 7,500.00');
+  await expect(streams.getByRole('row', { name: /^Subscription commission/ })).toContainText('NGN 6,000.00');
+  await expect(streams.getByRole('row', { name: /^Subscription commission/ })).toContainText('NGN 2,500.00');
+  await expect(streams.getByRole('row', { name: /^Total/ })).toContainText('NGN 15,000.00');
+  await expect(streams.getByRole('row', { name: /^Total/ })).toContainText('NGN 10,000.00');
+
+  // Revenue is shown but enters no total: 240,000.00 is absent from every figure above.
+  const revenue = commissionAccount(page).getByText('Subscription revenue', { exact: true }).locator('..');
+  await expect(revenue).toContainText('NGN 240,000.00');
+  await expect(revenue).toContainText('not commission entitlement');
+  await expect(streams.getByText('NGN 240,000.00')).toHaveCount(0);
+  await expect(commissionAccount(page).getByText(/Recharge-card commissions are excluded/)).toBeVisible();
+  await expect(commissionAccount(page).getByText(/Purchase obligations.*separate/)).toBeVisible();
+
+  // No subscription records is not a recorded zero, and it does not block the total.
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+  await openCommissionAccount(page, 'Ember Hill Networks · Account 98052');
+  await expect(commissionAccount(page).getByRole('row', { name: /^Subscription commission/ })).toContainText('No source records');
+  await expect(commissionAccount(page).getByRole('row', { name: /^Subscription commission/ })).not.toContainText('NGN');
+});
+
+test('pages dated activity in deterministic order and reconciles it to the whole statement', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await openCommissionAccount(page, 'Sunset Crest Communications · Account 295083');
+
+  // Worked by hand: 110 x 1,000.00 earned, 10 x 500.00 settled, 1,000.00 opening.
+  await expect(statementFact(page, 'Period earnings')).toHaveText('NGN 110,000.00');
+  await expect(statementFact(page, 'Period settlements')).toHaveText('NGN 5,000.00');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 106,000.00');
+
+  const activity = commissionAccount(page).getByRole('table', { name: /Dated commission activity/ });
+  const rows = activity.locator('tbody tr');
+  const reconciliation = commissionAccount(page).getByText('All 120 entries across every page: earnings NGN 110,000.00, settlements NGN 5,000.00.');
+  await expect(rows).toHaveCount(25);
+  await expect(reconciliation).toBeVisible();
+  await expect(rows.first()).toContainText('1 May 2026');
+  // Entries 1 and 32 share 1 May; the reference settles their order.
+  await expect(rows.nth(0)).toContainText('SIM-COM-295083-0001');
+  await expect(rows.nth(1)).toContainText('SIM-COM-295083-0032');
+
+  await commissionAccount(page).getByRole('combobox', { name: 'Rows per page' }).selectOption('100');
+  await expect(rows).toHaveCount(100);
+  await expect(commissionAccount(page).getByText('1–100 of 120')).toBeVisible();
+  await expect(reconciliation).toBeVisible();
+  await commissionAccount(page).getByRole('button', { name: 'Next' }).click();
+  await expect(rows).toHaveCount(20);
+  await expect(commissionAccount(page).getByText('101–120 of 120')).toBeVisible();
+  await expect(reconciliation).toBeVisible();
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 106,000.00');
+});
+
+// Same fields and values as the sample-mode API: backend/tests/test_partner_commission_fixtures.py
+// holds the fixtures to it, and the statement response carries no subscription commission.
+const recordedStatements = {
+  '296065|202605': { dealer_id: '296065', mon_period: '202605', commission: { expected_ngn: 951213.38 }, payment: { data_source: 'simulated', payment_found: true, amount_paid_ngn: 380485.35 }, orsc: { total_subscription_amount_ngn: 114986.29 } },
+  '353072|202605': { dealer_id: '353072', mon_period: '202605', commission: { expected_ngn: 53999.83 }, payment: { data_source: 'simulated', payment_found: true, amount_paid_ngn: 48599.85 }, orsc: null },
+};
+const recordedSubscriptions = {
+  '296065|202605': { dealer_id: '296065', dealer_name: 'River Isle Ventures', amount_ngn: 114986.29, record_count: 2, zero_count: 0, delta_ngn: null, prior_amount_ngn: null, subscription_commission_ngn: 3709, subscription_settled_ngn: 1854.5, subscription_outstanding_ngn: 1854.5, subscription_commission_record_count: 2, subscription_commission_complete: true },
+};
+const statementRead = (overrides = {}) => (pathname, params) => {
+  const statement = /^\/dealers\/(\d+)\/statement$/.exec(pathname);
+  const subscription = /^\/commissions\/(\d+)\/detail$/.exec(pathname);
+  if (subscription && params.get('stream') !== 'orsc') return undefined;
+  const match = statement ?? subscription;
+  if (!match) return undefined;
+  const key = `${statement ? '' : 'subscription:'}${match[1]}|${params.get('mon_period')}`;
+  if (key in overrides) return overrides[key];
+  const account = recordedSubscriptions[`${match[1]}|${params.get('mon_period')}`];
+  if (subscription) return account ? { json: { account, denominations: [], source: 'Sample fixture', generated_at: '2026-06-01T00:00:00Z' } } : { status: 404, json: { detail: 'No account records for this stream and period' } };
+  return recordedStatements[key] ? { json: recordedStatements[key] } : { status: 404, json: { detail: 'No activation record' } };
+};
+const explanationLink = (page, name) => commissionAccount(page).getByRole('button', { name, exact: true });
+const evidenceLinks = (page) => commissionAccount(page).getByRole('region', { name: 'Existing explanations' });
+const returnToSales = (page) => page.getByRole('button', { name: 'Return to Partner Sales' });
+
+// The explanations themselves answer from these, recording exactly what they asked for.
+function explanationReads(calls) {
+  const statement = statementRead();
+  return (pathname, params) => {
+    if (/^\/commissions\/\d+\/detail$/.test(pathname) || /^\/payments\/accounts\/\d+$/.test(pathname)) {
+      calls.push(`${pathname}?mon_period=${params.get('mon_period')}&stream=${params.get('stream')}`);
+      if (params.get('stream') === 'orsc') return statement(pathname, params);
+      const account = { dealer_id: '296065', dealer_name: 'River Isle Ventures', amount_ngn: 951213.38, record_count: 3, zero_count: 0, delta_ngn: null, prior_amount_ngn: null, commission_owed: 951213.38, amount_paid: 380485.35, amount_unpaid: 570728.03 };
+      return { json: { account, denominations: [], source: 'Sample fixture', generated_at: '2026-06-01T00:00:00Z' } };
+    }
+    return statement(pathname, params);
+  };
+}
+
+test('explains the period basis of a linked statement and discloses the opening carry-forward', async ({ page }) => {
+  await mockApi(page, { reads: statementRead() });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+
+  // 951,213.38 + 3,709.00 earned; 380,485.35 + 1,854.50 settled; 250,000.00 carried in.
+  await expect(statementFact(page, 'Opening outstanding')).toHaveText('NGN 250,000.00');
+  await expect(statementFact(page, 'Period earnings')).toHaveText('NGN 954,922.38');
+  await expect(statementFact(page, 'Period settlements')).toHaveText('NGN 382,339.85');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 822,582.53');
+  await expect(statementFact(page, 'Period-only outstanding')).toHaveText('NGN 572,582.53');
+  await expect(explanationLink(page, 'Explain activation commission')).toBeVisible();
+  await expect(evidenceLinks(page)).toContainText('match recorded evidence for Account 296065, May 2026, stream by stream');
+  await expect(evidenceLinks(page)).toContainText('do not include the fictional opening carry-forward of NGN 250,000.00');
+});
+
+test('follows each explanation link to the exact account and month and returns to sales context', async ({ page }) => {
+  const calls = [];
+  const { mutations, requests } = await mockApi(page, { reads: explanationReads(calls) });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+
+  const commission = page.getByRole('main', { name: 'Commission intelligence' });
+  for (const [name, expected, explained] of [
+    ['Explain activation commission', '/commissions/296065/detail?mon_period=202605&stream=activation', () => commission.getByRole('button', { name: 'Activation commission', exact: true })],
+    // The evidence check already read this account, so the explanation shares that read.
+    ['Explain subscription commission', '/commissions/296065/detail?mon_period=202605&stream=orsc', () => commission.getByRole('button', { name: 'Subscriptions', exact: true })],
+    ['Explain settlement', '/payments/accounts/296065?mon_period=202605&stream=null', null],
+  ]) {
+    await explanationLink(page, name).click();
+    await expect(returnToSales(page)).toBeVisible();
+    await expect(page.getByText('Opened from the Partner Sales simulation for exact account 296065, May 2026.')).toBeVisible();
+    await expect(workspace(page)).toBeHidden();
+    await expect.poll(() => calls).toContain(expected);
+    if (explained) await expect(explained()).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('heading', { name: 'River Isle Ventures' })).toBeVisible();
+    expect(calls.every((call) => call.includes('296065') && call.includes('mon_period=202605'))).toBe(true);
+    await expect(page.getByRole('combobox', { name: /Reporting period/ })).toHaveValue('202605');
+
+    await returnToSales(page).click();
+    await expect(commissionAccount(page)).toBeVisible();
+    await expect(explanationLink(page, name)).toBeFocused();
+    await expect(returnToSales(page)).toHaveCount(0);
+    await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 822,582.53');
+  }
+  expect(mutations).toEqual([]);
+  expect(requests.filter((path) => path.includes('chat'))).toEqual([]);
+});
+
+test('restores sales context after a browser back and after refreshing an explanation', async ({ page }) => {
+  await mockApi(page, { reads: explanationReads([]) });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+
+  await explanationLink(page, 'Explain settlement').click();
+  await expect(returnToSales(page)).toBeVisible();
+  await page.goBack();
+  await expect(commissionAccount(page)).toBeVisible();
+
+  await explanationLink(page, 'Explain settlement').click();
+  await expect(returnToSales(page)).toBeVisible();
+  await page.reload();
+  await returnToSales(page).click();
+  await expect(commissionAccount(page).getByRole('heading', { name: /River Isle Ventures · Account 296065/ })).toBeFocused();
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 822,582.53');
+});
+
+test('a month changed during an explanation reaches the statement without substituting evidence', async ({ page }) => {
+  await mockApi(page, { reads: explanationReads([]) });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+  await explanationLink(page, 'Explain settlement').click();
+  await page.getByRole('combobox', { name: /Reporting period/ }).selectOption('202606');
+  // The handoff stays true to what it opened and says the month has since moved on.
+  await expect(page.getByText('Opened from the Partner Sales simulation for exact account 296065, May 2026. The reporting month is now Jun 2026.')).toBeVisible();
+  await returnToSales(page).click();
+
+  // June opens on May's closing: 822,582.53 + 994,136.80 - 397,959.72. June has no
+  // recorded statement in this fixture, so its links stay unavailable.
+  await expect(commissionAccount(page).getByText('Statement for Jun 2026')).toBeVisible();
+  await expect(statementFact(page, 'Opening outstanding')).toHaveText('NGN 822,582.53');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 1,418,759.61');
+  await expect(evidenceLinks(page)).toContainText('No recorded statement exists for Account 296065 in Jun 2026');
+  await expect(evidenceLinks(page).getByRole('button')).toHaveCount(0);
+});
+
+test('a link followed from another month carries that month', async ({ page }) => {
+  const calls = [];
+  const reads = explanationReads(calls);
+  const june = { json: { dealer_id: '296065', mon_period: '202606', commission: { expected_ngn: 991086.8 }, payment: { data_source: 'simulated', payment_found: true, amount_paid_ngn: 396434.72 }, orsc: { total_subscription_amount_ngn: 120266.83 } } };
+  const juneSubscription = { json: { account: { ...recordedSubscriptions['296065|202605'], subscription_commission_ngn: 3050, subscription_settled_ngn: 1525 } } };
+  await mockApi(page, { reads: (pathname, params) => {
+    if (params.get('mon_period') === '202606' && pathname === '/dealers/296065/statement') return june;
+    if (params.get('mon_period') === '202606' && pathname === '/commissions/296065/detail' && params.get('stream') === 'orsc') return juneSubscription;
+    return reads(pathname, params);
+  } });
+  await openSales(page, '/?period=202606');
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+  await explanationLink(page, 'Explain settlement').click();
+  await expect(page.getByText('Opened from the Partner Sales simulation for exact account 296065, Jun 2026.')).toBeVisible();
+  await expect.poll(() => calls).toContain('/payments/accounts/296065?mon_period=202606&stream=null');
+  expect(calls.filter((call) => call.includes('202605'))).toEqual([]);
+});
+
+test('shows an unavailable handoff, never a substitute, when evidence is missing or incompatible', async ({ page }) => {
+  const { requests } = await mockApi(page, { reads: statementRead({ '296065|202605': { json: { ...recordedStatements['296065|202605'], commission: { expected_ngn: 951213.39 } } } }) });
+  await openSales(page);
+
+  // One kobo away from the fixture is incompatible evidence.
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+  await expect(evidenceLinks(page)).toContainText('does not reconcile with recorded evidence');
+  await expect(evidenceLinks(page).getByRole('button')).toHaveCount(0);
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+
+  // The acceptance example never asserts values for a sample dealer, so it never asks.
+  requests.length = 0;
+  await openCommissionAccount(page, 'Stone Light Networks · Account 74050');
+  await expect(evidenceLinks(page)).toContainText('not connected to a recorded statement');
+  await expect(evidenceLinks(page).getByRole('button')).toHaveCount(0);
+  expect(requests.filter((path) => path.startsWith('/dealers') || path.startsWith('/commissions'))).toEqual([]);
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+
+  // No subscription records means no subscription link, on an otherwise linked statement.
+  await openCommissionAccount(page, 'River Isle Ventures · Account 353072');
+  await expect(explanationLink(page, 'Explain activation commission')).toBeVisible();
+  await expect(explanationLink(page, 'Explain subscription commission')).toHaveCount(0);
+  await expect(evidenceLinks(page)).toContainText('The opening balance is unavailable');
+});
+
+test('a subscription amount one kobo from the recorded account offers no explanation', async ({ page }) => {
+  const account = { ...recordedSubscriptions['296065|202605'], subscription_settled_ngn: 1854.51 };
+  await mockApi(page, { reads: statementRead({ 'subscription:296065|202605': { json: { account } } }) });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+  await expect(evidenceLinks(page)).toContainText('does not reconcile with recorded evidence');
+  await expect(evidenceLinks(page).getByRole('button')).toHaveCount(0);
+});
+
+test('incomplete subscription evidence offers no explanation', async ({ page }) => {
+  const account = { ...recordedSubscriptions['296065|202605'], subscription_commission_complete: false };
+  await mockApi(page, { reads: statementRead({ 'subscription:296065|202605': { json: { account } } }) });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+  await expect(evidenceLinks(page)).toContainText('does not reconcile with recorded evidence');
+});
+
+test('offers a retry when recorded evidence cannot be read, and no link until it can', async ({ page }) => {
+  let failing = true;
+  const statement = statementRead();
+  await mockApi(page, { reads: (pathname, params) => (failing && (pathname.startsWith('/dealers') || pathname.startsWith('/commissions')) ? { status: 503, json: { detail: 'Unavailable' } } : statement(pathname, params)) });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+
+  await expect(evidenceLinks(page)).toContainText('could not be checked');
+  await expect(explanationLink(page, 'Explain settlement')).toHaveCount(0);
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 822,582.53');
+  failing = false;
+  await evidenceLinks(page).getByRole('button', { name: 'Retry evidence check' }).click();
+  await expect(explanationLink(page, 'Explain settlement')).toBeVisible();
+});
+
+test('stays fictional and unlinked in live-read mode, and asks live sources nothing', async ({ page }) => {
+  const { mutations, requests } = await mockApi(page, { health: { sample_data_mode: false }, reads: statementRead() });
+  await openSales(page);
+  await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
+
+  await expect(evidenceLinks(page)).toContainText('reading live data');
+  await expect(evidenceLinks(page).getByRole('button')).toHaveCount(0);
+  await expect(commissionAccount(page).getByText('Fictional simulation', { exact: true })).toBeVisible();
+  await expect(commissionAccount(page).getByText(/not recorded evidence or amounts owed/)).toBeVisible();
+  await expect(page.getByText('Synthetic demonstration')).toBeVisible();
+  await expect(page.getByText('Live Presto')).toHaveCount(0);
+  expect(requests.filter((path) => path.startsWith('/dealers') || path.startsWith('/commissions') || path.includes('chat'))).toEqual([]);
+  expect(mutations).toEqual([]);
+});
+
+test('sales activity leaves the commission account unchanged and links both separate balances', async ({ page }) => {
+  const { mutations } = await mockApi(page);
+  await openSales(page);
+  await startDraft(page, 'Stone Light Networks · Account 74050');
+  await addLine(page, 'FBB-5G-ROUTER', '2');
+  await previewButton(page).click();
+  await workspace(page).getByRole('button', { name: 'Issue simulated invoice' }).click();
+  await workspace(page).getByLabel('Amount in NGN').fill('40000');
+  await workspace(page).getByRole('button', { name: 'Record collection' }).click();
+  await workspace(page).getByRole('button', { name: /View purchase obligations/ }).click();
+
+  await workspace(page).getByRole('button', { name: 'View commission account for Stone Light Networks · Account 74050' }).click();
+  await expect(statementFact(page, 'Opening outstanding')).toHaveText('NGN 20,000.00');
+  await expect(statementFact(page, 'Period earnings')).toHaveText('NGN 15,000.00');
+  await expect(statementFact(page, 'Period settlements')).toHaveText('NGN 10,000.00');
+  await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 25,000.00');
+  await expect(commissionAccount(page).getByText('SIM-INV')).toHaveCount(0);
+  await expect(commissionAccount(page).getByText('SIM-PAY')).toHaveCount(0);
+
+  await commissionAccount(page).getByRole('button', { name: 'Back to purchase obligations' }).click();
+  await expect(workspace(page).getByRole('heading', { name: /^Purchase obligations for Stone Light Networks/ })).toBeVisible();
+  expect(mutations).toEqual([]);
+});
+
+test('operates by keyboard and fits a narrow screen', async ({ page }) => {
+  await mockApi(page, { reads: explanationReads([]) });
+  await page.setViewportSize({ width: 320, height: 720 });
+  await page.goto('/?period=202605&view=partner-sales');
+  await choosePartner(page, 'River Isle Ventures · Account 296065');
+
+  const opener = workspace(page).getByRole('button', { name: 'View commission account for River Isle Ventures · Account 296065' });
+  await opener.focus();
+  await page.keyboard.press('Enter');
+  await expect(commissionAccount(page).getByRole('heading', { level: 2 })).toBeFocused();
+  await expect(explanationLink(page, 'Explain settlement')).toBeVisible();
+
+  const overflow = () => page.evaluate(() => {
+    const scroller = document.querySelector('.sales-workspace');
+    return [scroller.scrollWidth - scroller.clientWidth, document.documentElement.scrollWidth - document.documentElement.clientWidth];
+  });
+  expect(await overflow()).toEqual([0, 0]);
+  await expect(commissionAccount(page).getByRole('row', { name: /^Activation commission/ })).toContainText('NGN 951,213.38');
+  await expect(commissionAccount(page).getByRole('row', { name: /SIM-COM-296065-0501/ })).toContainText('NGN 500,000.00');
+
+  await explanationLink(page, 'Explain settlement').focus();
+  await page.keyboard.press('Enter');
+  await returnToSales(page).focus();
+  await page.keyboard.press('Enter');
+  await expect(explanationLink(page, 'Explain settlement')).toBeFocused();
+
+  await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).focus();
+  await page.keyboard.press('Enter');
+  await expect(opener).toBeFocused();
+  for (const width of [768, 1024]) {
+    await page.setViewportSize({ width, height: 800 });
+    await opener.click();
+    expect(await overflow()).toEqual([0, 0]);
+    await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
+  }
 });
