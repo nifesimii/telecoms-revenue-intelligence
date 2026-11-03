@@ -6,7 +6,19 @@ import { expect, test } from '@playwright/test';
 const API = 'http://localhost:8000/**';
 const cors = { 'access-control-allow-origin': '*' };
 
-async function mockApi(page, { health = { sample_data_mode: true }, periods = ['202606', '202605'], reads = () => undefined } = {}) {
+// Mechanics tests run from an empty simulation so their references and totals stay
+// their own. `examples: true` keeps the real starting point with its example invoices.
+const EMPTY_SIMULATION = { version: 4, nextSequence: 1, nextCollectionSequence: 1, partnerCode: '', drafts: {}, invoices: [], collections: [] };
+
+async function mockApi(page, { health = { sample_data_mode: true }, periods = ['202606', '202605'], reads = () => undefined, examples = false } = {}) {
+  if (!examples) {
+    await page.addInitScript((empty) => {
+      const key = 'fbb.partner-sales.simulation';
+      try {
+        if (sessionStorage.getItem(key) === null) sessionStorage.setItem(key, JSON.stringify(empty));
+      } catch { /* Storage-failure tests start without a save. */ }
+    }, EMPTY_SIMULATION);
+  }
   const mutations = [];
   const requests = [];
   await page.route(API, async (route) => {
@@ -281,7 +293,8 @@ test('shows when session storage cannot be read and still works in this page', a
 for (const [label, saved] of [
   ['unreadable', 'not json'],
   ['from another version', '{"version":999}'],
-  ['naming an unknown product', '{"version":3,"nextSequence":2,"nextCollectionSequence":1,"partnerCode":"296065","invoices":[],"collections":[],"drafts":{"296065|202605":{"reference":"SIM-INV-0001","partnerCode":"296065","period":"202605","issueDate":"2026-05-31","dueDate":"","lines":[{"productCode":"NOPE","quantity":"1"}]}}}'],
+  ['from before the example invoices', '{"version":3,"nextSequence":1,"nextCollectionSequence":1,"partnerCode":"","drafts":{},"invoices":[],"collections":[]}'],
+  ['naming an unknown product', '{"version":4,"nextSequence":2,"nextCollectionSequence":1,"partnerCode":"296065","invoices":[],"collections":[],"drafts":{"296065|202605":{"reference":"SIM-INV-0001","partnerCode":"296065","period":"202605","issueDate":"2026-05-31","dueDate":"","lines":[{"productCode":"NOPE","quantity":"1"}]}}}'],
 ]) {
   test(`offers recovery when the saved simulation is ${label}`, async ({ page }) => {
     await mockApi(page);
@@ -298,7 +311,7 @@ for (const [label, saved] of [
     await expect(workspace(page).getByRole('alert')).toHaveCount(0);
     await expect(workspace(page).getByText('Select a trade partner to create a draft.')).toBeVisible();
     await startDraft(page);
-    await expect(workspace(page).getByText('SIM-INV-0001 · May 2026')).toBeVisible();
+    await expect(workspace(page).getByText('SIM-INV-0004 · May 2026')).toBeVisible();
   });
 }
 
@@ -445,11 +458,11 @@ test('issuing freezes a valid draft as an unpaid invoice and clears the draft', 
   await expect(workspace(page).getByText('No draft for River Isle Ventures · Account 296065 in May 2026.')).toBeVisible();
 });
 
-const issueMixedInvoice = async (page) => {
+const issueMixedInvoice = async (page, reference = 'SIM-INV-0001') => {
   await buildMixedDraft(page);
   await previewButton(page).click();
   await issueButton(page).click();
-  await expect(issuedInvoice(page, 'SIM-INV-0001').getByRole('heading', { name: 'Simulated invoice SIM-INV-0001' })).toBeFocused();
+  await expect(issuedInvoice(page, reference).getByRole('heading', { name: `Simulated invoice ${reference}` })).toBeFocused();
 };
 const summary = (page, term) => fact(invoiceList(page), term);
 const period = (page) => page.getByRole('combobox', { name: /Reporting period/ });
@@ -529,7 +542,7 @@ const seed = (page, simulation) => page.addInitScript((saved) => {
   sessionStorage.setItem('fbb.partner-sales.simulation', JSON.stringify(saved));
 }, simulation);
 const seededSimulation = () => ({
-  version: 3,
+  version: 4,
   nextSequence: 208,
   nextCollectionSequence: 1,
   collections: [],
@@ -777,9 +790,9 @@ test('issuing still works when the simulation cannot be saved, and says so', asy
   });
   await mockApi(page);
   await openSales(page);
-  await issueMixedInvoice(page);
+  await issueMixedInvoice(page, 'SIM-INV-0004');
   await expect(workspace(page).getByRole('alert')).toContainText('could not be saved');
-  await expect(fact(issuedInvoice(page, 'SIM-INV-0001'), 'Status')).toHaveText('Unpaid');
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0004'), 'Status')).toHaveText('Unpaid');
 });
 
 for (const [label, change] of [
@@ -1682,12 +1695,77 @@ const confirmReset = (page) => resetPanel(page).getByRole('button', { name: 'Res
 const resetNotice = (page) => workspace(page).getByRole('status').filter({ hasText: 'Simulation reset' });
 const matchingRecordCount = (page) => fact(invoiceList(page), 'Matching records');
 
-test('reset clears drafts, invoices and collections, restarts references and leaves everything else alone', async ({ page }) => {
-  const { mutations, requests } = await mockApi(page);
+// Worked by hand from the catalogue. Paid: 35,000.00 + 50 x 500.00 = 60,000.00.
+// Partially paid: 2 x 50,000.00 + 100 x 200.00 = 120,000.00, less 45,000.00 = 75,000.00.
+// Unpaid: 3 x 35,000.00 = 105,000.00. Outstanding 75,000.00 + 105,000.00 = 180,000.00.
+const expectExampleInvoices = async (page) => {
+  await expect(matchingRecordCount(page)).toHaveText('3');
+  await expect(fact(invoiceList(page), 'Outstanding purchase obligation')).toHaveText('NGN 180,000.00');
+  await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('Sunset Crest Communications · Account 205044');
+  await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('Paid');
+  await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('NGN 60,000.00');
+  await expect(invoiceRow(page, 'SIM-INV-0002')).toContainText('Ember Hill Networks · Account 98052');
+  await expect(invoiceRow(page, 'SIM-INV-0002')).toContainText('Partially paid');
+  await expect(invoiceRow(page, 'SIM-INV-0002')).toContainText('Outstanding NGN 75,000.00');
+  await expect(invoiceRow(page, 'SIM-INV-0003')).toContainText('Stone Light Networks · Account 74050');
+  await expect(invoiceRow(page, 'SIM-INV-0003')).toContainText('Unpaid');
+  await expect(invoiceRow(page, 'SIM-INV-0003')).toContainText('NGN 105,000.00');
+};
+
+test('a new tab starts with one example invoice of each status, clear of the presentation account', async ({ page }) => {
+  await mockApi(page, { examples: true });
+  await openSales(page);
+  await expectExampleInvoices(page);
+  await expect(workspace(page).getByRole('radio', { checked: true })).toHaveCount(0);
+
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0002' }).click();
+  const example = issuedInvoice(page, 'SIM-INV-0002');
+  await expect(example).toContainText('Fictional simulation');
+  await expect(example.getByRole('row', { name: /Total.*NGN 120,000\.00/ })).toBeVisible();
+  await expect(history(page, 'SIM-INV-0002').getByRole('row', { name: /20 May 2026.*SIM-PAY-0002.*NGN 45,000\.00.*NGN 75,000\.00/ })).toBeVisible();
+  await back(page).click();
+
+  await choosePartner(page, 'River Isle Ventures · Account 296065');
+  await workspace(page).getByRole('button', { name: /^View purchase obligations for River Isle Ventures/ }).click();
+  const obligations = workspace(page).getByRole('region', { name: /^Purchase obligations/ });
+  await expect(obligations.getByText('SIM-INV')).toHaveCount(0);
+  await back(page).click();
+
+  await workspace(page).getByRole('button', { name: 'Create draft' }).click();
+  await expect(workspace(page).getByText('SIM-INV-0004 · May 2026')).toBeVisible();
+
+  // Examples belong to May, and every month says so.
+  await period(page).selectOption('202606');
+  await expect(matchingRecordCount(page)).toHaveText('0');
+  await expect(workspace(page).getByText('It starts with example invoices in May 2026.')).toBeVisible();
+  await resetButton(page).click();
+  await confirmReset(page).click();
+  await expect(resetNotice(page)).toContainText('3 example invoices in May 2026');
+});
+
+test('a reset restores the example invoices exactly after they have been changed', async ({ page }) => {
+  await mockApi(page, { examples: true });
+  await openSales(page);
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0003' }).click();
+  await collectionAmount(page, 'SIM-INV-0003').fill('105000');
+  await recordButton(page, 'SIM-INV-0003').click();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0003'), 'Status')).toHaveText('Paid');
+
+  await resetButton(page).click();
+  await confirmReset(page).click();
+  await expect(resetNotice(page)).toContainText('3 example invoices');
+  await expect(resetNotice(page)).toContainText('SIM-INV-0004');
+  await expectExampleInvoices(page);
+  await page.reload();
+  await expectExampleInvoices(page);
+});
+
+test('reset returns to the example invoices, restarts references and leaves everything else alone', async ({ page }) => {
+  const { mutations, requests } = await mockApi(page, { examples: true });
   await openSales(page);
   await page.evaluate(() => sessionStorage.setItem('unrelated.user.state', 'kept'));
-  await issueMixedInvoice(page);
-  await recordCollection(page, '2026-05-31', '40000');
+  await issueMixedInvoice(page, 'SIM-INV-0004');
+  await recordCollection(page, '2026-05-31', '40000', 'SIM-INV-0004');
   await back(page).click();
   await workspace(page).getByRole('searchbox', { name: 'Search invoices by partner or account code' }).fill('296065');
   await startDraft(page, 'Stone Light Networks · Account 74050');
@@ -1696,7 +1774,7 @@ test('reset clears drafts, invoices and collections, restarts references and lea
   requests.length = 0;
 
   await resetButton(page).click();
-  await expect(resetPanel(page)).toContainText('1 draft, 1 invoice and 1 collection');
+  await expect(resetPanel(page)).toContainText('1 draft, 4 invoices and 3 collections');
   await expect(resetPanel(page)).toContainText('Recorded commission, payment and inventory evidence');
   await expect(matchingRecordCount(page)).toHaveText('1');
   await confirmReset(page).click();
@@ -1706,47 +1784,47 @@ test('reset clears drafts, invoices and collections, restarts references and lea
   await expect(workspace(page).getByRole('radio', { checked: true })).toHaveCount(0);
   await expect(workspace(page).getByRole('searchbox', { name: 'Find a partner' })).toHaveValue('');
   await expect(workspace(page).getByRole('searchbox', { name: 'Search invoices by partner or account code' })).toHaveValue('');
-  await expect(matchingRecordCount(page)).toHaveText('0');
-  await expect(workspace(page).getByText('No invoices or drafts for May 2026.')).toBeVisible();
+  await expect(matchingRecordCount(page)).toHaveText('3');
+  await expect(invoiceRow(page, 'SIM-INV-0004')).toHaveCount(0);
 
   await page.reload();
   await expect(workspace(page).getByText('Select a trade partner to create a draft.')).toBeVisible();
-  await expect(matchingRecordCount(page)).toHaveText('0');
+  await expect(matchingRecordCount(page)).toHaveText('3');
   expect(await page.evaluate(() => sessionStorage.getItem('unrelated.user.state'))).toBe('kept');
   await expect(page.getByRole('combobox', { name: /Reporting period/ })).toHaveValue('202605');
 
   await startDraft(page);
-  await expect(workspace(page).getByText('SIM-INV-0001 · May 2026')).toBeVisible();
+  await expect(workspace(page).getByText('SIM-INV-0004 · May 2026')).toBeVisible();
   await addLine(page, 'FBB-5G-ROUTER', '2');
   await previewButton(page).click();
   await workspace(page).getByRole('button', { name: 'Issue simulated invoice' }).click();
   await workspace(page).getByLabel('Amount in NGN').fill('1');
   await workspace(page).getByRole('button', { name: 'Record collection' }).click();
-  await expect(workspace(page).getByText('Recorded SIM-PAY-0001 for NGN 1.00.')).toBeVisible();
+  await expect(workspace(page).getByText('Recorded SIM-PAY-0003 for NGN 1.00.')).toBeVisible();
   expect(mutations).toEqual([]);
   expect(requests.filter((path) => !['/periods', '/health'].includes(path))).toEqual([]);
 });
 
 test('keeping the simulation changes nothing, and resetting from an open detail returns to the start', async ({ page }) => {
-  await mockApi(page);
+  await mockApi(page, { examples: true });
   await openSales(page);
-  await issueMixedInvoice(page);
+  await issueMixedInvoice(page, 'SIM-INV-0004');
 
   await resetButton(page).click();
   await resetPanel(page).getByRole('button', { name: 'Keep simulation' }).click();
   await expect(resetButton(page)).toBeFocused();
-  await expect(fact(issuedInvoice(page, 'SIM-INV-0001'), 'Status')).toHaveText('Unpaid');
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0004'), 'Status')).toHaveText('Unpaid');
 
   await resetButton(page).click();
   await confirmReset(page).click();
-  await expect(issuedInvoice(page, 'SIM-INV-0001')).toHaveCount(0);
+  await expect(issuedInvoice(page, 'SIM-INV-0004')).toHaveCount(0);
   await expect(resetNotice(page)).toBeFocused();
   await choosePartner(page, 'Stone Light Networks · Account 74050');
   await expect(resetNotice(page)).toHaveCount(0);
 });
 
 test('a reset after an explanation does not reopen that account on refresh or revisit', async ({ page }) => {
-  await mockApi(page, { reads: explanationReads([]) });
+  await mockApi(page, { reads: explanationReads([]), examples: true });
   await openSales(page);
   await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
   await explanationLink(page, 'Explain settlement').click();
@@ -1766,7 +1844,7 @@ test('a reset after an explanation does not reopen that account on refresh or re
 });
 
 test('a reset leaves an open explanation alone, and returning from it shows the same fictional statement', async ({ page }) => {
-  await mockApi(page, { reads: explanationReads([]) });
+  await mockApi(page, { reads: explanationReads([]), examples: true });
   await openSales(page);
   await openCommissionAccount(page, 'River Isle Ventures · Account 296065');
   await explanationLink(page, 'Explain settlement').click();
@@ -1779,7 +1857,7 @@ test('a reset leaves an open explanation alone, and returning from it shows the 
   await returnToSales(page).click();
   await expect(statementFact(page, 'Closing outstanding')).toHaveText('NGN 822,582.53');
   await commissionAccount(page).getByRole('button', { name: 'Back to invoices' }).click();
-  await expect(matchingRecordCount(page)).toHaveText('0');
+  await expect(matchingRecordCount(page)).toHaveText('3');
   await expect(workspace(page).getByRole('radio', { checked: true })).toHaveCount(0);
 });
 
@@ -1798,9 +1876,9 @@ const breakStorage = (page, broken = true) => page.evaluate((value) => { window.
 
 test('a reset that cannot remove the save overwrites it, so a refresh still starts clean', async ({ page }) => {
   await failStorage(page, ['removeItem']);
-  await mockApi(page);
+  await mockApi(page, { examples: true });
   await openSales(page);
-  await issueMixedInvoice(page);
+  await issueMixedInvoice(page, 'SIM-INV-0004');
   await breakStorage(page);
   await resetButton(page).click();
   await confirmReset(page).click();
@@ -1808,14 +1886,14 @@ test('a reset that cannot remove the save overwrites it, so a refresh still star
   await expect(workspace(page).getByRole('alert')).toHaveCount(0);
   await page.reload();
   await expect(workspace(page).getByText('Select a trade partner to create a draft.')).toBeVisible();
-  await expect(matchingRecordCount(page)).toHaveText('0');
+  await expect(matchingRecordCount(page)).toHaveText('3');
 });
 
 test('a reset that cannot clear the save says the earlier simulation may return, and recovers on retry', async ({ page }) => {
   await failStorage(page, ['removeItem', 'setItem']);
-  await mockApi(page);
+  await mockApi(page, { examples: true });
   await openSales(page);
-  await issueMixedInvoice(page);
+  await issueMixedInvoice(page, 'SIM-INV-0004');
   await breakStorage(page);
   await resetButton(page).click();
   await confirmReset(page).click();
@@ -1823,7 +1901,7 @@ test('a reset that cannot clear the save says the earlier simulation may return,
   const alert = workspace(page).getByRole('alert');
   await expect(alert).toContainText('this reset could not be saved');
   await expect(alert).toContainText('earlier simulation may return');
-  await expect(matchingRecordCount(page)).toHaveText('0');
+  await expect(matchingRecordCount(page)).toHaveText('3');
 
   await workspace(page).getByRole('button', { name: 'Try saving again' }).click();
   await expect(alert).toContainText('earlier simulation may return');
@@ -1839,12 +1917,12 @@ test('a reset that cannot clear the save says the earlier simulation may return,
   await expect(alert).not.toContainText('earlier simulation');
   await breakStorage(page, false);
   await page.reload();
-  await expect(matchingRecordCount(page)).toHaveText('0');
+  await expect(matchingRecordCount(page)).toHaveText('3');
 });
 
 test('with storage fully unavailable the reset still works in this page and implies no persistence', async ({ page }) => {
   await failStorage(page, ['getItem', 'setItem', 'removeItem'], true);
-  await mockApi(page);
+  await mockApi(page, { examples: true });
   await openSales(page);
   await expect(workspace(page).getByRole('alert')).toContainText('could not be saved');
   await startDraft(page);
@@ -1856,7 +1934,7 @@ test('with storage fully unavailable the reset still works in this page and impl
 });
 
 test('recovering from an incompatible save explains itself, moves focus and survives a refresh', async ({ page }) => {
-  await mockApi(page);
+  await mockApi(page, { examples: true });
   await openSales(page);
   await buildMixedDraft(page);
   await page.evaluate(() => {
@@ -1894,14 +1972,15 @@ const expectFictional = async (page) => {
   await expect(workspace(page).getByRole('button', { name: /offset|net balance|from commission|reserve|stock/i })).toHaveCount(0);
   await expect(workspace(page).getByText(/net balance|commission wallet|reserved stock|available stock/i)).toHaveCount(0);
 };
-const pressEnter = async (page, locator) => {
+// Actions move focus on the next frame. Waiting for it keeps the next key press from
+// racing that move, which a person at a keyboard never does.
+const pressOn = async (page, locator, key) => {
   await locator.focus();
-  await page.keyboard.press('Enter');
+  await page.keyboard.press(key);
+  await page.evaluate(() => new Promise((resolve) => { requestAnimationFrame(resolve); }));
 };
-const pressSpace = async (page, locator) => {
-  await locator.focus();
-  await page.keyboard.press('Space');
-};
+const pressEnter = (page, locator) => pressOn(page, locator, 'Enter');
+const pressSpace = (page, locator) => pressOn(page, locator, 'Space');
 const clickWithPointer = (_page, locator) => locator.click();
 const noOverflow = (page) => workspace(page).evaluate((scroller) => [scroller.scrollWidth - scroller.clientWidth, document.documentElement.scrollWidth - document.documentElement.clientWidth]);
 
@@ -1918,32 +1997,32 @@ async function createAndCollect(page, act) {
   await expect(preview(page).getByRole('row', { name: /Total.*NGN 110,000\.00/ })).toBeVisible();
   await act(page, issueButton(page));
 
-  const invoice = issuedInvoice(page, 'SIM-INV-0001');
+  const invoice = issuedInvoice(page, 'SIM-INV-0004');
   await expect(invoice.getByRole('heading', { level: 2 })).toBeFocused();
   await expect(fact(invoice, 'Status')).toHaveText('Unpaid');
   await expectFictional(page);
 
-  await collectionAmount(page).fill('40000');
-  await act(page, recordButton(page));
+  await collectionAmount(page, 'SIM-INV-0004').fill('40000');
+  await act(page, recordButton(page, 'SIM-INV-0004'));
   await expect(fact(invoice, 'Status')).toHaveText('Partially paid');
   await expect(fact(invoice, 'Outstanding as of 31 May 2026')).toHaveText('NGN 70,000.00');
 
   // A refresh keeps the obligation and returns to the list, where it can be reopened.
   await page.reload();
-  await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('Partially paid');
+  await expect(invoiceRow(page, 'SIM-INV-0004')).toContainText('Partially paid');
   await expect(workspace(page).getByRole('radio', { name: RIVER_ISLE })).toBeChecked();
-  await act(page, invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0001' }));
+  await act(page, invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0004' }));
   await expect(invoice.getByRole('heading', { level: 2 })).toBeFocused();
   await expect(fact(invoice, 'Outstanding as of 31 May 2026')).toHaveText('NGN 70,000.00');
 
-  await collectionAmount(page).fill('70000');
-  await act(page, recordButton(page));
+  await collectionAmount(page, 'SIM-INV-0004').fill('70000');
+  await act(page, recordButton(page, 'SIM-INV-0004'));
   await expect(fact(invoice, 'Status')).toHaveText('Paid');
   await expect(fact(invoice, 'Collected')).toHaveText('NGN 110,000.00');
   await expect(fact(invoice, 'Outstanding as of 31 May 2026')).toHaveText('NGN 0.00');
-  const rows = history(page).getByRole('row');
-  await expect(rows.filter({ hasText: 'SIM-PAY-0001' })).toContainText('NGN 70,000.00');
-  await expect(rows.filter({ hasText: 'SIM-PAY-0002' })).toContainText('NGN 0.00');
+  const rows = history(page, 'SIM-INV-0004').getByRole('row');
+  await expect(rows.filter({ hasText: 'SIM-PAY-0003' })).toContainText('NGN 70,000.00');
+  await expect(rows.filter({ hasText: 'SIM-PAY-0004' })).toContainText('NGN 0.00');
   await expectFictional(page);
 }
 
@@ -1954,8 +2033,11 @@ async function runPresentation(page, act, keyboard = false) {
   await expect(partner).toBeChecked();
   await createAndCollect(page, act);
 
-  const invoice = issuedInvoice(page, 'SIM-INV-0001');
+  const invoice = issuedInvoice(page, 'SIM-INV-0004');
   await act(page, invoice.getByRole('button', { name: `View purchase obligations for ${RIVER_ISLE}` }));
+  const obligations = workspace(page).getByRole('region', { name: /^Purchase obligations/ });
+  await expect(obligations.getByRole('button', { name: /^Open invoice/ })).toHaveCount(1);
+  await expect(obligations.getByRole('button', { name: 'Open invoice SIM-INV-0004' })).toBeVisible();
   await act(page, workspace(page).getByRole('button', { name: `View commission account for ${RIVER_ISLE}` }));
   await expect(commissionAccount(page).getByRole('heading', { level: 2 })).toBeFocused();
   await expectStatementUnchanged(page);
@@ -1966,6 +2048,8 @@ async function runPresentation(page, act, keyboard = false) {
     await expect(page.getByText(`Opened from the Partner Sales simulation for exact account 296065, May 2026.`)).toBeVisible();
     await expect(page.getByText('This workspace shows existing evidence, not the fictional statement.')).toBeVisible();
     await expect(page.getByRole('combobox', { name: /Reporting period/ }).first()).toHaveValue('202605');
+    // The explanation takes focus once its detail opens, so let that land first.
+    await expect(page.getByRole('main').locator(':focus')).toHaveCount(1);
     await act(page, returnToSales(page));
     await expect(explanationLink(page, name)).toBeFocused();
     await expectStatementUnchanged(page);
@@ -1983,11 +2067,11 @@ async function runPresentation(page, act, keyboard = false) {
     await page.keyboard.type('Pai');
   } else await status.selectOption('Paid');
   await expect(status).toHaveValue('Paid');
-  await expect(invoiceRow(page, 'SIM-INV-0001')).toContainText('NGN 110,000.00');
+  await expect(invoiceRow(page, 'SIM-INV-0004')).toContainText('NGN 110,000.00');
   await expect(fact(invoiceList(page), 'Outstanding purchase obligation')).toHaveText('NGN 0.00');
-  const opener = invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0001' });
+  const opener = invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0004' });
   await act(page, opener);
-  await act(page, issuedInvoice(page, 'SIM-INV-0001').getByRole('button', { name: 'Back to invoices' }));
+  await act(page, issuedInvoice(page, 'SIM-INV-0004').getByRole('button', { name: 'Back to invoices' }));
   await expect(opener).toBeFocused();
   await expect(invoiceList(page).getByRole('combobox', { name: 'Status' })).toHaveValue('Paid');
   await expectFictional(page);
@@ -1997,11 +2081,11 @@ const resetBy = async (page, act) => {
   await act(page, resetButton(page));
   await act(page, confirmReset(page));
   await expect(resetNotice(page)).toBeFocused();
-  await expect(matchingRecordCount(page)).toHaveText('0');
+  await expect(matchingRecordCount(page)).toHaveText('3');
 };
 
 test('the complete presentation replays identically after a reset, with no writes or agent calls', async ({ page }) => {
-  const { mutations, requests } = await mockApi(page, { reads: explanationReads([]) });
+  const { mutations, requests } = await mockApi(page, { reads: explanationReads([]), examples: true });
   await openSales(page);
   await runPresentation(page, clickWithPointer);
   await resetBy(page, clickWithPointer);
@@ -2011,7 +2095,7 @@ test('the complete presentation replays identically after a reset, with no write
 });
 
 test('the complete presentation works by keyboard on a narrow screen', async ({ page }) => {
-  const { mutations } = await mockApi(page, { reads: explanationReads([]) });
+  const { mutations } = await mockApi(page, { reads: explanationReads([]), examples: true });
   await page.setViewportSize({ width: 320, height: 720 });
   await page.goto('/?period=202605&view=partner-sales');
   await expect(workspace(page)).toBeVisible();
@@ -2034,11 +2118,11 @@ test('the complete presentation works by keyboard on a narrow screen', async ({ 
 });
 
 test('in live-read mode the invoice story runs, stays fictional and asks live sources nothing', async ({ page }) => {
-  const { mutations, requests } = await mockApi(page, { health: { sample_data_mode: false }, reads: statementRead() });
+  const { mutations, requests } = await mockApi(page, { health: { sample_data_mode: false }, reads: statementRead(), examples: true });
   await openSales(page);
   await choosePartner(page, RIVER_ISLE);
   await createAndCollect(page, clickWithPointer);
-  await issuedInvoice(page, 'SIM-INV-0001').getByRole('button', { name: `View purchase obligations for ${RIVER_ISLE}` }).click();
+  await issuedInvoice(page, 'SIM-INV-0004').getByRole('button', { name: `View purchase obligations for ${RIVER_ISLE}` }).click();
   await workspace(page).getByRole('button', { name: `View commission account for ${RIVER_ISLE}` }).click();
   await expectStatementUnchanged(page);
   await expect(evidenceLinks(page)).toContainText('reading live data');

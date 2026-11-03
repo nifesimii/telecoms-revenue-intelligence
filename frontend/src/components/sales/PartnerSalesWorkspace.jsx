@@ -37,7 +37,7 @@ function SimulationReset({ simulation, onReset }) {
   return <div className="mt-3">
     {!confirming ? <button id="sales-reset" type="button" className="sales-button" onClick={open}>Reset simulation</button>
       : <div role="group" aria-label="Confirm simulation reset" className="sales-paper">
-        <p className="text-sm">Reset this tab's simulation to its starting point? This clears {contents}, and the selected partner and filters. Recorded commission, payment and inventory evidence, other workspaces and the reporting month stay as they are.</p>
+        <p className="text-sm">Reset this tab's simulation to its starting point? This discards the current {contents}, restores the example invoices, and clears the selected partner and filters. Recorded commission, payment and inventory evidence, other workspaces and the reporting month stay as they are.</p>
         <div className="sales-actions">
           <button type="button" className="sales-button sales-primary" onClick={reset}>Reset to starting point</button>
           <button id="sales-reset-keep" type="button" className="sales-button" onClick={cancel}>Keep simulation</button>
@@ -125,9 +125,9 @@ function Workspace({ period, navigation, onNavigate, onClearNavigation }) {
       <header><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">MTN sales to trade partners</p>
         <h1 id="sales-workspace-heading" tabIndex={-1} className="text-2xl font-semibold tracking-tight mt-1">Partner Sales</h1>
         <p className="text-sm text-gray-600 mt-2">Draft, preview and issue what MTN would invoice a trade partner in {formatPeriod(period)}, record fictional collections against issued invoices, and explain a partner's fictional commission account.</p>
-        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. Drafts, simulated invoices and collections stay in this browser tab, separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p>
+        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. It starts with example invoices in May 2026. Drafts, simulated invoices and collections stay in this browser tab, separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p>
         {!incompatible && <SimulationReset simulation={simulation} onReset={reset} />}
-        {simulation === simulationAtReset && <p id="sales-reset-notice" role="status" tabIndex={-1} className="sales-notice mt-3">Simulation reset to its starting point: no drafts, invoices or collections, and references restart at SIM-INV-0001.</p>}</header>
+        {simulation === simulationAtReset && <p id="sales-reset-notice" role="status" tabIndex={-1} className="sales-notice mt-3">Simulation reset to its starting point: {simulation.invoices.length} example invoices in {formatPeriod(simulation.invoices[0].period)}, and the next draft will be {referenceFor(simulation.nextSequence)}.</p>}</header>
       {incompatible ? <section className="sales-paper" aria-label="Saved simulation unavailable">
         <p role="alert" className="text-sm">The saved simulation in this tab could not be restored. Starting a new simulation replaces it with the starting point. Nothing outside this simulation is affected.</p>
         <button type="button" className="sales-button mt-3" onClick={reset}>Start a new simulation</button>

@@ -3,6 +3,31 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-03 (Partner Sales: example invoices)
+
+- Decided with the user after issue #6. Changed: the starting point now holds three example invoices
+  in May 2026, one each of Paid, Partially paid and Unpaid (NGN 180,000.00 outstanding), on accounts
+  205044, 98052 and 74050. The presenter still creates the NGN 110,000.00 invoice live on 296065,
+  whose obligations stay empty until then. This replaces the empty seed recorded below.
+- The examples take SIM-INV-0001 to 0003 and SIM-PAY-0001 to 0002, so the story is now SIM-INV-0004
+  with SIM-PAY-0003 and 0004. They are built through the normal issue and collection rules. The save
+  version is now 4, so a tab holding an older save shows the existing recovery state.
+- Kept as they were, by decision: the six sample-data accounts (not all 922 May dealers, and no live
+  dealers), the return banner after a reset, a refresh clearing filters and open invoice, and the
+  inline reset confirmation.
+- Most acceptance tests now opt into an empty start, so their references stay their own. The reset,
+  replay, keyboard and live-read tests use the real seeded start.
+- Known gap: without `?period=` the workspace opens on the newest month, June, which has no examples.
+  The header and reset notice say the examples are in May 2026; the rehearsal link opens on May.
+- Keyboard test: it raced focus moves that happen on the next frame or as an explanation opens, and failed
+  often when repeated. It now waits for focus to land first. A key press on **Return to Partner Sales**
+  before an explanation opens can still be lost; the product was not changed for this.
+- Verification: 95 Partner Sales acceptance tests, `explanation-transport` (11), `workspace-navigation`,
+  `workspace-scope-regressions` and the production build passed. The rehearsal ran twice against the
+  sample-mode API, with no non-GET requests, page errors or HTTP errors, before the final copy-only edits.
+  Backend suite not rerun: no backend change. In repeat runs of the keyboard test under heavy load (load
+  average 10-36), 3 of 90 failed on browser setup timeouts; 1 of an earlier 60 failed for an uncaptured reason.
+
 ## Session — 2026-11-02 (Partner Sales: reset and replay)
 
 - Implemented GitHub issue #6: an inline-confirmed **Reset simulation** clears drafts, invoices,

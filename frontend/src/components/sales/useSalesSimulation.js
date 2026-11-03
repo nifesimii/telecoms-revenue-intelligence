@@ -1,14 +1,14 @@
 // Session-scoped Partner Sales state. One browser tab owns its simulation:
 // sessionStorage survives refresh and nothing leaves the browser. The starting
-// seed is versioned with the save format: an empty simulation over the fixed
-// cohort, catalogue and statements, with references restarting at 0001.
+// seed is versioned with the save format: the example invoices over the fixed
+// cohort, catalogue and statements, with references continuing after them.
 
 import { useEffect, useRef, useState } from 'react';
-import { CATALOGUE, PARTNERS, collectionSequenceOf, draftKey, dueDateError, isDate, issueDateError, sequenceOf } from './salesSimulation.js';
+import { CATALOGUE, PARTNERS, collectionSequenceOf, draftKey, dueDateError, isDate, issueDateError, sequenceOf, startingSimulation } from './salesSimulation.js';
 
 const STORAGE_KEY = 'fbb.partner-sales.simulation';
-const STORAGE_VERSION = 3;
-const newSimulation = () => ({ version: STORAGE_VERSION, nextSequence: 1, nextCollectionSequence: 1, partnerCode: '', drafts: {}, invoices: [], collections: [] });
+const STORAGE_VERSION = 4;
+const newSimulation = () => ({ version: STORAGE_VERSION, ...startingSimulation() });
 
 const REFERENCE = /^SIM-INV-\d{4,}$/;
 const COLLECTION_REFERENCE = /^SIM-PAY-\d{4,}$/;

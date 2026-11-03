@@ -171,6 +171,24 @@ export function recordCollection(simulation, { actionId, invoiceReference, date,
   return { ...simulation, nextCollectionSequence: simulation.nextCollectionSequence + 1, collections: [...simulation.collections, collection] };
 }
 
+// The starting point: one example of each status, dated before the presentation's
+// own invoice and clear of its account, 296065. Issued and collected through the
+// same rules as a presenter's invoices, so an example can never disagree with the catalogue.
+const EXAMPLE_INVOICES = [
+  { partnerCode: '205044', issueDate: '2026-05-05', dueDate: '2026-06-04', lines: [{ productCode: 'FBB-4G-ROUTER', quantity: '1' }, { productCode: 'RCC-0500', quantity: '50' }], collection: { date: '2026-05-18', amount: '60000' } },
+  { partnerCode: '98052', issueDate: '2026-05-08', dueDate: '2026-06-07', lines: [{ productCode: 'FBB-5G-ROUTER', quantity: '2' }, { productCode: 'RCC-0200', quantity: '100' }], collection: { date: '2026-05-20', amount: '45000' } },
+  { partnerCode: '74050', issueDate: '2026-05-12', dueDate: '2026-06-11', lines: [{ productCode: 'FBB-4G-ROUTER', quantity: '3' }] },
+];
+
+export function startingSimulation() {
+  return EXAMPLE_INVOICES.reduce((simulation, { collection, ...example }) => {
+    const reference = referenceFor(simulation.nextSequence);
+    const period = example.issueDate.slice(0, 7).replace('-', '');
+    const issued = issueDraft({ ...simulation, nextSequence: simulation.nextSequence + 1, drafts: { [draftKey(example.partnerCode, period)]: { ...example, reference, period } } }, reference);
+    return collection ? recordCollection(issued, { ...collection, actionId: collectionActionId(reference, issued.nextCollectionSequence), invoiceReference: reference }) : issued;
+  }, { nextSequence: 1, nextCollectionSequence: 1, partnerCode: '', drafts: {}, invoices: [], collections: [] });
+}
+
 // References are unique, so this is a total order: latest date first, then latest reference.
 const newestFirst = (a, b) => b.date.localeCompare(a.date) || sequenceOf(b.reference) - sequenceOf(a.reference);
 
