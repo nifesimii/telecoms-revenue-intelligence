@@ -4,7 +4,8 @@
 import { expect, test } from '@playwright/test';
 
 const API = 'http://localhost:8000/**';
-const cors = { 'access-control-allow-origin': '*' };
+const cors = { 'access-control-allow-origin': 'http://localhost:5199', 'access-control-allow-credentials': 'true' };
+const INTERNAL_SESSION = { username: 'finance', role: 'internal', account_code: null };
 
 // Mechanics tests run from an empty simulation so their references and totals stay
 // their own. `examples: true` keeps the real starting point with its example invoices.
@@ -24,8 +25,9 @@ async function mockApi(page, { health = { sample_data_mode: true }, periods = ['
   await page.route(API, async (route) => {
     const request = route.request();
     const { pathname, searchParams } = new URL(request.url());
+    if (pathname === '/auth/session') return route.fulfill({ headers: cors, json: INTERNAL_SESSION });
     requests.push(pathname);
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': '*' } });
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'content-type,accept', 'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE' } });
     if (request.method() !== 'GET') {
       mutations.push(`${request.method()} ${pathname}`);
       return route.fulfill({ status: 503, headers: cors, json: { detail: 'Blocked by acceptance test' } });

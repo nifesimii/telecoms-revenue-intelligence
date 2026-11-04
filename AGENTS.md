@@ -231,8 +231,10 @@ moving to the next.
 
 - Do not build a vector store or embedding pipeline
 - Do not build dynamic SQL generation
-- Do not build any write endpoints
-- Do not build partner authentication or multi-tenant isolation
+- Do not build write endpoints, except the fictional Partner Sales simulation
+  routes allowed by docs/adr/0002-partner-sales-two-logins.md
+- Do not build partner authentication or multi-tenant isolation beyond that
+  ADR's demonstration logins
 - Do not build ORSC continuity monitoring
 - Do not connect to UDDM platform
 - Do not build notification or alerting systems

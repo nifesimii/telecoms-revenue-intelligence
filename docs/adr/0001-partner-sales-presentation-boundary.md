@@ -1,5 +1,8 @@
 # Keep partner sales invoicing within a presentation simulation
 
+Superseded in part by [ADR 0002](0002-partner-sales-two-logins.md), which allows
+demonstration logins and simulation-only write routes. All other boundaries stand.
+
 MTN-to-trade-partner sales invoicing will be demonstrated with fictional data
 for MTN Finance and channel leadership. The user accepted this boundary during
 the module design interview: operational invoicing would turn the existing

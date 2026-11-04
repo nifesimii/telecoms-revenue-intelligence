@@ -3,6 +3,7 @@
 //   * the global reporting period selector (shared across all panels)
 //   * the data-mode badge (live Presto vs sample CSVs) driven by /health
 //   * a pending-prompt slot so the Overview can launch a templated chat
+//   * the signed-in shell for each role: internal workspaces or the partner's own
 //
 // Period state lives in <PeriodProvider> so switching tabs preserves the
 // user's selection — see context/PeriodContext.jsx.
@@ -12,6 +13,8 @@ import { PeriodProvider, usePeriod } from './context/PeriodContext.jsx';
 import { WorkspaceActivityBoundary } from './context/WorkspaceActivityContext.jsx';
 import { getHealth } from './api/client.js';
 import LazySection from './components/shared/LazySection.jsx';
+import SessionGate, { SignedInAs } from './components/auth/SessionGate.jsx';
+import PartnerShell from './components/auth/PartnerShell.jsx';
 import { formatPeriod } from './lib/format.js';
 
 const CommissionWorkspace = lazy(() => import('./components/commission/CommissionWorkspace.jsx'));
@@ -127,7 +130,7 @@ function _writeViewToUrl(view, push = false, context) {
     fbbWorkspace: { view, context } }, '', url.toString());
 }
 
-function Shell() {
+function Shell({ session, onSignOut }) {
   const { period } = usePeriod();
   const [view, setView] = useState(_readViewFromUrl);
   // Track which panels have been visited. Once mounted, a panel stays in the
@@ -214,9 +217,10 @@ function Shell() {
                 FBB Trade Partner Intelligence
               </span>
             </div>
-            <div className="flex w-full min-w-0 items-center justify-between gap-3 sm:w-auto sm:gap-5">
+            <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3 sm:w-auto sm:gap-5">
               <GlobalPeriodSelect />
               <div className="shrink-0"><DataModeBadge syntheticDemo={VIEWS.find((v) => v.id === view)?.synthetic} /></div>
+              <SignedInAs session={session} onSignOut={onSignOut} />
             </div>
           </div>
           <label className="flex items-center gap-3 pb-3 lg:hidden text-sm text-gray-600">
@@ -299,8 +303,10 @@ function Shell() {
 
 export default function App() {
   return (
-    <PeriodProvider>
-      <Shell />
-    </PeriodProvider>
+    <SessionGate>
+      {(session, onSignOut) => session.role === 'partner'
+        ? <PartnerShell session={session} onSignOut={onSignOut} />
+        : <PeriodProvider><Shell session={session} onSignOut={onSignOut} /></PeriodProvider>}
+    </SessionGate>
   );
 }

@@ -3,6 +3,10 @@ import json
 import os
 
 import pytest
+from backend.auth import session as auth_session
+
+# Raw ASGI requests bypass TestClient, so they carry their own internal session.
+INTERNAL_COOKIE = (b'cookie', f'{auth_session.COOKIE_NAME}={auth_session.issue_token(auth_session.Principal("finance", "internal"))}'.encode())
 
 os.environ['USE_SAMPLE_DATA'] = 'true'
 os.environ['PAYMENT_SOURCE'] = 'simulated'
@@ -218,7 +222,7 @@ def test_disconnect_closes_provider_and_does_not_complete(monkeypatch):
         scope = {'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.3'},
                  'http_version': '1.1', 'method': 'POST', 'scheme': 'http',
                  'path': '/chat/explain', 'raw_path': b'/chat/explain', 'query_string': b'',
-                 'root_path': '', 'headers': [(b'content-type', b'application/json')],
+                 'root_path': '', 'headers': [(b'content-type', b'application/json'), INTERNAL_COOKIE],
                  'client': ('127.0.0.1', 123), 'server': ('test', 80)}
         await app(scope, receive, send)
         # Closing a suspended async generator runs its cancellation finalizer.
@@ -257,7 +261,7 @@ def test_disconnect_before_first_text_cancels_provider_on_asgi_24(monkeypatch):
         scope = {'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.4'},
                  'http_version': '1.1', 'method': 'POST', 'scheme': 'http',
                  'path': '/chat/explain', 'raw_path': b'/chat/explain', 'query_string': b'',
-                 'root_path': '', 'headers': [(b'content-type', b'application/json')],
+                 'root_path': '', 'headers': [(b'content-type', b'application/json'), INTERNAL_COOKIE],
                  'client': ('127.0.0.1', 123), 'server': ('test', 80)}
         await asyncio.wait_for(app(scope, receive, send), 2)
         assert closed.is_set()
@@ -331,7 +335,7 @@ def test_ended_evidence_cannot_start_next_read(monkeypatch, termination):
         scope = {'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.4'},
                  'http_version': '1.1', 'method': 'POST', 'scheme': 'http',
                  'path': '/chat/explain', 'raw_path': b'/chat/explain', 'query_string': b'',
-                 'root_path': '', 'headers': [(b'content-type', b'application/json')],
+                 'root_path': '', 'headers': [(b'content-type', b'application/json'), INTERNAL_COOKIE],
                  'client': ('127.0.0.1', 123), 'server': ('test', 80)}
         try:
             await asyncio.wait_for(app(scope, receive, send), 2)

@@ -71,3 +71,10 @@ by opening-balance evidence rather than inferred from that period's earnings.
 **Closing outstanding commission**:
 Opening outstanding commission plus recorded period earnings less period
 settlements, when all components are evidenced. Invoice collections do not change it.
+
+**Partner login**:
+A demonstration sign-in tied to exactly one trade partner account code. Same-named
+accounts have separate logins.
+
+**Internal login**:
+A demonstration sign-in shared in role by Finance and Revenue Assurance users.

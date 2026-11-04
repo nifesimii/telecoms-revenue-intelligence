@@ -16,7 +16,40 @@ const api = axios.create({
   // real request-length ceiling is the server's own agent loop cap.
   timeout: 120_000,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 });
+
+// A refused session anywhere in the app returns the user to the login page.
+export const SESSION_ENDED_EVENT = 'fbb:session-ended';
+const sessionPaths = ['/auth/login', '/auth/session'];
+const announceSessionEnded = () => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_ENDED_EVENT));
+};
+
+api.interceptors.response.use(undefined, (error) => {
+  if (error.response?.status === 401 && !sessionPaths.includes(error.config?.url)) announceSessionEnded();
+  return Promise.reject(error);
+});
+
+// Resolves to null when nobody is signed in.
+export async function getSession() {
+  try {
+    const { data } = await api.get('/auth/session');
+    return data;
+  } catch (error) {
+    if (error.response?.status === 401) return null;
+    throw error;
+  }
+}
+
+export async function signIn(username, password) {
+  const { data } = await api.post('/auth/login', { username, password });
+  return data;
+}
+
+export async function signOut() {
+  await api.post('/auth/logout');
+}
 
 export async function getFinancialDealers(params, signal) {
   const { data } = await api.get('/financial-health', { params, signal });
@@ -430,8 +463,9 @@ async function streamAnswer(path, payload, { signal, onText, onStatus } = {}) {
     const response = await fetch(`${baseURL.replace(/\/$/, '')}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
-      body: JSON.stringify(payload), signal: controller.signal,
+      body: JSON.stringify(payload), signal: controller.signal, credentials: 'include',
     });
+    if (response.status === 401) announceSessionEnded();
     if (!response.ok) throw new Error(`Explanation unavailable (HTTP ${response.status}). Please retry.`);
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/x-ndjson')) {
       throw new Error('Invalid explanation response. Please retry.');

@@ -3,6 +3,10 @@
 Status: specification draft; agreed product scope captured. Testing boundaries
 await confirmation. Issue-tracker setup is not recorded; publication is pending.
 
+> Partly superseded by [ADR 0002](adr/0002-partner-sales-two-logins.md). Partner and
+> internal logins and server-held simulation records replace the presenter-only,
+> browser-session behavior described here. GitHub issue #7 has the current design.
+
 ## Problem Statement
 
 MTN Finance and channel leadership need to see a coherent partner relationship:
