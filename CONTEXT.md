@@ -45,3 +45,29 @@ of actual partner revenue or amounts owed.
 The financial condition of a dealer's whole business, considered by MTN Finance
 when assessing potential funding candidates. It extends beyond the dealer's
 MTN commission and settlement account.
+
+**Partner sales invoice**:
+An invoice from MTN to a trade partner for goods purchased by that partner.
+It represents the partner's purchase obligation, distinct from commission MTN
+owes the partner.
+
+**Partner Commission Account**:
+The view of a trade partner's recorded commission earnings, settlements, and
+outstanding commission owed by MTN. Sales invoice balances are separate obligations.
+_Avoid_: Receivable account (without identifying whose receivable and its source)
+
+**Simulated invoice**:
+A fictional invoice used to demonstrate a sales workflow. It does not establish
+an actual purchase obligation or an invoice issued by MTN.
+
+**Invoice collection**:
+A payment from a trade partner toward a specific MTN sales invoice. It reduces
+the invoice obligation and is distinct from MTN settling commission to the partner.
+
+**Opening outstanding commission**:
+Commission remaining unpaid at the start of the statement period, supported
+by opening-balance evidence rather than inferred from that period's earnings.
+
+**Closing outstanding commission**:
+Opening outstanding commission plus recorded period earnings less period
+settlements, when all components are evidenced. Invoice collections do not change it.
