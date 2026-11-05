@@ -2,6 +2,7 @@
 // no internal workspace and requests no internal data.
 
 import { SignedInAs } from './SessionGate.jsx';
+import PartnerOrdering from '../sales/PartnerOrdering.jsx';
 
 export default function PartnerShell({ session, onSignOut }) {
   return <div className="flex h-full flex-col">
@@ -19,7 +20,7 @@ export default function PartnerShell({ session, onSignOut }) {
     </header>
     <main aria-label="Partner Sales" className="mx-auto w-full max-w-7xl flex-1 overflow-auto px-4 py-6 sm:px-6 lg:px-8">
       <h1 className="text-lg font-semibold text-gray-900">Partner Sales</h1>
-      <p className="mt-2 text-sm text-gray-700">You are signed in to fictional account {session.account_code}. Ordering is not available yet.</p>
+      <PartnerOrdering />
     </main>
   </div>;
 }

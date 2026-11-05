@@ -49,6 +49,8 @@ _EXAMPLE_INVOICES = [
 MAX_QUANTITY = 1_000_000
 _MAX_DRAFTS_LISTED = 100
 DRAFT, UNPAID, PARTIALLY_PAID, PAID = STATUSES = ["Draft", "Unpaid", "Partially paid", "Paid"]
+# Finance's decisions on an order follow in #11.
+SUBMITTED, = ORDER_STATUSES = ["Submitted"]
 _PARTNERS_BY_CODE = {partner["code"]: partner for partner in PARTNERS}
 _PRODUCTS_BY_CODE = {product["code"]: product for product in CATALOGUE}
 
@@ -113,6 +115,10 @@ def _collection_reference(sequence: int) -> str:
     return f"SIM-PAY-{sequence:04d}"
 
 
+def _order_reference(sequence: int) -> str:
+    return f"SIM-ORD-{sequence:04d}"
+
+
 def _last_day_of(period: str) -> str:
     year, month = int(period[:4]), int(period[4:6])
     return f"{period[:4]}-{period[4:6]}-{calendar.monthrange(year, month)[1]:02d}"
@@ -174,6 +180,30 @@ def _draft_record(draft: dict) -> dict:
     }
 
 
+def _require_partner(account_code: str | None) -> dict:
+    partner = _PARTNERS_BY_CODE.get(account_code)
+    if partner is None:
+        raise SalesNotFound
+    return partner
+
+
+def _require_catalogue_lines(lines: list[dict]) -> None:
+    codes = [line["product_code"] for line in lines]
+    if len(set(codes)) != len(codes) or any(code not in _PRODUCTS_BY_CODE for code in codes):
+        raise SalesRuleError("Draft lines must name different catalogue products.")
+
+
+def _order_draft_view(draft: dict) -> dict:
+    return {"token": draft["token"], "lines": [{"product_code": line["product_code"], "quantity": line["quantity"]} for line in draft["lines"]]}
+
+
+def _order_view(order: dict) -> dict:
+    return {
+        "reference": order["reference"], "status": SUBMITTED, "account": _PARTNERS_BY_CODE[order["account_code"]],
+        "currency": "NGN", "lines": order["lines"], "total_minor": order["total_minor"],
+    }
+
+
 def _newest_first(records: list[dict]) -> list[dict]:
     """References are unique, so this is a total order."""
     return sorted(records, key=lambda record: (record["date"], _sequence_of(record["reference"])), reverse=True)
@@ -202,6 +232,12 @@ class SalesSimulation:
         self._drafts: dict[str, dict] = {}
         self._invoices: list[dict] = []
         self._collections: list[dict] = []
+        self._next_order_sequence = 1
+        # A partner's unsubmitted order, one per account, seen by nobody else.
+        self._order_drafts: dict[str, dict] = {}
+        # The token each account's last deleted draft had, so only its own retry succeeds.
+        self._deleted_order_tokens: dict[str, str] = {}
+        self._orders: list[dict] = []
 
     def _seed(self) -> None:
         self._empty()
@@ -224,7 +260,7 @@ class SalesSimulation:
         with self._lock:
             return {
                 "drafts": len(self._drafts), "invoices": len(self._invoices), "collections": len(self._collections),
-                "next_draft_reference": _invoice_reference(self._next_sequence),
+                "orders": len(self._orders), "next_draft_reference": _invoice_reference(self._next_sequence),
             }
 
     def _create_draft(self, account_code: str, period: str) -> dict:
@@ -238,8 +274,7 @@ class SalesSimulation:
 
     def create_draft(self, account_code: str, period: str) -> dict:
         """Each account has one draft per month, so repeating this returns it."""
-        if account_code not in _PARTNERS_BY_CODE:
-            raise SalesNotFound
+        _require_partner(account_code)
         with self._lock:
             existing = self._drafts.get(_draft_key(account_code, period))
             return _draft_view(existing or self._create_draft(account_code, period))
@@ -254,9 +289,7 @@ class SalesSimulation:
 
     def update_draft(self, held: RecordHandle, issue_date: str, due_date: str, lines: list[dict]) -> dict:
         """Invalid quantities and dates stay as typed; issuing is what requires them valid."""
-        codes = [line["product_code"] for line in lines]
-        if len(set(codes)) != len(codes) or any(code not in _PRODUCTS_BY_CODE for code in codes):
-            raise SalesRuleError("Draft lines must name different catalogue products.")
+        _require_catalogue_lines(lines)
         with self._lock:
             draft = self._draft_by_reference(held.reference)
             # The same change again means its response was lost, not that the draft moved on.
@@ -395,6 +428,87 @@ class SalesSimulation:
             "invoices": _page(invoices, limit, offset), "drafts": _page(drafts, _MAX_DRAFTS_LISTED, 0),
             "outstanding_minor": _outstanding(invoices), "as_of": _latest_activity(invoices),
         }
+
+    # A partner's own ordering. The account always comes from the caller's login, and
+    # another account's records behave exactly as if they did not exist.
+
+    def ordering_reference(self, account_code: str) -> dict:
+        """What a partner may see: their own account, never the other partners."""
+        return {"account": _require_partner(account_code), "catalogue": CATALOGUE, "max_quantity": MAX_QUANTITY, "statuses": ORDER_STATUSES}
+
+    def order_draft(self, account_code: str) -> dict | None:
+        with self._lock:
+            draft = self._order_drafts.get(_require_partner(account_code)["code"])
+            return _order_draft_view(draft) if draft else None
+
+    def create_order_draft(self, account_code: str) -> dict:
+        """One draft per account, so repeating this returns it."""
+        code = _require_partner(account_code)["code"]
+        with self._lock:
+            draft = self._order_drafts.setdefault(code, {"token": _new_token(), "account_code": code, "lines": []})
+            return _order_draft_view(draft)
+
+    def update_order_draft(self, account_code: str, token: str, lines: list[dict]) -> dict:
+        """Invalid quantities stay as typed; submitting is what requires them valid."""
+        _require_catalogue_lines(lines)
+        with self._lock:
+            draft = self._order_drafts.get(_require_partner(account_code)["code"])
+            # The same change again means its response was lost, not that the draft moved on.
+            if draft and token == draft.get("previous_token") and lines == draft["lines"]:
+                return _order_draft_view(draft)
+            _require_held(draft, token)
+            draft.update(token=_new_token(), previous_token=token, lines=lines)
+            return _order_draft_view(draft)
+
+    def delete_order_draft(self, account_code: str, token: str) -> None:
+        """Retrying a delete whose response was lost succeeds; any other missing draft is refused."""
+        code = _require_partner(account_code)["code"]
+        with self._lock:
+            draft = self._order_drafts.get(code)
+            if draft is None and self._deleted_order_tokens.get(code) == token:
+                return
+            _require_held(draft, token)
+            del self._order_drafts[code]
+            self._deleted_order_tokens[code] = token
+
+    def submit_order(self, account_code: str, action_id: str, token: str) -> dict:
+        """Submitting consumes the draft. Repeating an action returns the order it made."""
+        code = _require_partner(account_code)["code"]
+        with self._lock:
+            repeated = self._own_order(code, "action_id", action_id)
+            if repeated:
+                return _order_view(repeated)
+            draft = _require_held(self._order_drafts.get(code), token)
+            if not draft["lines"]:
+                raise SalesRuleError("Add at least one product before submitting.")
+            if not all(_quantity_is_valid(line["quantity"]) for line in draft["lines"]):
+                raise SalesRuleError(f"Every quantity must be a whole number from 1 to {MAX_QUANTITY:,}.")
+            order = {
+                "reference": _order_reference(self._next_order_sequence), "action_id": action_id, "account_code": code,
+                "lines": [{**_line_view(line), "quantity": int(line["quantity"]), "line_total_minor": _line_total(line)} for line in draft["lines"]],
+                "total_minor": sum(_line_total(line) for line in draft["lines"]),
+            }
+            self._next_order_sequence += 1
+            del self._order_drafts[code]
+            self._orders.append(order)
+            return _order_view(order)
+
+    def _own_order(self, code: str, field: str, value: str) -> dict | None:
+        return next((order for order in self._orders if order["account_code"] == code and order[field] == value), None)
+
+    def orders(self, account_code: str, limit: int, offset: int) -> dict:
+        code = _require_partner(account_code)["code"]
+        with self._lock:
+            own = [_order_view(order) for order in reversed(self._orders) if order["account_code"] == code]
+        return _page(own, limit, offset)
+
+    def order(self, account_code: str, reference: str) -> dict:
+        code = _require_partner(account_code)["code"]
+        with self._lock:
+            found = self._own_order(code, "reference", reference)
+            if found is None:
+                raise SalesNotFound
+            return _order_view(found)
 
 
 simulation = SalesSimulation()

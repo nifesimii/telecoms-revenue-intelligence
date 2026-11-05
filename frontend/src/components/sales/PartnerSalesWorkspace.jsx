@@ -62,11 +62,11 @@ function SimulationReset({ onReset }) {
     setConfirming(true);
     requestAnimationFrame(() => document.getElementById('sales-reset-keep')?.focus());
   };
-  const contents = status ? `${quantityLabel(status.drafts, 'draft')}, ${quantityLabel(status.invoices, 'invoice')} and ${quantityLabel(status.collections, 'collection')}` : 'records';
+  const contents = status ? `${quantityLabel(status.drafts, 'draft')}, ${quantityLabel(status.invoices, 'invoice')}, ${quantityLabel(status.collections, 'collection')} and ${quantityLabel(status.orders, 'partner order')}` : 'records';
   return <div className="mt-3">
     {!confirming ? <button id="sales-reset" type="button" className="sales-button" onClick={open}>Reset simulation</button>
       : <div role="group" aria-label="Confirm simulation reset" className="sales-paper">
-        <p className="text-sm">Reset the simulation to its starting point for everyone using it? This discards the current {contents}, restores the example invoices, and clears the selected partner and filters. Recorded commission, payment and inventory evidence, other workspaces and the reporting month stay as they are.</p>
+        <p className="text-sm">Reset the simulation to its starting point for everyone using it? This discards the current {contents}, along with every partner's draft order, restores the example invoices, and clears the selected partner and filters. Recorded commission, payment and inventory evidence, other workspaces and the reporting month stay as they are.</p>
         {failed && <p role="alert" className="sales-alert">The simulation could not be reset, so nothing has changed. Try again.</p>}
         <div className="sales-actions">
           <button type="button" className="sales-button sales-primary" disabled={resetting} onClick={reset}>Reset to starting point</button>

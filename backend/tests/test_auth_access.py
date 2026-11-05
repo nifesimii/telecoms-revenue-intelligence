@@ -61,6 +61,28 @@ def test_internal_routes_refuse_partners(method, path, demo_logins):
     assert signed_in(demo_logins["partner-296065"]).request(method, concrete(path)).status_code == 403
 
 
+PARTNER_OPERATIONS = [
+    (method, path) for method, path in api_operations()
+    if access.ROUTE_ACCESS.get(path) is access.Access.PARTNER
+]
+
+
+def test_partner_routes_exist():
+    assert {path for _, path in PARTNER_OPERATIONS} == {
+        path for path, level in access.ROUTE_ACCESS.items() if level is access.Access.PARTNER
+    } != set()
+
+
+@pytest.mark.parametrize("method,path", PARTNER_OPERATIONS)
+def test_partner_routes_refuse_requests_without_a_session(method, path):
+    assert anonymous().request(method, concrete(path)).status_code == 401
+
+
+@pytest.mark.parametrize("method,path", PARTNER_OPERATIONS)
+def test_partner_routes_refuse_internal_users(method, path, demo_logins):
+    assert signed_in(demo_logins["finance"]).request(method, concrete(path)).status_code == 403
+
+
 def test_unclassified_routes_are_internal_only():
     assert access.access_for("/some/new/route") is access.Access.INTERNAL
 

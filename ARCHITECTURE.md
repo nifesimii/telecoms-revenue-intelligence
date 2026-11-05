@@ -415,7 +415,9 @@ frontend/src/
     │                       only after read-only sample evidence reconciles to the kobo. Records are
     │                       held by the server and shared by everyone signed in. A reset restores the
     │                       starting seed (three example invoices) for all of them, and a change to a
-    │                       record that has since changed or been reset is refused (see
+    │                       record that has since changed or been reset is refused. A partner login
+    │                       sees only PartnerOrdering.jsx: one private draft order for its own
+    │                       account and its submitted orders, over /partner-sales/my/* (see
     │                       docs/adr/0001-partner-sales-presentation-boundary.md,
     │                       docs/adr/0002-partner-sales-two-logins.md and docs/PARTNER_SALES_REHEARSAL.md).
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).

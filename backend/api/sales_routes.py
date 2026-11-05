@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field, StrictInt
 
+from backend.auth import access
 from backend.sales.simulation import CATALOGUE, MAX_QUANTITY, PARTNERS, STATUSES, RecordHandle, SalesConflict, SalesNotFound, SalesRuleError, simulation
 
 router = APIRouter(prefix="/partner-sales", tags=["partner-sales"])
@@ -111,3 +112,63 @@ def record_collection(reference: str, body: NewCollection) -> dict:
 @router.get("/partners/{account_code}/obligations")
 def obligations(account_code: str, limit: Limit = 25, offset: Offset = 0) -> dict:
     return _run(lambda: simulation.obligations(account_code, limit, offset))
+
+
+# A partner's own ordering. The account is the session's, and no route accepts one.
+
+def _own_account(request: Request) -> str | None:
+    return access.current_principal(request).account_code
+
+
+OwnAccount = Annotated[str | None, Depends(_own_account)]
+
+
+class OrderDraftChange(BaseModel):
+    token: Token
+    lines: list[DraftLine] = Field(max_length=len(CATALOGUE))
+
+
+class OrderSubmission(BaseModel):
+    token: Token
+    action_id: str = Field(min_length=1, max_length=100)
+
+
+@router.get("/my/reference")
+def own_reference(account_code: OwnAccount) -> dict:
+    return _run(lambda: simulation.ordering_reference(account_code))
+
+
+@router.get("/my/draft")
+def own_draft(account_code: OwnAccount) -> dict:
+    return {"draft": _run(lambda: simulation.order_draft(account_code))}
+
+
+@router.post("/my/draft")
+def create_own_draft(account_code: OwnAccount) -> dict:
+    return _run(lambda: simulation.create_order_draft(account_code))
+
+
+@router.put("/my/draft")
+def update_own_draft(body: OrderDraftChange, account_code: OwnAccount) -> dict:
+    lines = [line.model_dump() for line in body.lines]
+    return _run(lambda: simulation.update_order_draft(account_code, body.token, lines))
+
+
+@router.delete("/my/draft", status_code=204)
+def delete_own_draft(token: Annotated[str, Query(min_length=1, max_length=64)], account_code: OwnAccount) -> None:
+    _run(lambda: simulation.delete_order_draft(account_code, token))
+
+
+@router.post("/my/draft/submit")
+def submit_own_draft(body: OrderSubmission, account_code: OwnAccount) -> dict:
+    return _run(lambda: simulation.submit_order(account_code, body.action_id, body.token))
+
+
+@router.get("/my/orders")
+def own_orders(account_code: OwnAccount, limit: Limit = 25, offset: Offset = 0) -> dict:
+    return _run(lambda: simulation.orders(account_code, limit, offset))
+
+
+@router.get("/my/orders/{reference}")
+def own_order(reference: str, account_code: OwnAccount) -> dict:
+    return _run(lambda: simulation.order(account_code, reference))

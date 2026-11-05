@@ -75,7 +75,7 @@ def test_starts_with_one_example_invoice_of_each_status():
         "SIM-INV-0001": "Paid", "SIM-INV-0002": "Partially paid", "SIM-INV-0003": "Unpaid",
     }
     assert client.get("/partner-sales/status").json() == {
-        "drafts": 0, "invoices": 3, "collections": 2, "next_draft_reference": "SIM-INV-0004",
+        "drafts": 0, "invoices": 3, "collections": 2, "orders": 0, "next_draft_reference": "SIM-INV-0004",
     }
 
 
@@ -137,7 +137,7 @@ def test_drafts_require_a_real_month(period):
 
 def test_a_new_process_starts_from_the_seed():
     invoice()
-    assert SalesSimulation().status() == {"drafts": 0, "invoices": 3, "collections": 2, "next_draft_reference": "SIM-INV-0004"}
+    assert SalesSimulation().status() == {"drafts": 0, "invoices": 3, "collections": 2, "orders": 0, "next_draft_reference": "SIM-INV-0004"}
 
 
 def test_drafts_require_a_known_partner():

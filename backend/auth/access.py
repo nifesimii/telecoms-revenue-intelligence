@@ -19,6 +19,18 @@ class Access(Enum):
     OPEN = "open"
     SIGNED_IN = "signed_in"
     INTERNAL = "internal"
+    PARTNER = "partner"
+
+
+# A partner's own records, always the session's account. Internal users are refused,
+# so review begins at submission.
+_PARTNER_PATHS = (
+    "/partner-sales/my/draft",
+    "/partner-sales/my/draft/submit",
+    "/partner-sales/my/orders",
+    "/partner-sales/my/orders/{reference}",
+    "/partner-sales/my/reference",
+)
 
 
 _INTERNAL_PATHS = (
@@ -88,6 +100,7 @@ ROUTE_ACCESS: dict[str, Access] = {
     "/auth/logout": Access.OPEN,
     "/auth/session": Access.SIGNED_IN,
     **{path: Access.INTERNAL for path in _INTERNAL_PATHS},
+    **{path: Access.PARTNER for path in _PARTNER_PATHS},
 }
 
 _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -110,6 +123,10 @@ def _refuse_cross_site_changes(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Cross-site request refused.")
 
 
+# The one role each restricted level admits; SIGNED_IN admits any.
+_REQUIRED_ROLE = {Access.INTERNAL: session.INTERNAL, Access.PARTNER: session.PARTNER}
+
+
 def current_principal(request: Request) -> session.Principal | None:
     return session.read_token(request.cookies.get(session.COOKIE_NAME))
 
@@ -123,5 +140,6 @@ def enforce_access(request: Request) -> None:
     principal = current_principal(request)
     if principal is None:
         raise HTTPException(status_code=401, detail="Authentication required.")
-    if level is Access.INTERNAL and principal.role != session.INTERNAL:
+    required_role = _REQUIRED_ROLE.get(level)
+    if required_role and principal.role != required_role:
         raise HTTPException(status_code=403, detail="Not available for this login.")

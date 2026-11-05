@@ -33,6 +33,14 @@ async function mockApi(page, { signedInAs = null, reachable = true, configured =
     if (pathname === '/health') return route.fulfill({ headers: cors, json: { sample_data_mode: true } });
     if (!state.session) return route.fulfill({ status: 401, headers: cors, json: { detail: 'Authentication required.' } });
     if (pathname === '/auth/session') return route.fulfill({ headers: cors, json: state.session });
+    if (state.session.role === 'partner' && pathname.startsWith('/partner-sales/my/')) {
+      const own = {
+        '/partner-sales/my/reference': { account: { code: state.session.account_code, name: 'River Isle Ventures' }, catalogue: [], max_quantity: 1000000, statuses: ['Submitted'] },
+        '/partner-sales/my/draft': { draft: null },
+        '/partner-sales/my/orders': { items: [], pagination: { total: 0, returned: 0, offset: 0, limit: 25, has_more: false } },
+      }[pathname];
+      return route.fulfill({ headers: cors, json: own });
+    }
     if (state.session.role !== 'internal') return route.fulfill({ status: 403, headers: cors, json: { detail: 'Not available for this login.' } });
     if (pathname === '/periods') return route.fulfill({ headers: cors, json: { periods: ['202605'] } });
     return route.fulfill({ status: 503, headers: cors, json: { detail: 'Unavailable in acceptance fixture' } });
@@ -76,12 +84,14 @@ test('a partner sees only their own account and requests nothing internal', asyn
   await page.goto('/?view=payment');
   await submit(page, 'partner-296065');
   const main = page.getByRole('main', { name: 'Partner Sales' });
-  await expect(main.getByText('fictional account 296065')).toBeVisible();
+  await expect(main.getByText('River Isle Ventures · Account 296065')).toBeVisible();
+  await expect(main.getByText('You have not submitted any orders yet.')).toBeVisible();
   await expect(page.getByText('Signed in as Partner account 296065')).toBeVisible();
   await expect(page.getByText('Synthetic demonstration')).toBeVisible();
   await expect(workspaces(page)).toHaveCount(0);
   await expect(page.getByRole('combobox', { name: /Reporting period/ })).toHaveCount(0);
-  expect(api.requests.filter((path) => !path.startsWith('/auth/'))).toEqual([]);
+  await expect(main.getByRole('radio')).toHaveCount(0);
+  expect(api.requests.filter((path) => !path.startsWith('/auth/') && !path.startsWith('/partner-sales/my/'))).toEqual([]);
 });
 
 test('failed sign-in explains itself without saying which field was wrong', async ({ page }) => {

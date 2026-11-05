@@ -449,6 +449,46 @@ export async function resetSalesSimulation() {
   return data;
 }
 
+// A partner's own ordering. The server takes the account from the session, so none is sent.
+export async function getOwnOrderingReference(signal) {
+  const { data } = await api.get('/partner-sales/my/reference', { signal });
+  return data;
+}
+
+export async function getOwnOrderDraft(signal) {
+  const { data } = await api.get('/partner-sales/my/draft', { signal });
+  return data;
+}
+
+export async function createOwnOrderDraft() {
+  const { data } = await api.post('/partner-sales/my/draft');
+  return data;
+}
+
+export async function saveOwnOrderDraft(change) {
+  const { data } = await api.put('/partner-sales/my/draft', change);
+  return data;
+}
+
+export async function deleteOwnOrderDraft(token) {
+  await api.delete('/partner-sales/my/draft', { params: { token } });
+}
+
+export async function submitOwnOrderDraft(submission) {
+  const { data } = await api.post('/partner-sales/my/draft/submit', submission);
+  return data;
+}
+
+export async function getOwnOrders(params, signal) {
+  const { data } = await api.get('/partner-sales/my/orders', { params, signal });
+  return data;
+}
+
+export async function getOwnOrder(reference, signal) {
+  const { data } = await api.get(`/partner-sales/my/orders/${encodeURIComponent(reference)}`, { signal });
+  return data;
+}
+
 export default api;
 
 

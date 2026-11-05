@@ -93,3 +93,10 @@ accounts have separate logins.
 
 **Internal login**:
 A demonstration sign-in shared in role by Finance and Revenue Assurance users.
+
+**Partner order**:
+What a partner login submits from its own draft order: fixed lines and total under a
+`SIM-ORD-` reference, read-only once submitted. It is not an invoice or a purchase
+obligation; only MTN Finance issuing it makes one. A draft order is private to its
+partner and reaches Finance only by submission.
+_Avoid_: Purchase order, invoice draft (an internal draft priced for one issue month)

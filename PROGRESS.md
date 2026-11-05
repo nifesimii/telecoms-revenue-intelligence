@@ -3,6 +3,23 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-05 (Partner Sales: partner drafts and submits an order, #10)
+
+- A partner login now builds one private draft order for its own account, previews it, and submits it as a
+  read-only `SIM-ORD-` order, then sees its orders with their status. Routes are `/partner-sales/my/*`: they
+  take the account from the session and accept none, and a new `partner` access level refuses internal users.
+- Decided here (not in the issue): one draft order per partner at a time, with no month or dates, because
+  Finance sets invoice dates when it issues (#11). Edits are saved explicitly (Save draft, or Preview, which
+  saves first) instead of as typed, so the preview always shows and submits the saved copy.
+- Submission takes a client action id, scoped to the partner's account, so a double click or a retried lost
+  response makes one order. Another account's order answers exactly like a missing one.
+- Left for #11 on purpose: the internal invoice-draft flow still works as before, so the rehearsal stays whole
+  until Finance can issue from an order. Finance cannot see submitted orders yet; the reset confirmation counts them.
+- Partner reads use TanStack's `useQuery` directly: the partner shell has no reporting month, and the workspace
+  hook needs one. `usePagedQuery` takes the query hook as an optional last argument for this.
+- Verification: backend 1,407 passed and 37 skipped; acceptance 114 tests (7 new partner-ordering journeys, plus
+  the login and reset copy updates) passed; the new partner spec passed 3 repeats; the production build passed.
+
 ## Session — 2026-11-05 (Partner Sales: shared server data, #9)
 
 - Drafts, invoices and collections moved from browser storage to server process memory behind

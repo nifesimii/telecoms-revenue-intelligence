@@ -1758,7 +1758,7 @@ test('reset returns to the example invoices, restarts references and leaves ever
   requests.length = 0;
 
   await resetButton(page).click();
-  await expect(resetPanel(page)).toContainText('1 draft, 4 invoices and 3 collections');
+  await expect(resetPanel(page)).toContainText('1 draft, 4 invoices, 3 collections and 0 partner orders, along with every partner');
   await expect(resetPanel(page)).toContainText('Recorded commission, payment and inventory evidence');
   await expect(matchingRecordCount(page)).toHaveText('1');
   await confirmReset(page).click();

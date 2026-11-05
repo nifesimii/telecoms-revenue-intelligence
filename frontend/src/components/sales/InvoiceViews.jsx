@@ -41,13 +41,14 @@ function PageControls({ pagination, headingId, onOffsetChange, onLimitChange }) 
 // Reads one page from the server. A new scope starts at the first page, and the
 // server moves a page past the end of a shrunken set back to its last. Recording that
 // move means a set that regrows never revives the old page. A placeholder still
-// describes the previous request, so it says nothing about this one.
-function usePagedQuery(scope, headingId, optionsFor, paginationOf) {
+// describes the previous request, so it says nothing about this one. A read outside
+// the reporting-month workspaces, such as a partner's own orders, passes its own query hook.
+export function usePagedQuery(scope, headingId, optionsFor, paginationOf, useRead = useQuery) {
   const [limit, setLimit] = useState(25);
   const [position, setPosition] = useState({ scope, offset: 0 });
   const offset = position.scope === scope ? position.offset : 0;
   if (position.scope !== scope) setPosition({ scope, offset });
-  const query = useQuery(optionsFor({ limit, offset }));
+  const query = useRead(optionsFor({ limit, offset }));
   const pagination = query.data && paginationOf(query.data);
   if (pagination && !query.isPlaceholderData && pagination.offset !== offset) setPosition({ scope, offset: pagination.offset });
   return {
@@ -57,7 +58,7 @@ function usePagedQuery(scope, headingId, optionsFor, paginationOf) {
   };
 }
 
-function ReadState({ query, what }) {
+export function ReadState({ query, what }) {
   if (query.isError) {
     return <div role="alert" className="sales-alert">{query.error.response?.status === 404 ? `This ${what} is no longer in the simulation.` : `This ${what} could not be loaded.`}
       {query.error.response?.status !== 404 && <div className="mt-2"><button type="button" className="sales-button" onClick={() => query.refetch()}>Try again</button></div>}</div>;
