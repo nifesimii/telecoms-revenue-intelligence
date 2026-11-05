@@ -24,8 +24,8 @@ def change_of(lines=((ROUTER, "2"), (CARD, "100")), issue_date="2026-05-20", due
     return {"issue_date": issue_date, "due_date": due_date, "lines": [{"product_code": code, "quantity": units} for code, units in lines]}
 
 
-def save(saved_draft, **change):
-    return client.put(f"/partner-sales/drafts/{saved_draft['reference']}", json={"token": saved_draft["token"], **change_of(**change)})
+def save(a_draft, **change):
+    return client.put(f"/partner-sales/drafts/{a_draft['reference']}", json={"token": a_draft["token"], **change_of(**change)})
 
 
 def saved_draft(partner="296065", period=PERIOD, **change):
@@ -343,6 +343,15 @@ def test_retrying_an_issue_or_collection_still_returns_the_earlier_result():
     first = collect(issued["reference"], 100, action_id="retry", token=token).json()
     assert collect(issued["reference"], 100, action_id="retry", token=token).json() == first
     assert detail(issued["reference"])["balance"]["collected_minor"] == 100
+
+
+def test_retrying_a_save_whose_response_was_lost_is_not_a_conflict():
+    a_draft = saved_draft()
+    first = save(a_draft, lines=((CARD, "5"),))
+    retried = save(a_draft, lines=((CARD, "5"),))
+    assert retried.status_code == 200
+    assert retried.json() == first.json()
+    assert save(a_draft, lines=((CARD, "6"),)).status_code == 409
 
 
 def test_changing_a_draft_or_invoice_requires_its_token():

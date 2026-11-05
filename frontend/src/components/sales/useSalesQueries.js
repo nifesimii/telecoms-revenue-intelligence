@@ -1,7 +1,8 @@
 // Partner Sales reads through the server simulation, which every session shares.
 
+import { keepPreviousData } from '@tanstack/react-query';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
-import { getSalesDraft, getSalesReference, getSalesStatus } from '../../api/client.js';
+import { getSalesDraft, getSalesInvoice, getSalesObligations, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
 
 const SALES = 'partner-sales';
 
@@ -11,16 +12,20 @@ export const salesKeys = {
   draft: (accountCode, period) => [SALES, 'draft', accountCode, period],
   records: (params) => [SALES, 'records', params],
   obligations: (accountCode, params) => [SALES, 'obligations', accountCode, params],
+  invoiceAnyPage: (reference) => [SALES, 'invoice', reference],
   invoice: (reference, params) => [SALES, 'invoice', reference, params],
 };
 
 // Everything that can change while the page is open. The reference data cannot.
-export const isSharedRecord = ({ queryKey }) => queryKey[0] === SALES && queryKey[1] !== 'reference';
-export const isDraft = ({ queryKey }) => queryKey[1] === 'draft';
+export const isSharedQuery = ({ queryKey }) => queryKey[0] === SALES && queryKey[1] !== 'reference';
+export const isDraftQuery = ({ queryKey }) => queryKey[1] === 'draft';
 
 // A missing record will not appear by asking again.
-export const retryUnlessMissing = (failures, error) => error.response?.status !== 404 && failures < 1;
+const retryUnlessMissing = (failures, error) => error.response?.status !== 404 && failures < 1;
 
 export const useSalesReference = () => useQuery({ queryKey: salesKeys.reference(), queryFn: ({ signal }) => getSalesReference(signal), staleTime: Infinity });
 export const useSalesSimulationStatus = () => useQuery({ queryKey: salesKeys.status(), queryFn: ({ signal }) => getSalesStatus(signal) });
 export const useSalesDraft = (accountCode, period) => useQuery({ queryKey: salesKeys.draft(accountCode, period), queryFn: ({ signal }) => getSalesDraft(accountCode, period, signal), enabled: Boolean(accountCode) });
+export const useSalesRecords = (params) => useQuery({ queryKey: salesKeys.records(params), queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
+export const useSalesObligations = (accountCode, params) => useQuery({ queryKey: salesKeys.obligations(accountCode, params), queryFn: ({ signal }) => getSalesObligations(accountCode, params, signal), placeholderData: keepPreviousData });
+export const useSalesInvoice = (reference, params) => useQuery({ queryKey: salesKeys.invoice(reference, params), queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });

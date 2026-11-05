@@ -1862,17 +1862,17 @@ test('a reset that fails says nothing changed, and succeeds on retry', async ({ 
 });
 
 // What another session does while this page still shows what it loaded earlier.
-const salesApi = (page, path) => `${API_BASE}/partner-sales/${path}`;
-const draftOf = async (page, accountCode) => (await (await page.request.get(salesApi(page, 'drafts'), { params: { account_code: accountCode, mon_period: '202605' } })).json()).draft;
-const resetElsewhere = (page) => page.request.post(salesApi(page, 'reset'));
+const salesApi = (path) => `${API_BASE}/partner-sales/${path}`;
+const draftOf = async (page, accountCode) => (await (await page.request.get(salesApi('drafts'), { params: { account_code: accountCode, mon_period: '202605' } })).json()).draft;
+const resetElsewhere = (page) => page.request.post(salesApi('reset'));
 const editElsewhere = async (page, accountCode, lines) => {
   const draft = await draftOf(page, accountCode);
-  const saved = await page.request.put(salesApi(page, `drafts/${draft.reference}`), { data: { token: draft.token, issue_date: draft.issue_date, due_date: draft.due_date, lines } });
+  const saved = await page.request.put(salesApi(`drafts/${draft.reference}`), { data: { token: draft.token, issue_date: draft.issue_date, due_date: draft.due_date, lines } });
   expect(saved.ok()).toBe(true);
   return saved.json();
 };
 const draftForAnotherAccount = async (page) => {
-  const created = await page.request.post(salesApi(page, 'drafts'), { data: { account_code: '74050', mon_period: '202605' } });
+  const created = await page.request.post(salesApi('drafts'), { data: { account_code: '74050', mon_period: '202605' } });
   return editElsewhere(page, (await created.json()).account_code, [{ product_code: 'RCC-0500', quantity: '7' }]);
 };
 const refused = (page) => workspace(page).getByRole('alert').filter({ hasText: 'This changed elsewhere or the simulation was reset' });
@@ -1912,7 +1912,7 @@ test('issuing from before a reset is refused and issues nothing', async ({ page 
   await expect(refused(page)).toBeVisible();
   await expect(preview(page)).toBeVisible();
   expect(await draftOf(page, '74050')).toEqual(theirs);
-  expect((await (await page.request.get(salesApi(page, 'status'))).json()).invoices).toBe(3);
+  expect((await (await page.request.get(salesApi('status'))).json()).invoices).toBe(3);
 
   await loadLatest(page).click();
   await expect(workspace(page).getByRole('button', { name: 'Create draft' })).toBeVisible();
@@ -2020,6 +2020,136 @@ test('a list that shrinks and regrows stays on the page it fell back to', async 
   await expect(summary(page, 'Matching records')).toHaveText('27');
   await expect(rows(page)).toHaveCount(25);
   await expect(invoiceList(page).getByRole('button', { name: 'Previous' })).toBeDisabled();
+});
+
+test('an unsaved edit stays on screen through switching accounts, and the invoice is what the preview shows', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await startDraft(page);
+  await addLine(page, 'RCC-0100', '1');
+  await draftSaved(page);
+  const saves = salesApi('drafts/*');
+  await page.route(saves, (route) => (route.request().method() === 'PUT' ? route.abort() : route.fallback()));
+  await quantity(page, 'RCC-0100').fill('5');
+  const notSaved = workspace(page).getByRole('alert').filter({ hasText: 'could not be saved' });
+  await expect(notSaved).toBeVisible();
+  await page.unroute(saves);
+
+  // Issuing elsewhere marks every record out of date, so the next look at this draft refills it from the server.
+  await startDraft(page, 'River Isle Ventures · Account 353072');
+  await addLine(page, 'FBB-MIFI', '1');
+  await draftSaved(page);
+  await previewButton(page).click();
+  await issueButton(page).click();
+  await leaveDetail(page);
+  const refilled = page.waitForResponse((response) => response.url().includes('/partner-sales/drafts?') && response.url().includes('296065'));
+  await choosePartner(page, 'River Isle Ventures · Account 296065');
+  await refilled;
+  await choosePartner(page, 'River Isle Ventures · Account 353072');
+  await choosePartner(page, 'River Isle Ventures · Account 296065');
+
+  await expect(quantity(page, 'RCC-0100')).toHaveValue('5');
+  await expect(notSaved).toBeVisible();
+  await workspace(page).getByRole('button', { name: 'Try saving again' }).click();
+  await draftSaved(page);
+  await previewButton(page).click();
+  await expect(preview(page)).toContainText('NGN 500.00');
+  await issueButton(page).click();
+  await expect(issuedInvoice(page, 'SIM-INV-0001')).toContainText('NGN 500.00');
+});
+
+test('Load latest on an invoice leaves a draft’s unsaved edits and warning alone', async ({ page }) => {
+  await mockApi(page, { examples: true });
+  await openSales(page);
+  await startDraft(page);
+  await addLine(page, 'RCC-0100', '1');
+  await draftSaved(page);
+  const saves = salesApi('drafts/*');
+  await page.route(saves, (route) => (route.request().method() === 'PUT' ? route.abort() : route.fallback()));
+  await quantity(page, 'RCC-0100').fill('5');
+  const notSaved = workspace(page).getByRole('alert').filter({ hasText: 'could not be saved' });
+  await expect(notSaved).toBeVisible();
+  await page.unroute(saves);
+
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0003' }).click();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0003'), 'Status')).toHaveText('Unpaid');
+  const recording = salesApi('invoices/*/collections');
+  await page.route(recording, (route) => route.fulfill({ status: 409, headers: cors, json: { detail: 'Refused' } }));
+  await recordCollection(page, '2026-06-10', '100', 'SIM-INV-0003');
+  await loadLatest(page).click();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0003'), 'Status')).toHaveText('Unpaid');
+  await page.unroute(recording);
+  await leaveDetail(page);
+
+  await expect(quantity(page, 'RCC-0100')).toHaveValue('5');
+  await expect(notSaved).toBeVisible();
+});
+
+test('a refusal stays visible through editing another account and further typing, and sends nothing more', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await startDraft(page);
+  await addLine(page, 'FBB-5G-ROUTER', '2');
+  await draftSaved(page);
+  await editElsewhere(page, '296065', [{ product_code: 'RCC-0100', quantity: '9' }]);
+  await quantity(page, 'FBB-5G-ROUTER').fill('3');
+  await expect(refused(page)).toBeVisible();
+
+  await startDraft(page, 'River Isle Ventures · Account 353072');
+  await addLine(page, 'FBB-MIFI', '1');
+  await draftSaved(page);
+  await choosePartner(page, 'River Isle Ventures · Account 296065');
+  await expect(refused(page)).toBeVisible();
+  await expect(quantity(page, 'FBB-5G-ROUTER')).toHaveValue('3');
+
+  const saveAttempts = [];
+  page.on('request', (request) => { if (request.method() === 'PUT' && request.url().includes('/partner-sales/drafts/')) saveAttempts.push(request.url()); });
+  await quantity(page, 'FBB-5G-ROUTER').fill('4');
+  await expect(quantity(page, 'FBB-5G-ROUTER')).toHaveValue('4');
+  await expect(refused(page)).toBeVisible();
+  expect(saveAttempts).toEqual([]);
+  expect((await draftOf(page, '296065')).lines).toEqual([{ product_code: 'RCC-0100', quantity: '9' }]);
+});
+
+test('a save whose response was lost is saved by retrying, not reported as someone else’s change', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await startDraft(page);
+  await addLine(page, 'RCC-0100', '1');
+  await draftSaved(page);
+  const saves = salesApi('drafts/*');
+  await page.route(saves, async (route) => {
+    if (route.request().method() !== 'PUT') return route.fallback();
+    await route.fetch();
+    return route.abort();
+  });
+  await quantity(page, 'RCC-0100').fill('5');
+  await expect(workspace(page).getByRole('alert').filter({ hasText: 'could not be saved' })).toBeVisible();
+  await page.unroute(saves);
+
+  await workspace(page).getByRole('button', { name: 'Try saving again' }).click();
+  await draftSaved(page);
+  await expect(refused(page)).toHaveCount(0);
+  await quantity(page, 'RCC-0100').fill('6');
+  await draftSaved(page);
+  expect((await draftOf(page, '296065')).lines).toEqual([{ product_code: 'RCC-0100', quantity: '6' }]);
+});
+
+test('an amount being typed survives the invoice changing underneath it, and is then refused', async ({ page }) => {
+  await mockApi(page, { examples: true });
+  await openSales(page);
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0002' }).click();
+  await expect(history(page, 'SIM-INV-0002').locator('tbody tr')).toHaveCount(1);
+  await collectionAmount(page, 'SIM-INV-0002').fill('100');
+  await resetElsewhere(page);
+
+  const reread = page.waitForResponse((response) => response.url().includes('/partner-sales/invoices/SIM-INV-0002') && response.url().includes('limit=50'));
+  await collections(page, 'SIM-INV-0002').getByLabel('Rows per page').selectOption('50');
+  await reread;
+  await expect(collectionAmount(page, 'SIM-INV-0002')).toHaveValue('100');
+  await recordButton(page, 'SIM-INV-0002').click();
+  await expect(refused(page)).toBeVisible();
+  await expect(collectionAmount(page, 'SIM-INV-0002')).toHaveValue('100');
 });
 
 test('a reset reaches another session on its next refresh', async ({ page, browser }) => {

@@ -3,15 +3,12 @@
 // every set, and recording a collection goes through onRecordCollection.
 
 import { useRef, useState } from 'react';
-import { keepPreviousData } from '@tanstack/react-query';
 import PaginationControls from '../shared/PaginationControls.jsx';
-import useQuery from '../../hooks/useWorkspaceQuery.js';
-import { getSalesInvoice, getSalesObligations, getSalesRecords } from '../../api/client.js';
 import { formatCount, formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
 import { invoiceOpenerId, partnerLabel, quantityLabel } from './salesDisplay.js';
 import { collectionErrors, parseAmountMinor } from './salesFormChecks.js';
 import { failureMessage, isRefusal } from './useSalesActions.js';
-import { retryUnlessMissing, salesKeys } from './useSalesQueries.js';
+import { useSalesInvoice, useSalesObligations, useSalesRecords } from './useSalesQueries.js';
 
 const displayDate = (date) => (date ? formatDate(date) : 'Not set');
 const recordDate = (record) => (record.status === 'Draft' ? `Intended ${displayDate(record.date)}` : displayDate(record.date));
@@ -53,7 +50,7 @@ function useServerPage(scope, headingId) {
   return {
     limit,
     offset,
-    settle: (pagination, isPlaceholder) => {
+    recordServerOffset: (pagination, isPlaceholder) => {
       if (pagination && !isPlaceholder && pagination.offset !== offset) setPosition({ scope, offset: pagination.offset });
     },
     controls: (pagination) => <PageControls pagination={pagination} headingId={headingId}
@@ -83,10 +80,10 @@ export function InvoiceList({ period, statuses, onOpenInvoice, onOpenPartner, on
   const [status, setStatus] = useState('');
   const periodLabel = formatPeriod(period);
   const term = search.trim();
-  const { limit, offset, settle, controls } = useServerPage(`${period}|${term.toLowerCase()}|${status}`, 'sales-invoices-heading');
+  const { limit, offset, recordServerOffset, controls } = useServerPage(`${period}|${term.toLowerCase()}|${status}`, 'sales-invoices-heading');
   const params = { mon_period: period, search: term, status, limit, offset };
-  const records = useQuery({ queryKey: salesKeys.records(params), queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
-  settle(records.data?.pagination, records.isPlaceholderData);
+  const records = useSalesRecords(params);
+  recordServerOffset(records.data?.pagination, records.isPlaceholderData);
   const summary = records.data?.summary;
   const visible = records.data?.items ?? [];
   const filtered = Boolean(search.trim() || status);
@@ -145,11 +142,11 @@ export function InvoiceList({ period, statuses, onOpenInvoice, onOpenPartner, on
 }
 
 export function PartnerObligations({ partner, headingId, backLabel, onBack, onOpenInvoice, onOpenCommission }) {
-  const { limit, offset, settle, controls } = useServerPage(partner.code, headingId);
+  const { limit, offset, recordServerOffset, controls } = useServerPage(partner.code, headingId);
   const params = { limit, offset };
-  const obligations = useQuery({ queryKey: salesKeys.obligations(partner.code, params), queryFn: ({ signal }) => getSalesObligations(partner.code, params, signal), placeholderData: keepPreviousData });
+  const obligations = useSalesObligations(partner.code, params);
   const { invoices, drafts, outstanding_minor: outstandingMinor, as_of: asOf } = obligations.data ?? {};
-  settle(invoices?.pagination, obligations.isPlaceholderData);
+  recordServerOffset(invoices?.pagination, obligations.isPlaceholderData);
   const visible = invoices?.items ?? [];
   return <section className="sales-paper" aria-labelledby={headingId}>
     <p className="text-xs font-semibold tracking-widest uppercase text-amber-800">Fictional simulation</p>
@@ -200,6 +197,9 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
   const [recording, setRecording] = useState(false);
   const [failure, setFailure] = useState(null);
   const [refused, setRefused] = useState(false);
+  // The version this form opened on. If a read later brings a new one, what was typed
+  // stays and the server refuses it, rather than it landing on a different invoice.
+  const [token] = useState(invoice.token);
   // Kept until the server accepts it, so retrying a lost response records one collection.
   const action = useRef(null);
   const busy = useRef(false);
@@ -227,7 +227,7 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
     setFailure(null);
     const amountMinor = parseAmountMinor(amount);
     try {
-      const collection = await onRecord(invoice.reference, { token: invoice.token, action_id: action.current, date, amount_minor: amountMinor });
+      const collection = await onRecord(invoice.reference, { token, action_id: action.current, date, amount_minor: amountMinor });
       action.current = null;
       setRecorded({ reference: collection.reference, amountMinor });
       setAmount('');
@@ -282,11 +282,11 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
 // The heading shows at once, so opening an invoice can move focus before it loads.
 export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenPartner, onRecordCollection, onLoadLatest }) {
   const collectionsHeadingId = `sales-collections-heading-${reference}`;
-  const { limit, offset, settle, controls } = useServerPage(reference, collectionsHeadingId);
+  const { limit, offset, recordServerOffset, controls } = useServerPage(reference, collectionsHeadingId);
   const params = { limit, offset };
-  const detail = useQuery({ queryKey: salesKeys.invoice(reference, params), queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });
+  const detail = useSalesInvoice(reference, params);
   const { invoice, balance, collections } = detail.data ?? {};
-  settle(collections?.pagination, detail.isPlaceholderData);
+  recordServerOffset(collections?.pagination, detail.isPlaceholderData);
   // The refused form disappears while the invoice reloads, taking focus with it.
   const loadLatest = () => {
     onLoadLatest(reference);
@@ -321,7 +321,7 @@ export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenP
       </tr>)}</tbody>
       <tfoot><tr><th scope="row">Total</th><td className="hidden sm:table-cell" /><td className="hidden sm:table-cell" /><td className="sales-amount">{formatMinorNGN(invoice.total_minor)}</td></tr></tfoot>
     </table>
-    <InvoiceCollections key={invoice.token} invoice={invoice} balance={balance} collections={collections} controls={controls} headingId={collectionsHeadingId} onRecord={onRecordCollection} onLoadLatest={loadLatest} />
+    <InvoiceCollections invoice={invoice} balance={balance} collections={collections} controls={controls} headingId={collectionsHeadingId} onRecord={onRecordCollection} onLoadLatest={loadLatest} />
     <p className="sales-notice mt-5">Simplified fictional demonstration with fictional prices: not an actual purchase obligation or an operational tax invoice. Taxes and discounts are not modeled. {PURCHASE_NOTE} These details stay fixed after issue, whichever reporting month is selected.</p>
     </>}
     <div className="sales-actions">

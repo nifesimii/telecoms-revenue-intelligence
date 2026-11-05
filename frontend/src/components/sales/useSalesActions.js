@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { createSalesDraft, issueSalesDraft, recordSalesCollection, resetSalesSimulation, updateSalesDraft } from '../../api/client.js';
-import { isDraft, isSharedRecord, salesKeys } from './useSalesQueries.js';
+import { isDraftQuery, isSharedQuery, salesKeys } from './useSalesQueries.js';
 
 // The server refused a change to a record that changed elsewhere or is gone. Nothing was overwritten.
 export const isRefusal = (error) => [404, 409].includes(error.response?.status);
@@ -12,14 +12,17 @@ export const failureMessage = (error, fallback) => (error.response?.status === 4
 
 export function useSalesActions() {
   const queryClient = useQueryClient();
-  const [draftSave, setDraftSave] = useState({ state: 'idle' });
+  // Per draft, so working on one account leaves another's warning in place.
+  const [saveStates, setSaveStates] = useState({});
+  const setSaveState = (reference, state) => setSaveStates((current) => ({ ...current, [reference]: state }));
+  const forgetSaveState = (reference) => setSaveStates(({ [reference]: _forgotten, ...others }) => others);
   // One save per draft runs at a time and only the newest waiting edit follows, so
   // requests cannot arrive out of order and overwrite newer typing.
   const saves = useRef(new Map());
 
-  const refresh = () => queryClient.invalidateQueries({ predicate: isSharedRecord });
+  const refresh = () => queryClient.invalidateQueries({ predicate: isSharedQuery });
   // Totals follow each saved edit. The draft itself is already current in the cache.
-  const refreshAfterEdit = () => queryClient.invalidateQueries({ predicate: (query) => isSharedRecord(query) && !isDraft(query) });
+  const refreshAfterEdit = () => queryClient.invalidateQueries({ predicate: (query) => isSharedQuery(query) && !isDraftQuery(query) });
 
   const runSaves = async (draft, entry) => {
     while (entry.waiting) {
@@ -32,11 +35,12 @@ export function useSalesActions() {
       } catch (error) {
         entry.waiting ??= change;
         entry.failure = error;
-        setDraftSave(isRefusal(error) ? { state: 'refused', reference: draft.reference } : { state: 'failed', reference: draft.reference, message: failureMessage(error, 'This draft could not be saved, so your latest changes are only on this page.') });
+        entry.refused = isRefusal(error);
+        setSaveState(draft.reference, entry.refused ? { state: 'refused' } : { state: 'failed', message: failureMessage(error, 'This draft could not be saved, so your latest changes are only on this page.') });
         return false;
       }
     }
-    setDraftSave({ state: 'saved', reference: draft.reference });
+    setSaveState(draft.reference, { state: 'saved' });
     refreshAfterEdit();
     return true;
   };
@@ -51,14 +55,24 @@ export function useSalesActions() {
     saves.current.set(draft.reference, entry);
     queryClient.setQueryData(salesKeys.draft(draft.account_code, draft.period), { draft: { ...draft, token: entry.token } });
     entry.waiting = { issue_date: draft.issue_date, due_date: draft.due_date, lines: draft.lines };
-    setDraftSave({ state: 'saving', reference: draft.reference });
+    entry.latest = entry.waiting;
+    // Asking again cannot succeed, so typing stays on this page until Load latest.
+    if (entry.refused) return;
+    setSaveState(draft.reference, { state: 'saving' });
     startSaves(draft, entry);
   };
   const retryDraftSave = (draft) => {
     const entry = saves.current.get(draft.reference);
     if (!entry?.waiting) return;
-    setDraftSave({ state: 'saving', reference: draft.reference });
+    setSaveState(draft.reference, { state: 'saving' });
     startSaves(draft, entry);
+  };
+
+  // An editor reopened over edits not yet saved shows them, because they are what
+  // would be saved and issued, whatever the server's copy now says.
+  const withUnsavedEdits = (draft) => {
+    const entry = saves.current.get(draft.reference);
+    return entry?.running || entry?.waiting ? { ...draft, ...entry.latest } : draft;
   };
 
   // A newly opened editor starts from what it just read, not from finished saves.
@@ -95,18 +109,25 @@ export function useSalesActions() {
   const reset = async () => {
     const status = await resetSalesSimulation();
     saves.current.clear();
-    setDraftSave({ state: 'idle' });
-    queryClient.resetQueries({ predicate: isSharedRecord });
+    setSaveStates({});
+    queryClient.resetQueries({ predicate: isSharedQuery });
     return status;
   };
 
-  // After a refusal: replaces everything on screen with the server's records, which
-  // is the point at which unsaved edits are discarded.
-  const loadLatest = (reference) => {
-    saves.current.delete(reference);
-    setDraftSave({ state: 'idle' });
-    return queryClient.resetQueries({ predicate: isSharedRecord });
+  // After a refusal: replaces the refused record with the server's, which is the point
+  // at which its unsaved edits are discarded. Other drafts keep theirs.
+  const loadLatestDraft = (draft) => {
+    saves.current.delete(draft.reference);
+    forgetSaveState(draft.reference);
+    refreshAfterEdit();
+    return queryClient.resetQueries({ queryKey: salesKeys.draft(draft.account_code, draft.period) });
+  };
+  const loadLatestInvoice = (reference) => {
+    refreshAfterEdit();
+    return queryClient.resetQueries({ queryKey: salesKeys.invoiceAnyPage(reference) });
   };
 
-  return { draftSave, changeDraft, retryDraftSave, forgetFinishedSaves, loadLatest, createDraft, issueDraft, recordCollection, reset };
+  const saveStateOf = (reference) => saveStates[reference] ?? { state: 'idle' };
+
+  return { saveStateOf, changeDraft, retryDraftSave, withUnsavedEdits, forgetFinishedSaves, loadLatestDraft, loadLatestInvoice, createDraft, issueDraft, recordCollection, reset };
 }

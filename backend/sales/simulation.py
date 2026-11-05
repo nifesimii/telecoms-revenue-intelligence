@@ -249,8 +249,11 @@ class SalesSimulation:
             draft = self._draft_by_reference(reference)
             if draft is None:
                 raise SalesNotFound
+            # The same change again means its response was lost, not that the draft moved on.
+            if token == draft.get("previous_token") and (issue_date, due_date, lines) == (draft["issue_date"], draft["due_date"], draft["lines"]):
+                return _draft_view(draft)
             _require_token(draft, token)
-            draft.update(token=_new_token(), issue_date=issue_date, due_date=due_date, lines=lines)
+            draft.update(token=_new_token(), previous_token=token, issue_date=issue_date, due_date=due_date, lines=lines)
             return _draft_view(draft)
 
     def _issue(self, draft: dict) -> dict:

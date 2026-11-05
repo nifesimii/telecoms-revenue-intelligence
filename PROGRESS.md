@@ -20,6 +20,9 @@ end of each work session. Newest session on top.
 - Same review: sales fields are `account_code` (`partner_code` names an audit subject), amounts must be
   whole kobo, obligations say when drafts are left out, and a list that shrinks and regrows keeps its
   corrected page. The sales helpers were split by job; the server publishes the quantity limit and statuses.
+- The second review found the browser's save queue could still mislead: hidden edits could be issued, and
+  warnings or typing could vanish. An editor now always shows what would be saved, warnings are per draft,
+  Load latest replaces only the refused record, and retrying a save whose response was lost succeeds.
 - Still open: `render.yaml` has the old demo variables, so hosted stays locked until #14; partner
   statements stay in the frontend bundle until #13. Nothing is pushed.
 
