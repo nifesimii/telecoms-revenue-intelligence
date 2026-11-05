@@ -455,9 +455,9 @@ workspaces. Public view IDs remain `overview`, `commission`, `activation`,
 
 Workspace switches push history entries; initial URL normalization and period
 changes replace the current entry. `popstate` restores the URL view and month.
-`partner-sales` is a browser-only fictional simulation; its session-scoped drafts,
-invoices and collections never reach the API, Atlas or other workspaces, and the header shows the synthetic
-badge there even in live-read mode. Its commission statements are fixtures too; only the account and month leave
+`partner-sales` is a fictional simulation. Its drafts, invoices and collections live in
+server process memory (`backend/sales/simulation.py`, `/partner-sales/*`), reset on restart, and never reach
+Atlas, the audit datastore or other workspaces. The header shows the synthetic badge there even in live-read mode. Its commission statements are fixtures too; only the account and month leave
 the browser, in existing GET reads that are skipped in live-read mode. Explanation handoffs carry a serializable
 `origin`, so the shell offers a return that restores the statement, including after a refresh. Period validation waits for the available-month list. Serializable investigation
 context/revisions live in each entry's `fbbWorkspace` history state; restoring a

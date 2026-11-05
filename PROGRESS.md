@@ -3,6 +3,19 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-05 (Partner Sales: shared server data, #9)
+
+- Drafts, invoices and collections moved from browser storage to server process memory behind
+  `/partner-sales/*`, read through TanStack Query. Everyone signed in shares them, and a restart or
+  reset returns to the seed. Internal only for now: partner ordering is #10.
+- Moving to a server made issuing and resetting asynchronous, which exposed a focus bug: focus queued
+  for the next frame could fire before React rendered the target. Those paths now focus after the render.
+- Acceptance runs on a real API (port 8199) for sales and sign-in, with fixtures for other reads.
+- If the suite fails oddly, check `pmset -g log` first. A laptop sleeping mid-run produced timeouts, a
+  stalled pytest and page reloads from Vite's reconnect. Use `caffeinate -i`; lid-closed sleep still applies.
+- Still open: `render.yaml` has the old demo variables, so hosted stays locked until #14; partner
+  statements stay in the frontend bundle until #13. Nothing is pushed.
+
 ## Session — 2026-11-03 (Partner Sales: example invoices)
 
 - Decided with the user after issue #6. Changed: the starting point now holds three example invoices

@@ -393,6 +393,62 @@ export async function getPartnerHealth(period, prior_period) {
   return data;
 }
 
+// Fictional Partner Sales simulation. These routes touch no financial source.
+export async function getSalesReference(signal) {
+  const { data } = await api.get('/partner-sales/reference', { signal });
+  return data;
+}
+
+export async function getSalesStatus(signal) {
+  const { data } = await api.get('/partner-sales/status', { signal });
+  return data;
+}
+
+export async function getSalesRecords(params, signal) {
+  const { data } = await api.get('/partner-sales/records', { params, signal });
+  return data;
+}
+
+export async function getSalesDraft(partner_code, mon_period, signal) {
+  const { data } = await api.get('/partner-sales/drafts', { params: { partner_code, mon_period }, signal });
+  return data;
+}
+
+export async function createSalesDraft(partner_code, period) {
+  const { data } = await api.post('/partner-sales/drafts', { partner_code, period });
+  return data;
+}
+
+export async function updateSalesDraft(reference, change) {
+  const { data } = await api.put(`/partner-sales/drafts/${encodeURIComponent(reference)}`, change);
+  return data;
+}
+
+export async function issueSalesDraft(reference) {
+  const { data } = await api.post(`/partner-sales/drafts/${encodeURIComponent(reference)}/issue`);
+  return data;
+}
+
+export async function getSalesInvoice(reference, params, signal) {
+  const { data } = await api.get(`/partner-sales/invoices/${encodeURIComponent(reference)}`, { params, signal });
+  return data;
+}
+
+export async function recordSalesCollection(reference, collection) {
+  const { data } = await api.post(`/partner-sales/invoices/${encodeURIComponent(reference)}/collections`, collection);
+  return data;
+}
+
+export async function getSalesObligations(partnerCode, params, signal) {
+  const { data } = await api.get(`/partner-sales/partners/${encodeURIComponent(partnerCode)}/obligations`, { params, signal });
+  return data;
+}
+
+export async function resetSalesSimulation() {
+  const { data } = await api.post('/partner-sales/reset');
+  return data;
+}
+
 export default api;
 
 

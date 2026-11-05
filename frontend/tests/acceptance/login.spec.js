@@ -3,7 +3,7 @@
 // server enforces the same rules.
 import { expect, test } from '@playwright/test';
 
-const API = 'http://localhost:8000/**';
+const API = 'http://localhost:8199/**';
 const cors = { 'access-control-allow-origin': 'http://localhost:5199', 'access-control-allow-credentials': 'true' };
 const PASSWORD = 'fixture-password';
 const LOGINS = {

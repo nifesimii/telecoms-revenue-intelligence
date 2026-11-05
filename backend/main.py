@@ -25,6 +25,7 @@ from backend import config
 from backend.agent import prompts
 from backend.api.auth_routes import router as auth_router
 from backend.api.routes import router as api_router
+from backend.api.sales_routes import router as sales_router
 from backend.auth.access import enforce_access
 
 logger = logging.getLogger(__name__)
@@ -283,6 +284,7 @@ def health() -> dict:
 
 app.include_router(auth_router)
 app.include_router(api_router)
+app.include_router(sales_router)
 
 
 # ---------------------------------------------------------------------------

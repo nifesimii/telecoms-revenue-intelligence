@@ -7,9 +7,10 @@ node --test frontend/tests/*.test.mjs
 npm --prefix frontend run build
 ```
 
-Login and Partner Sales acceptance tests start their own Vite server and need only an
-installed Chrome: no backend, Presto or model provider. All API reads are
-fixture-routed, and non-GET requests are recorded and blocked:
+Login and Partner Sales acceptance tests start their own Vite server and a real API
+on port 8199 with generated logins, and need an installed Chrome and the project's
+`.venv`: no Presto or model provider. Partner Sales and sign-in use that real API.
+All other reads are fixture-routed, and other non-GET requests are recorded and blocked:
 
 ```sh
 npm --prefix frontend run test:acceptance

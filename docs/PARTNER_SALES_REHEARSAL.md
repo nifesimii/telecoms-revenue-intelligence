@@ -1,8 +1,8 @@
 # Partner Sales rehearsal
 
 A repeatable presenter script for the invoice, collection and commission
-explanation story. Everything on the Partner Sales screens is fictional and stays
-in one browser tab. See the [specification](PARTNER_SALES_SPEC.md) and
+explanation story. Everything on the Partner Sales screens is fictional and is held in
+the API server's memory, shared by everyone signed in until it restarts. See the [specification](PARTNER_SALES_SPEC.md) and
 [scope decision](adr/0001-partner-sales-presentation-boundary.md).
 
 ## Setup
@@ -15,8 +15,9 @@ uvicorn backend.main:app        # http://localhost:8000
 npm --prefix frontend run dev   # http://localhost:5173
 ```
 
-Open `http://localhost:5173/?view=partner-sales&period=202605`. The header should
-show **Synthetic demonstration** and the reporting period **May 2026**.
+Open `http://localhost:5173/?view=partner-sales&period=202605` and sign in with an
+internal login from `DEMO_LOGINS` in `.env`. The header should show **Synthetic
+demonstration** and the reporting period **May 2026**.
 
 No other setup is needed. In live-read mode the invoice story still runs, but the
 commission account offers no explanation links and says why.
@@ -65,7 +66,7 @@ If the tab has been used before, start at step 1. On a new tab, step 1 is option
 | "Payment position unavailable" in Payments | The settlement explanation's evidence failed to load | **Retry payment**, or **Return to Partner Sales** |
 | "Reporting periods unavailable" | The API cannot be reached. The simulation is kept | Start the API, then reload |
 
-A reset affects only this tab's simulation. It leaves recorded evidence, other
+A reset returns the simulation to its seed for everyone signed in. It leaves recorded evidence, other
 workspaces, other session data and the reporting month as they were. An explanation
 already open keeps its **Return to Partner Sales** banner, which reopens the same
 fictional statement: statements hold no invoice or collection data, so nothing is restored.
@@ -77,4 +78,5 @@ npm --prefix frontend run test:acceptance
 ```
 
 `frontend/tests/acceptance/partner-sales.spec.js` runs this sequence through a reset
-and again by keyboard at 320px, using fixtures: no backend, Presto or model calls.
+and again by keyboard at 320px, against a test API for `/partner-sales` and sign-in and
+fixtures for everything else: no Presto or model calls.
