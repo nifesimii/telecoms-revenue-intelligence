@@ -89,7 +89,8 @@ def create_draft(body: NewDraft) -> dict:
 
 @router.put("/drafts/{reference}")
 def update_draft(reference: str, body: DraftChange) -> dict:
-    return _run(lambda: simulation.update_draft(RecordHandle(reference, body.token), body.model_dump(exclude={"token"})))
+    lines = [line.model_dump() for line in body.lines]
+    return _run(lambda: simulation.update_draft(RecordHandle(reference, body.token), body.issue_date, body.due_date, lines))
 
 
 @router.post("/drafts/{reference}/issue")

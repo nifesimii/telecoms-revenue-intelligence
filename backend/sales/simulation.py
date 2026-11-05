@@ -252,17 +252,18 @@ class SalesSimulation:
     def _draft_by_reference(self, reference: str) -> dict | None:
         return next((draft for draft in self._drafts.values() if draft["reference"] == reference), None)
 
-    def update_draft(self, held: RecordHandle, change: dict) -> dict:
+    def update_draft(self, held: RecordHandle, issue_date: str, due_date: str, lines: list[dict]) -> dict:
         """Invalid quantities and dates stay as typed; issuing is what requires them valid."""
-        codes = [line["product_code"] for line in change["lines"]]
+        codes = [line["product_code"] for line in lines]
         if len(set(codes)) != len(codes) or any(code not in _PRODUCTS_BY_CODE for code in codes):
             raise SalesRuleError("Draft lines must name different catalogue products.")
         with self._lock:
             draft = self._draft_by_reference(held.reference)
             # The same change again means its response was lost, not that the draft moved on.
-            if draft and held.token == draft.get("previous_token") and all(draft[field] == value for field, value in change.items()):
+            if draft and held.token == draft.get("previous_token") and (issue_date, due_date, lines) == (draft["issue_date"], draft["due_date"], draft["lines"]):
                 return _draft_view(draft)
-            _require_held(draft, held.token).update(token=_new_token(), previous_token=held.token, **change)
+            _require_held(draft, held.token)
+            draft.update(token=_new_token(), previous_token=held.token, issue_date=issue_date, due_date=due_date, lines=lines)
             return _draft_view(draft)
 
     def _issue(self, draft: dict) -> dict:
