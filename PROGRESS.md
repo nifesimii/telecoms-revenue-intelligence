@@ -25,6 +25,10 @@ end of each work session. Newest session on top.
   Load latest replaces only the refused record, and retrying a save whose response was lost succeeds.
 - Still open: `render.yaml` has the old demo variables, so hosted stays locked until #14; partner
   statements stay in the frontend bundle until #13. Nothing is pushed.
+- Tidied what the second review left, with no change in behaviour: the browser reads `is_draft` and the
+  outstanding balance rather than comparing status names, the save queue is its own hook (`useDraftSaves`),
+  draft totals live in `draftPricing`, and every paged read goes through one `usePagedQuery`, so a view
+  cannot forget to record the server's page and bring the regrow bug back.
 
 ## Session — 2026-11-03 (Partner Sales: example invoices)
 

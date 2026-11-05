@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field, StrictInt
 
-from backend.sales.simulation import CATALOGUE, MAX_QUANTITY, PARTNERS, STATUSES, SalesConflict, SalesNotFound, SalesRuleError, simulation
+from backend.sales.simulation import CATALOGUE, MAX_QUANTITY, PARTNERS, STATUSES, RecordHandle, SalesConflict, SalesNotFound, SalesRuleError, simulation
 
 router = APIRouter(prefix="/partner-sales", tags=["partner-sales"])
 
@@ -89,13 +89,12 @@ def create_draft(body: NewDraft) -> dict:
 
 @router.put("/drafts/{reference}")
 def update_draft(reference: str, body: DraftChange) -> dict:
-    lines = [line.model_dump() for line in body.lines]
-    return _run(lambda: simulation.update_draft(reference, body.token, body.issue_date, body.due_date, lines))
+    return _run(lambda: simulation.update_draft(RecordHandle(reference, body.token), body.model_dump(exclude={"token"})))
 
 
 @router.post("/drafts/{reference}/issue")
 def issue_draft(reference: str, body: IssueRequest) -> dict:
-    return _run(lambda: simulation.issue(reference, body.token))
+    return _run(lambda: simulation.issue(RecordHandle(reference, body.token)))
 
 
 @router.get("/invoices/{reference}")
@@ -105,7 +104,7 @@ def invoice_detail(reference: str, limit: Limit = 25, offset: Offset = 0) -> dic
 
 @router.post("/invoices/{reference}/collections")
 def record_collection(reference: str, body: NewCollection) -> dict:
-    return _run(lambda: simulation.record_collection(body.action_id, reference, body.token, body.date, body.amount_minor))
+    return _run(lambda: simulation.record_collection(body.action_id, RecordHandle(reference, body.token), body.date, body.amount_minor))
 
 
 @router.get("/partners/{account_code}/obligations")

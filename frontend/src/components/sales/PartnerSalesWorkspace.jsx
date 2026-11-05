@@ -1,17 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
-import { draftTotalMinor, invoiceOpenerId, lineTotalMinor, partnerLabel, partnerMatches, quantityLabel } from './salesDisplay.js';
-import { dueDateError, issueDateError, lastDayOf, quantityError } from './salesFormChecks.js';
-import { failureMessage, isRefusal, useSalesActions } from './useSalesActions.js';
+import { draftPricing } from './draftPricing.js';
+import { invoiceOpenerId, partnerLabel, partnerMatches, quantityLabel } from './salesDisplay.js';
+import { dueDateError, issueDateError, issueDateRange } from './salesFormChecks.js';
+import { useSalesActions } from './useSalesActions.js';
 import { useSalesDraft, useSalesReference, useSalesSimulationStatus } from './useSalesQueries.js';
 import { useSelectedPartner } from './useSelectedPartner.js';
-import { InvoiceDetail, InvoiceList, PartnerObligations, RefusedChange } from './InvoiceViews.jsx';
+import { ActionFailure, InvoiceDetail, InvoiceList, PartnerObligations, RefusedChange, useActionFailure } from './InvoiceViews.jsx';
 import CommissionAccount from './CommissionAccount.jsx';
 import './sales.css';
 
-const detailHeadingId = (entry) => (entry.type === 'invoice' ? `sales-invoice-heading-${entry.reference}` : entry.type === 'commission' ? `sales-commission-heading-${entry.accountCode}` : `sales-obligations-heading-${entry.accountCode}`);
-const backLabelTo = (entry) => (entry.type === 'partner' ? 'Back to purchase obligations' : entry.type === 'commission' ? 'Back to commission account' : `Back to invoice ${entry.reference}`);
+const DETAIL_VIEWS = {
+  invoice: { headingId: (entry) => `sales-invoice-heading-${entry.reference}`, backLabel: (entry) => `Back to invoice ${entry.reference}` },
+  partner: { headingId: (entry) => `sales-obligations-heading-${entry.accountCode}`, backLabel: () => 'Back to purchase obligations' },
+  commission: { headingId: (entry) => `sales-commission-heading-${entry.accountCode}`, backLabel: () => 'Back to commission account' },
+};
+const detailHeadingId = (entry) => DETAIL_VIEWS[entry.type].headingId(entry);
+const backLabelTo = (entry) => DETAIL_VIEWS[entry.type].backLabel(entry);
 
 export default function PartnerSalesWorkspace({ navigation, onNavigate, onClearNavigation }) {
   const { periods, period, loading, error } = usePeriod();
@@ -72,6 +78,7 @@ function SimulationReset({ onReset }) {
 
 function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity, statuses }, period, navigation, onNavigate, onClearNavigation }) {
   const actions = useSalesActions();
+  const pricing = draftPricing(catalogue, maxQuantity);
   const [selectedCode, setSelectedCode] = useSelectedPartner();
   // Remounts the invoice list, so a reset also drops its filters and page.
   const [invoiceListKey, setInvoiceListKey] = useState(0);
@@ -144,7 +151,7 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
   // The explanation's history entry names the account, so returning restores it even
   // after a refresh emptied the trail. An account still open keeps its opener.
   useEffect(() => {
-    const accountCode = navigation?.commission_partner;
+    const accountCode = navigation?.commission_account;
     if (!partnerByCode(accountCode)) return;
     const entry = { type: 'commission', accountCode };
     focusAfterTrail.current = [navigation.opener_id, detailHeadingId(entry)];
@@ -183,6 +190,12 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
     setInvoiceListKey((current) => current + 1);
     onClearNavigation();
   };
+  const detailViews = {
+    commission: (entry, shared) => <CommissionAccount {...shared} partner={partnerByCode(entry.accountCode)} period={period} onOpenObligations={openPartner}
+      onExplain={(view, context, openerId) => onNavigate(view, { ...context, origin: { commission_account: entry.accountCode, opener_id: openerId } })} />,
+    invoice: (entry, shared) => <InvoiceDetail {...shared} reference={entry.reference} onOpenPartner={openPartner} onRecordCollection={recordInvoiceCollection} onLoadLatest={actions.loadLatestInvoice} />,
+    partner: (entry, shared) => <PartnerObligations {...shared} partner={partnerByCode(entry.accountCode)} onOpenInvoice={openInvoice} onOpenCommission={openCommission} />,
+  };
   return <main className="sales-workspace h-full overflow-y-auto bg-gray-50" aria-label="Partner Sales">
     <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
       <header><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">MTN sales to trade partners</p>
@@ -193,16 +206,8 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
         {resetStatus && <p id="sales-reset-notice" role="status" tabIndex={-1} className="sales-notice mt-3">Simulation reset to its starting point: {resetStatus.invoices} example invoices in May 2026, and the next draft will be {resetStatus.next_draft_reference}.</p>}</header>
       {trail.map((entry, index) => {
         const active = index === trail.length - 1;
-        const onBack = () => closeDetail(entry.openerId);
-        const backLabel = !index ? 'Back to invoices' : backLabelTo(trail[index - 1]);
-        return <div key={detailHeadingId(entry)} className={active ? '' : 'hidden'}>
-          {entry.type === 'commission'
-            ? <CommissionAccount partner={partnerByCode(entry.accountCode)} period={period} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenObligations={openPartner}
-              onExplain={(view, context, openerId) => onNavigate(view, { ...context, origin: { commission_partner: entry.accountCode, opener_id: openerId } })} />
-            : entry.type === 'invoice'
-            ? <InvoiceDetail reference={entry.reference} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenPartner={openPartner} onRecordCollection={recordInvoiceCollection} onLoadLatest={actions.loadLatestInvoice} />
-            : <PartnerObligations partner={partnerByCode(entry.accountCode)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenInvoice={openInvoice} onOpenCommission={openCommission} />}
-        </div>;
+        const shared = { headingId: detailHeadingId(entry), backLabel: !index ? 'Back to invoices' : backLabelTo(trail[index - 1]), onBack: () => closeDetail(entry.openerId) };
+        return <div key={shared.headingId} className={active ? '' : 'hidden'}>{detailViews[entry.type](entry, shared)}</div>;
       })}
       <div className={trail.length ? 'hidden' : 'flex flex-col gap-6'}>
       <section className="sales-paper" aria-labelledby="sales-partner-heading">
@@ -231,14 +236,14 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
           {createFailed && <p role="alert" className="sales-alert">The draft could not be created. Try again.</p>}
           <button type="button" className="sales-button sales-primary mt-3" disabled={creating} onClick={createDraft}>Create draft</button>
         </section>
-        : <DraftEditor key={draft.reference} draft={draft} partner={partner} catalogue={catalogue} maxQuantity={maxQuantity} focusRequest={draftFocus} saved={actions.saveStateOf(draft.reference)} onChange={actions.changeDraft} onRetrySave={actions.retryDraftSave} withUnsavedEdits={actions.withUnsavedEdits} onOpen={actions.forgetFinishedSaves} onLoadLatest={loadLatestDraft} onIssue={issue} />}
+        : <DraftEditor key={draft.reference} draft={draft} partner={partner} pricing={pricing} focusRequest={draftFocus} saved={actions.saveStateOf(draft.reference)} onChange={actions.changeDraft} onRetrySave={actions.retryDraftSave} withUnsavedEdits={actions.withUnsavedEdits} onOpen={actions.forgetFinishedSaves} onLoadLatest={loadLatestDraft} onIssue={issue} />}
       <InvoiceList key={invoiceListKey} period={period} statuses={statuses} onOpenInvoice={openInvoice} onOpenPartner={openPartner} onOpenDraft={openDraft} />
       </div>
     </div>
   </main>;
 }
 
-function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focusRequest, saved, onChange, onRetrySave, withUnsavedEdits, onOpen, onLoadLatest, onIssue }) {
+function DraftEditor({ draft: loadedDraft, partner, pricing, focusRequest, saved, onChange, onRetrySave, withUnsavedEdits, onOpen, onLoadLatest, onIssue }) {
   // Edits apply here at once, so typing keeps its caret and a new line can take focus.
   const [draft, setDraft] = useState(() => withUnsavedEdits(loadedDraft));
   const change = (next) => {
@@ -253,7 +258,6 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
   const issueInput = useRef(null);
   const dueInput = useRef(null);
   const quantityInputs = useRef({});
-  const productByCode = (code) => catalogue.find((product) => product.code === code);
   useEffect(() => {
     onOpen(loadedDraft.reference);
     if (focusRequest.current) document.getElementById(focusRequest.current)?.focus();
@@ -269,10 +273,11 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
     linesHeading.current?.focus();
   };
   const periodLabel = formatPeriod(draft.period);
-  const total = draftTotalMinor(draft, productByCode, maxQuantity);
+  const issueRange = issueDateRange(draft.period);
+  const total = pricing.draftTotalMinor(draft);
   const issueError = issueDateError(draft, periodLabel);
   const dueError = dueDateError(draft);
-  const invalidLine = draft.lines.find((line) => quantityError(line.quantity, maxQuantity));
+  const invalidLine = draft.lines.find((line) => pricing.quantityError(line.quantity));
   const empty = draft.lines.length === 0;
   const invalid = Boolean(invalidLine || issueError || dueError);
   const requestPreview = () => {
@@ -285,7 +290,7 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
     requestAnimationFrame(() => previewHeading.current?.focus());
   };
   if (previewing) {
-    return <InvoicePreview draft={draft} partner={partner} productByCode={productByCode} maxQuantity={maxQuantity} total={total} headingRef={previewHeading} onIssue={() => onIssue(draft)} onLoadLatest={() => onLoadLatest(draft)} onBack={() => {
+    return <InvoicePreview draft={draft} partner={partner} pricing={pricing} total={total} headingRef={previewHeading} onIssue={() => onIssue(draft)} onLoadLatest={() => onLoadLatest(draft)} onBack={() => {
       setPreviewing(false);
       requestAnimationFrame(() => previewOpener.current?.focus());
     }} />;
@@ -295,7 +300,7 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
       <h2 id="sales-catalogue-heading" tabIndex={-1} className="text-lg font-semibold">Fictional product catalogue</h2>
       <table className="sales-table mt-3" aria-label="Fictional product catalogue">
         <thead><tr><th scope="col">Product</th><th scope="col" className="hidden sm:table-cell">Unit</th><th scope="col" className="sales-amount hidden sm:table-cell">Fixed price</th><th scope="col"><span className="sr-only">Action</span></th></tr></thead>
-        <tbody>{catalogue.map((product) => {
+        <tbody>{pricing.catalogue.map((product) => {
           const onDraft = draft.lines.some((line) => line.product_code === product.code);
           return <tr key={product.code}>
             <th scope="row"><span className="block font-semibold">{product.code}</span> <span className="block">{product.description}</span>
@@ -311,16 +316,16 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
       <h2 id="sales-draft-heading" ref={linesHeading} tabIndex={-1} className="text-lg font-semibold">Draft for {partnerLabel(partner)}</h2>
       <p className="text-xs text-gray-600 mt-1">{draft.reference} · {periodLabel}</p>
       <div className="sales-dates">
-        <div className="flex flex-col gap-2"><label className="sales-field">Intended issue date<input ref={issueInput} type="date" min={`${lastDayOf(draft.period).slice(0, 8)}01`} max={lastDayOf(draft.period)} aria-invalid={Boolean(issueError)} aria-describedby={issueError ? 'sales-issue-error' : undefined} value={draft.issue_date} onChange={(event) => change({ ...draft, issue_date: event.target.value })} /></label>
+        <div className="flex flex-col gap-2"><label className="sales-field">Intended issue date<input ref={issueInput} type="date" min={issueRange.min} max={issueRange.max} aria-invalid={Boolean(issueError)} aria-describedby={issueError ? 'sales-issue-error' : undefined} value={draft.issue_date} onChange={(event) => change({ ...draft, issue_date: event.target.value })} /></label>
           {issueError && <span id="sales-issue-error" className="sales-error">{issueError}</span>}</div>
         <div className="flex flex-col gap-2"><label className="sales-field">Due date (optional)<input ref={dueInput} type="date" aria-invalid={Boolean(dueError)} aria-describedby={dueError ? 'sales-due-error' : undefined} value={draft.due_date} onChange={(event) => change({ ...draft, due_date: event.target.value })} /></label>
           {dueError && <span id="sales-due-error" className="sales-error">{dueError}</span>}</div>
       </div>
       {empty ? <p className="text-sm text-gray-600 mt-4">No lines yet. Add a product from the catalogue.</p>
         : <ul aria-label="Draft lines" className="mt-2">{draft.lines.map((line) => {
-          const product = productByCode(line.product_code);
-          const lineTotal = lineTotalMinor(line, product, maxQuantity);
-          const error = quantityError(line.quantity, maxQuantity);
+          const product = pricing.productByCode(line.product_code);
+          const lineTotal = pricing.lineTotalMinor(line);
+          const error = pricing.quantityError(line.quantity);
           const errorId = `sales-quantity-error-${line.product_code}`;
           return <li key={line.product_code} className="sales-line">
             <div><span className="block font-semibold">{product.code}</span><span className="block">{product.description}</span><span className="block text-gray-600 mt-1">{formatMinorNGN(product.price_minor)} per {product.unit}</span></div>
@@ -346,22 +351,20 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
   </>;
 }
 
-function InvoicePreview({ draft, partner, productByCode, maxQuantity, total, headingRef, onIssue, onLoadLatest, onBack }) {
+function InvoicePreview({ draft, partner, pricing, total, headingRef, onIssue, onLoadLatest, onBack }) {
   const [issuing, setIssuing] = useState(false);
-  const [failure, setFailure] = useState(null);
-  const [refused, setRefused] = useState(false);
+  const { failure, clearFailure, noteFailure } = useActionFailure();
   const busy = useRef(false);
   // A repeated click finds the first still running. A failed issue changes nothing.
   const issue = async () => {
     if (busy.current) return;
     busy.current = true;
     setIssuing(true);
-    setFailure(null);
+    clearFailure();
     try {
       await onIssue();
     } catch (error) {
-      if (isRefusal(error)) setRefused(true);
-      else setFailure(failureMessage(error, 'This invoice could not be issued, so the draft is unchanged. Try again.'));
+      noteFailure(error, 'This invoice could not be issued, so the draft is unchanged. Try again.');
     } finally {
       busy.current = false;
       setIssuing(false);
@@ -382,20 +385,19 @@ function InvoicePreview({ draft, partner, productByCode, maxQuantity, total, hea
       <caption className="sr-only">Invoice lines for {draft.reference}</caption>
       <thead><tr><th scope="col">Product</th><th scope="col" className="sales-amount hidden sm:table-cell">Quantity</th><th scope="col" className="sales-amount hidden sm:table-cell">Unit price</th><th scope="col" className="sales-amount">Line total</th></tr></thead>
       <tbody>{draft.lines.map((line) => {
-        const product = productByCode(line.product_code);
+        const product = pricing.productByCode(line.product_code);
         return <tr key={line.product_code}>
           <th scope="row"><span className="block font-semibold">{product.code}</span> <span className="block">{product.description}</span>
             <span className="block sm:hidden text-gray-600 mt-1">{quantityLabel(Number(line.quantity), product.unit)} × {formatMinorNGN(product.price_minor)}</span></th>
           <td className="sales-amount hidden sm:table-cell">{quantityLabel(Number(line.quantity), product.unit)}</td>
           <td className="sales-amount hidden sm:table-cell">{formatMinorNGN(product.price_minor)}</td>
-          <td className="sales-amount">{formatMinorNGN(lineTotalMinor(line, product, maxQuantity))}</td>
+          <td className="sales-amount">{formatMinorNGN(pricing.lineTotalMinor(line))}</td>
         </tr>;
       })}</tbody>
       <tfoot><tr><th scope="row">Total</th><td className="hidden sm:table-cell" /><td className="hidden sm:table-cell" /><td className="sales-amount">{formatMinorNGN(total)}</td></tr></tfoot>
     </table>
     <p className="sales-notice mt-5">Simplified fictional demonstration with fictional prices. Taxes and discounts are not modeled, and this is not an operational tax invoice. This preview does not create an invoice obligation or commission.</p>
-    {failure && <p role="alert" className="sales-alert">{failure}</p>}
-    {refused && <RefusedChange onLoadLatest={onLoadLatest} />}
+    <ActionFailure failure={failure} onLoadLatest={onLoadLatest} />
     <div className="sales-actions"><button type="button" className="sales-button sales-primary" disabled={issuing} onClick={issue}>Issue simulated invoice</button>
       <button type="button" className="sales-button" onClick={onBack}>Back to draft</button>
       <p className="text-xs text-gray-600">Issuing fixes the buyer, lines and total and starts an unpaid purchase obligation. It never creates commission.</p></div>

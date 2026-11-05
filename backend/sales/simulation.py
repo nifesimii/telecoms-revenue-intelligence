@@ -12,6 +12,7 @@ import re
 import threading
 import uuid
 from datetime import date
+from typing import NamedTuple
 
 PARTNERS = [
     {"code": "296065", "name": "River Isle Ventures"},
@@ -61,18 +62,29 @@ class SalesNotFound(LookupError):
 
 
 class SalesConflict(Exception):
-    """The record changed since the caller read it, or is a different record with the
-    same reference after a reset. Changed nothing."""
+    """The caller holds an older copy of a draft, or a record from before a reset that
+    now shares its reference with another. Changed nothing."""
+
+
+class RecordHandle(NamedTuple):
+    """What a caller holds of a draft or invoice when asking to change it."""
+
+    reference: str
+    token: str
 
 
 def _new_token() -> str:
-    """Identifies one exact version of a record. References restart after a reset; this never repeats."""
+    """Identifies one exact record, and one saved copy of a draft. References restart
+    after a reset; this never repeats."""
     return uuid.uuid4().hex
 
 
-def _require_token(record: dict, token: str) -> None:
+def _require_held(record: dict | None, token: str) -> dict:
+    if record is None:
+        raise SalesNotFound
     if record["token"] != token:
         raise SalesConflict
+    return record
 
 
 def _is_date(value: str) -> bool:
@@ -157,7 +169,7 @@ def _draft_view(draft: dict) -> dict:
 
 def _draft_record(draft: dict) -> dict:
     return {
-        "reference": draft["reference"], "status": DRAFT, "partner": _PARTNERS_BY_CODE[draft["account_code"]],
+        "reference": draft["reference"], "status": DRAFT, "is_draft": True, "partner": _PARTNERS_BY_CODE[draft["account_code"]],
         "date": draft["issue_date"], "amount_minor": _draft_total(draft), "period": draft["period"],
     }
 
@@ -199,7 +211,7 @@ class SalesSimulation:
             self._issue(draft)
             if "collection" in example:
                 self.record_collection(
-                    f"seed-{draft['reference']}", draft["reference"], draft["token"],
+                    f"seed-{draft['reference']}", RecordHandle(draft["reference"], draft["token"]),
                     example["collection"]["date"], example["collection"]["amount_minor"],
                 )
 
@@ -240,20 +252,17 @@ class SalesSimulation:
     def _draft_by_reference(self, reference: str) -> dict | None:
         return next((draft for draft in self._drafts.values() if draft["reference"] == reference), None)
 
-    def update_draft(self, reference: str, token: str, issue_date: str, due_date: str, lines: list[dict]) -> dict:
+    def update_draft(self, held: RecordHandle, change: dict) -> dict:
         """Invalid quantities and dates stay as typed; issuing is what requires them valid."""
-        codes = [line["product_code"] for line in lines]
+        codes = [line["product_code"] for line in change["lines"]]
         if len(set(codes)) != len(codes) or any(code not in _PRODUCTS_BY_CODE for code in codes):
             raise SalesRuleError("Draft lines must name different catalogue products.")
         with self._lock:
-            draft = self._draft_by_reference(reference)
-            if draft is None:
-                raise SalesNotFound
+            draft = self._draft_by_reference(held.reference)
             # The same change again means its response was lost, not that the draft moved on.
-            if token == draft.get("previous_token") and (issue_date, due_date, lines) == (draft["issue_date"], draft["due_date"], draft["lines"]):
+            if draft and held.token == draft.get("previous_token") and all(draft[field] == value for field, value in change.items()):
                 return _draft_view(draft)
-            _require_token(draft, token)
-            draft.update(token=_new_token(), previous_token=token, issue_date=issue_date, due_date=due_date, lines=lines)
+            _require_held(draft, held.token).update(token=_new_token(), previous_token=held.token, **change)
             return _draft_view(draft)
 
     def _issue(self, draft: dict) -> dict:
@@ -278,19 +287,14 @@ class SalesSimulation:
         self._invoices.append(invoice)
         return invoice
 
-    def issue(self, reference: str, token: str) -> dict:
+    def issue(self, held: RecordHandle) -> dict:
         """Issuing consumes the draft and the invoice keeps its token, so repeating the
         action returns the same invoice."""
         with self._lock:
-            existing = self._invoice(reference)
+            existing = self._invoice(held.reference)
             if existing:
-                _require_token(existing, token)
-                return existing
-            draft = self._draft_by_reference(reference)
-            if draft is None:
-                raise SalesNotFound
-            _require_token(draft, token)
-            return self._issue(draft)
+                return _require_held(existing, held.token)
+            return self._issue(_require_held(self._draft_by_reference(held.reference), held.token))
 
     def _invoice(self, reference: str) -> dict | None:
         return next((invoice for invoice in self._invoices if invoice["reference"] == reference), None)
@@ -315,13 +319,10 @@ class SalesSimulation:
             "as_of": history[-1]["date"] if history else invoice["issue_date"],
         }
 
-    def record_collection(self, action_id: str, invoice_reference: str, token: str, collected_on: str, amount_minor: int) -> dict:
+    def record_collection(self, action_id: str, held: RecordHandle, collected_on: str, amount_minor: int) -> dict:
         """Repeating an action returns what it recorded and has no further effect."""
         with self._lock:
-            invoice = self._invoice(invoice_reference)
-            if invoice is None:
-                raise SalesNotFound
-            _require_token(invoice, token)
+            invoice = _require_held(self._invoice(held.reference), held.token)
             repeated = next((collection for collection in self._collections if collection["action_id"] == action_id), None)
             if repeated:
                 return repeated
@@ -333,7 +334,7 @@ class SalesSimulation:
                 raise SalesRuleError("A collection must be positive and no more than the outstanding balance.")
             collection = {
                 "action_id": action_id, "reference": _collection_reference(self._next_collection_sequence),
-                "invoice_reference": invoice_reference, "date": collected_on, "amount_minor": amount_minor,
+                "invoice_reference": held.reference, "date": collected_on, "amount_minor": amount_minor,
             }
             self._next_collection_sequence += 1
             self._collections.append(collection)
@@ -342,7 +343,7 @@ class SalesSimulation:
     def _invoice_record(self, invoice: dict) -> dict:
         balance = self._balance(invoice)
         return {
-            "reference": invoice["reference"], "status": balance["status"], "partner": invoice["buyer"],
+            "reference": invoice["reference"], "status": balance["status"], "is_draft": False, "partner": invoice["buyer"],
             "date": invoice["issue_date"], "amount_minor": invoice["total_minor"],
             "outstanding_minor": balance["outstanding_minor"], "as_of": balance["as_of"], "period": invoice["period"],
         }

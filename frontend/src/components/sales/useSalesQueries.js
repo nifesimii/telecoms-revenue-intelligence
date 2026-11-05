@@ -26,6 +26,8 @@ const retryUnlessMissing = (failures, error) => error.response?.status !== 404 &
 export const useSalesReference = () => useQuery({ queryKey: salesKeys.reference(), queryFn: ({ signal }) => getSalesReference(signal), staleTime: Infinity });
 export const useSalesSimulationStatus = () => useQuery({ queryKey: salesKeys.status(), queryFn: ({ signal }) => getSalesStatus(signal) });
 export const useSalesDraft = (accountCode, period) => useQuery({ queryKey: salesKeys.draft(accountCode, period), queryFn: ({ signal }) => getSalesDraft(accountCode, period, signal), enabled: Boolean(accountCode) });
-export const useSalesRecords = (params) => useQuery({ queryKey: salesKeys.records(params), queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
-export const useSalesObligations = (accountCode, params) => useQuery({ queryKey: salesKeys.obligations(accountCode, params), queryFn: ({ signal }) => getSalesObligations(accountCode, params, signal), placeholderData: keepPreviousData });
-export const useSalesInvoice = (reference, params) => useQuery({ queryKey: salesKeys.invoice(reference, params), queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });
+
+// The paged reads, for usePagedQuery to run once it knows the page.
+export const recordsQuery = (params) => ({ queryKey: salesKeys.records(params), queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
+export const obligationsQuery = (accountCode, params) => ({ queryKey: salesKeys.obligations(accountCode, params), queryFn: ({ signal }) => getSalesObligations(accountCode, params, signal), placeholderData: keepPreviousData });
+export const invoiceQuery = (reference, params) => ({ queryKey: salesKeys.invoice(reference, params), queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });

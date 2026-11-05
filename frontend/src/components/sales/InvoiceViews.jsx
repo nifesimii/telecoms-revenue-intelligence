@@ -3,15 +3,15 @@
 // every set, and recording a collection goes through onRecordCollection.
 
 import { useRef, useState } from 'react';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
 import PaginationControls from '../shared/PaginationControls.jsx';
 import { formatCount, formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
-import { invoiceOpenerId, partnerLabel, quantityLabel } from './salesDisplay.js';
+import { describeFailure, invoiceOpenerId, partnerLabel, quantityLabel } from './salesDisplay.js';
 import { collectionErrors, parseAmountMinor } from './salesFormChecks.js';
-import { failureMessage, isRefusal } from './useSalesActions.js';
-import { useSalesInvoice, useSalesObligations, useSalesRecords } from './useSalesQueries.js';
+import { invoiceQuery, obligationsQuery, recordsQuery } from './useSalesQueries.js';
 
 const displayDate = (date) => (date ? formatDate(date) : 'Not set');
-const recordDate = (record) => (record.status === 'Draft' ? `Intended ${displayDate(record.date)}` : displayDate(record.date));
+const recordDate = (record) => (record.is_draft ? `Intended ${displayDate(record.date)}` : displayDate(record.date));
 export const displayAmount = (minor) => (minor === null ? 'Unavailable' : formatMinorNGN(minor));
 
 // One bounded page of an in-browser set. A new scope starts at the first page; a
@@ -38,22 +38,21 @@ function PageControls({ pagination, headingId, onOffsetChange, onLimitChange }) 
     onOffsetChange={(next) => { onOffsetChange(next); focusResults(); }} onPageSizeChange={onLimitChange} /></div>;
 }
 
-// The page wanted from the server. A new scope starts at the first page, and the
+// Reads one page from the server. A new scope starts at the first page, and the
 // server moves a page past the end of a shrunken set back to its last. Recording that
 // move means a set that regrows never revives the old page. A placeholder still
 // describes the previous request, so it says nothing about this one.
-function useServerPage(scope, headingId) {
+function usePagedQuery(scope, headingId, optionsFor, paginationOf) {
   const [limit, setLimit] = useState(25);
   const [position, setPosition] = useState({ scope, offset: 0 });
   const offset = position.scope === scope ? position.offset : 0;
   if (position.scope !== scope) setPosition({ scope, offset });
+  const query = useQuery(optionsFor({ limit, offset }));
+  const pagination = query.data && paginationOf(query.data);
+  if (pagination && !query.isPlaceholderData && pagination.offset !== offset) setPosition({ scope, offset: pagination.offset });
   return {
-    limit,
-    offset,
-    recordServerOffset: (pagination, isPlaceholder) => {
-      if (pagination && !isPlaceholder && pagination.offset !== offset) setPosition({ scope, offset: pagination.offset });
-    },
-    controls: (pagination) => <PageControls pagination={pagination} headingId={headingId}
+    query,
+    controls: pagination && <PageControls pagination={pagination} headingId={headingId}
       onOffsetChange={(next) => setPosition({ scope, offset: next })} onLimitChange={(next) => { setLimit(next); setPosition({ scope, offset: 0 }); }} />,
   };
 }
@@ -73,6 +72,22 @@ export function RefusedChange({ onLoadLatest }) {
     <div className="mt-2"><button type="button" className="sales-button" onClick={onLoadLatest}>Load latest</button></div></div>;
 }
 
+// What went wrong with the last attempt at an action. A refusal stays until the latest
+// records are loaded, because no retry or edit can succeed before then.
+export function useActionFailure() {
+  const [failure, setFailure] = useState(null);
+  return {
+    failure,
+    clearFailure: () => setFailure((current) => (current?.refused ? current : null)),
+    noteFailure: (error, fallback) => setFailure((current) => (current?.refused ? current : describeFailure(error, fallback))),
+  };
+}
+
+export function ActionFailure({ failure, onLoadLatest }) {
+  if (!failure) return null;
+  return failure.refused ? <RefusedChange onLoadLatest={onLoadLatest} /> : <p role="alert" className="sales-alert">{failure.message}</p>;
+}
+
 const PURCHASE_NOTE = 'A purchase obligation is what the partner would owe MTN for goods bought. It is not commission, and it is not netted against the Partner Commission Account, the separate record of commission owed by MTN.';
 
 export function InvoiceList({ period, statuses, onOpenInvoice, onOpenPartner, onOpenDraft }) {
@@ -80,10 +95,8 @@ export function InvoiceList({ period, statuses, onOpenInvoice, onOpenPartner, on
   const [status, setStatus] = useState('');
   const periodLabel = formatPeriod(period);
   const term = search.trim();
-  const { limit, offset, recordServerOffset, controls } = useServerPage(`${period}|${term.toLowerCase()}|${status}`, 'sales-invoices-heading');
-  const params = { mon_period: period, search: term, status, limit, offset };
-  const records = useSalesRecords(params);
-  recordServerOffset(records.data?.pagination, records.isPlaceholderData);
+  const { query: records, controls } = usePagedQuery(`${period}|${term.toLowerCase()}|${status}`, 'sales-invoices-heading',
+    (page) => recordsQuery({ mon_period: period, search: term, status, ...page }), (data) => data.pagination);
   const summary = records.data?.summary;
   const visible = records.data?.items ?? [];
   const filtered = Boolean(search.trim() || status);
@@ -122,31 +135,28 @@ export function InvoiceList({ period, statuses, onOpenInvoice, onOpenPartner, on
             <span className="block md:hidden mt-1">{partnerLabel(record.partner)}</span>
             <span className="block md:hidden text-gray-600 mt-1">{recordDate(record)} · {record.status}</span>
             <span className="block md:hidden font-semibold mt-1 whitespace-nowrap">{displayAmount(record.amount_minor)}</span>
-            {record.status !== 'Draft' && <span className="block md:hidden text-gray-600 mt-1">Outstanding <span className="whitespace-nowrap">{formatMinorNGN(record.outstanding_minor)}</span></span>}</th>
+            {!record.is_draft && <span className="block md:hidden text-gray-600 mt-1">Outstanding <span className="whitespace-nowrap">{formatMinorNGN(record.outstanding_minor)}</span></span>}</th>
           <td className="hidden md:table-cell">{partnerLabel(record.partner)}</td>
           <td className="hidden md:table-cell">{recordDate(record)}</td>
           <td className="hidden md:table-cell">{record.status}</td>
           <td className="sales-amount hidden md:table-cell">{displayAmount(record.amount_minor)}
-            {record.status !== 'Draft' && <span className="block text-gray-600 mt-1">Outstanding {formatMinorNGN(record.outstanding_minor)}</span>}</td>
+            {!record.is_draft && <span className="block text-gray-600 mt-1">Outstanding {formatMinorNGN(record.outstanding_minor)}</span>}</td>
           <td><div className="sales-row-actions">
-            {record.status === 'Draft'
+            {record.is_draft
               ? <button type="button" className="sales-button" aria-label={`Open draft ${record.reference}`} onClick={() => onOpenDraft(record)}>Open</button>
               : <button id={invoiceOpenerId(record.reference)} type="button" className="sales-button" aria-label={`Open invoice ${record.reference}`} onClick={() => onOpenInvoice(record.reference, invoiceOpenerId(record.reference))}>Open</button>}
             <button id={`sales-obligations-${record.reference}`} type="button" className="sales-button" aria-label={`View purchase obligations for ${partnerLabel(record.partner)} from ${record.reference}`} onClick={() => onOpenPartner(record.partner.code, `sales-obligations-${record.reference}`)}>Obligations</button>
           </div></td>
         </tr>)}</tbody>
       </table>
-      {controls(records.data.pagination)}
+      {controls}
     </>}</>}
   </section>;
 }
 
 export function PartnerObligations({ partner, headingId, backLabel, onBack, onOpenInvoice, onOpenCommission }) {
-  const { limit, offset, recordServerOffset, controls } = useServerPage(partner.code, headingId);
-  const params = { limit, offset };
-  const obligations = useSalesObligations(partner.code, params);
+  const { query: obligations, controls } = usePagedQuery(partner.code, headingId, (page) => obligationsQuery(partner.code, page), (data) => data.invoices.pagination);
   const { invoices, drafts, outstanding_minor: outstandingMinor, as_of: asOf } = obligations.data ?? {};
-  recordServerOffset(invoices?.pagination, obligations.isPlaceholderData);
   const visible = invoices?.items ?? [];
   return <section className="sales-paper" aria-labelledby={headingId}>
     <p className="text-xs font-semibold tracking-widest uppercase text-amber-800">Fictional simulation</p>
@@ -172,7 +182,7 @@ export function PartnerObligations({ partner, headingId, backLabel, onBack, onOp
           <td className="text-right"><button id={`sales-partner-open-${record.reference}`} type="button" className="sales-button" aria-label={`Open invoice ${record.reference}`} onClick={() => onOpenInvoice(record.reference, `sales-partner-open-${record.reference}`)}>Open</button></td>
         </tr>)}</tbody>
       </table>
-      {controls(invoices.pagination)}
+      {controls}
     </> : <p role="status" className="text-sm text-gray-600 mt-4">No issued invoices for this account in this simulation, so it has no simulated purchase obligation to show.</p>}
     {drafts?.items.length > 0 && <div className="mt-4">
       <h3 className="text-sm font-semibold">Drafts excluded from outstanding</h3>
@@ -195,8 +205,7 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
   const [attempted, setAttempted] = useState(false);
   const [recorded, setRecorded] = useState(null);
   const [recording, setRecording] = useState(false);
-  const [failure, setFailure] = useState(null);
-  const [refused, setRefused] = useState(false);
+  const { failure, clearFailure, noteFailure } = useActionFailure();
   // The version this form opened on. If a read later brings a new one, what was typed
   // stays and the server refuses it, rather than it landing on a different invoice.
   const [token] = useState(invoice.token);
@@ -210,7 +219,7 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
   const edit = (setter) => (event) => {
     setter(event.target.value);
     setRecorded(null);
-    setFailure(null);
+    clearFailure();
     action.current = null;
   };
   const submit = async (event) => {
@@ -224,7 +233,7 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
     busy.current = true;
     action.current ??= crypto.randomUUID();
     setRecording(true);
-    setFailure(null);
+    clearFailure();
     const amountMinor = parseAmountMinor(amount);
     try {
       const collection = await onRecord(invoice.reference, { token, action_id: action.current, date, amount_minor: amountMinor });
@@ -235,8 +244,7 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
       // Paying in full removes the form and the button holding focus.
       requestAnimationFrame(() => document.getElementById(headingId)?.focus());
     } catch (error) {
-      if (isRefusal(error)) setRefused(true);
-      else setFailure(failureMessage(error, 'This collection could not be recorded, so the balance is unchanged. Try again.'));
+      noteFailure(error, 'This collection could not be recorded, so the balance is unchanged. Try again.');
     } finally {
       busy.current = false;
       setRecording(false);
@@ -247,8 +255,7 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
     <h3 id={headingId} tabIndex={-1} className="text-base font-semibold">Invoice collections</h3>
     <p className="text-xs text-gray-600 mt-1">Fictional collections reduce only this invoice's purchase obligation. They never generate commission or offset commission outstanding, and no money moves.</p>
     {recorded && <p role="status" className="sales-notice mt-3">Recorded {recorded.reference} for {formatMinorNGN(recorded.amountMinor)}.</p>}
-    {failure && <p role="alert" className="sales-alert">{failure}</p>}
-    {refused && <RefusedChange onLoadLatest={onLoadLatest} />}
+    <ActionFailure failure={failure} onLoadLatest={onLoadLatest} />
     {history.length ? <>
       <table className="sales-table mt-3">
         <caption className="sr-only">Collections recorded against {invoice.reference}</caption>
@@ -263,9 +270,9 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
           <td className="sales-amount hidden md:table-cell">{formatMinorNGN(collection.outstanding_after_minor)}</td>
         </tr>)}</tbody>
       </table>
-      {controls(collections.pagination)}
+      {controls}
     </> : <p className="text-sm text-gray-600 mt-3">No collections recorded against this invoice yet.</p>}
-    {balance.status === 'Paid' ? <p className="text-sm font-medium mt-4">Paid in full. No further collections can be recorded.</p>
+    {balance.outstanding_minor === 0 ? <p className="text-sm font-medium mt-4">Paid in full. No further collections can be recorded.</p>
       : <form noValidate className="mt-4" aria-label={`Record a collection against ${invoice.reference}`} onSubmit={submit}>
         <div className="sales-dates">
           <div className="flex flex-col gap-2"><label className="sales-field">Collection date<input id={`sales-collection-date-${invoice.reference}`} type="date" min={invoice.issue_date} max="9999-12-31" disabled={recording} aria-invalid={Boolean(errors.date)} aria-describedby={errors.date ? dateErrorId : undefined} value={date} onChange={edit(setDate)} /></label>
@@ -282,11 +289,8 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
 // The heading shows at once, so opening an invoice can move focus before it loads.
 export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenPartner, onRecordCollection, onLoadLatest }) {
   const collectionsHeadingId = `sales-collections-heading-${reference}`;
-  const { limit, offset, recordServerOffset, controls } = useServerPage(reference, collectionsHeadingId);
-  const params = { limit, offset };
-  const detail = useSalesInvoice(reference, params);
+  const { query: detail, controls } = usePagedQuery(reference, collectionsHeadingId, (page) => invoiceQuery(reference, page), (data) => data.collections.pagination);
   const { invoice, balance, collections } = detail.data ?? {};
-  recordServerOffset(collections?.pagination, detail.isPlaceholderData);
   // The refused form disappears while the invoice reloads, taking focus with it.
   const loadLatest = () => {
     onLoadLatest(reference);

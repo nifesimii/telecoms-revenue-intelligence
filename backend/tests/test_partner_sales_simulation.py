@@ -385,6 +385,13 @@ def test_obligations_return_up_to_100_drafts_and_say_how_many_there_are():
     assert drafts["pagination"]["has_more"] is True
 
 
+def test_records_say_whether_they_are_drafts_so_no_reader_compares_status_names():
+    reference = draft()
+    assert {record["reference"]: record["is_draft"] for record in records()["items"]} == {
+        reference: True, "SIM-INV-0001": False, "SIM-INV-0002": False, "SIM-INV-0003": False,
+    }
+
+
 def test_the_reference_data_publishes_the_quantity_limit_and_status_names():
     published = client.get("/partner-sales/reference").json()
     assert published["max_quantity"] == 1_000_000

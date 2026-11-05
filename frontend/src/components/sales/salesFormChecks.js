@@ -4,12 +4,11 @@
 
 import { formatCount, formatDate, formatMinorNGN } from '../../lib/format.js';
 
-// Last day of a YYYYMM reporting month, as a date-only string.
-export function lastDayOf(period) {
-  const year = Number(period.slice(0, 4));
-  const month = Number(period.slice(4, 6));
-  const day = new Date(Date.UTC(year, month, 0)).getUTCDate();
-  return `${period.slice(0, 4)}-${period.slice(4, 6)}-${String(day).padStart(2, '0')}`;
+// The dates in a YYYYMM reporting month, as date-only strings.
+export function issueDateRange(period) {
+  const [year, month] = [period.slice(0, 4), period.slice(4, 6)];
+  const lastDay = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
+  return { min: `${year}-${month}-01`, max: `${year}-${month}-${String(lastDay).padStart(2, '0')}` };
 }
 
 // Quantities stay as typed so an invalid edit remains visible and correctable.
@@ -38,7 +37,8 @@ export function dueDateError(draft) {
 }
 
 // Exact kobo from typed text, never through a fractional number. Null when the
-// text is not a money amount, which includes any sign.
+// text is not a money amount, which includes any sign. Here because the check below
+// must judge exactly the amount the form then sends.
 export function parseAmountMinor(text) {
   const match = /^(\d+|\d{1,3}(?:,\d{3})+)(?:\.(\d{1,2}))?$/.exec(text.trim());
   return match ? Number(match[1].replaceAll(',', '')) * 100 + Number((match[2] ?? '').padEnd(2, '0')) : null;

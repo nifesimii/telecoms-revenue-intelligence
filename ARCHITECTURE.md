@@ -948,7 +948,7 @@ on the same (dealer, period).
   assurance/audit modules directly — go through `execute_query`. (This is a hard
   rule in `CLAUDE.md`.)
 - **Config via `backend/config.py`.** All env vars are read once there into
-  module constants. Don't call `os.getenv` elsewhere; test setup that configures a server it starts is exempt. `.env.example` documents
+  module constants. Don't read the environment elsewhere; test setup that configures a server it starts is exempt. `.env.example` documents
   every variable; copy it to `.env` for local runs.
 - **Mode flags.** `USE_SAMPLE_DATA` (CSV vs Presto) and `PAYMENT_SOURCE`
   (simulated vs apdp) are the two switches that change where data comes from.
