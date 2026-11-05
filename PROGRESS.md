@@ -13,6 +13,13 @@ end of each work session. Newest session on top.
 - Acceptance runs on a real API (port 8199) for sales and sign-in, with fixtures for other reads.
 - If the suite fails oddly, check `pmset -g log` first. A laptop sleeping mid-run produced timeouts, a
   stalled pytest and page reloads from Vite's reconnect. Use `caffeinate -i`; lid-closed sleep still applies.
+- The review of #9 reopened it. References restart after a reset, so a tab left open could have changed
+  someone else's record with the same reference. Every draft and invoice now has a hidden token the server
+  checks: a stale change gets 409, and the screen offers **Load latest**. A draft's token changes on each
+  save, which also stops issuing anything other than the previewed version.
+- Same review: sales fields are `account_code` (`partner_code` names an audit subject), amounts must be
+  whole kobo, obligations say when drafts are left out, and a list that shrinks and regrows keeps its
+  corrected page. The sales helpers were split by job; the server publishes the quantity limit and statuses.
 - Still open: `render.yaml` has the old demo variables, so hosted stays locked until #14; partner
   statements stay in the frontend bundle until #13. Nothing is pushed.
 

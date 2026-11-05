@@ -10,6 +10,7 @@ from __future__ import annotations
 import calendar
 import re
 import threading
+import uuid
 from datetime import date
 
 PARTNERS = [
@@ -45,6 +46,7 @@ _EXAMPLE_INVOICES = [
 ]
 
 MAX_QUANTITY = 1_000_000
+_MAX_DRAFTS_LISTED = 100
 DRAFT, UNPAID, PARTIALLY_PAID, PAID = STATUSES = ["Draft", "Unpaid", "Partially paid", "Paid"]
 _PARTNERS_BY_CODE = {partner["code"]: partner for partner in PARTNERS}
 _PRODUCTS_BY_CODE = {product["code"]: product for product in CATALOGUE}
@@ -56,6 +58,21 @@ class SalesRuleError(ValueError):
 
 class SalesNotFound(LookupError):
     """The record does not exist."""
+
+
+class SalesConflict(Exception):
+    """The record changed since the caller read it, or is a different record with the
+    same reference after a reset. Changed nothing."""
+
+
+def _new_token() -> str:
+    """Identifies one exact version of a record. References restart after a reset; this never repeats."""
+    return uuid.uuid4().hex
+
+
+def _require_token(record: dict, token: str) -> None:
+    if record["token"] != token:
+        raise SalesConflict
 
 
 def _is_date(value: str) -> bool:
@@ -132,7 +149,7 @@ def _draft_total(draft: dict) -> int | None:
 
 def _draft_view(draft: dict) -> dict:
     return {
-        "reference": draft["reference"], "account_code": draft["account_code"], "period": draft["period"],
+        "reference": draft["reference"], "token": draft["token"], "account_code": draft["account_code"], "period": draft["period"],
         "issue_date": draft["issue_date"], "due_date": draft["due_date"],
         "lines": [{"product_code": line["product_code"], "quantity": line["quantity"]} for line in draft["lines"]],
     }
@@ -179,10 +196,10 @@ class SalesSimulation:
         for example in _EXAMPLE_INVOICES:
             draft = self._create_draft(example["account_code"], _period_of(example["issue_date"]))
             draft.update(issue_date=example["issue_date"], due_date=example["due_date"], lines=example["lines"])
-            self._issue(draft["reference"])
+            self._issue(draft)
             if "collection" in example:
                 self.record_collection(
-                    f"seed-{draft['reference']}", draft["reference"],
+                    f"seed-{draft['reference']}", draft["reference"], draft["token"],
                     example["collection"]["date"], example["collection"]["amount_minor"],
                 )
 
@@ -200,7 +217,7 @@ class SalesSimulation:
 
     def _create_draft(self, account_code: str, period: str) -> dict:
         draft = {
-            "reference": _invoice_reference(self._next_sequence), "account_code": account_code, "period": period,
+            "reference": _invoice_reference(self._next_sequence), "token": _new_token(), "account_code": account_code, "period": period,
             "issue_date": _last_day_of(period), "due_date": "", "lines": [],
         }
         self._next_sequence += 1
@@ -223,7 +240,7 @@ class SalesSimulation:
     def _draft_by_reference(self, reference: str) -> dict | None:
         return next((draft for draft in self._drafts.values() if draft["reference"] == reference), None)
 
-    def update_draft(self, reference: str, issue_date: str, due_date: str, lines: list[dict]) -> dict:
+    def update_draft(self, reference: str, token: str, issue_date: str, due_date: str, lines: list[dict]) -> dict:
         """Invalid quantities and dates stay as typed; issuing is what requires them valid."""
         codes = [line["product_code"] for line in lines]
         if len(set(codes)) != len(codes) or any(code not in _PRODUCTS_BY_CODE for code in codes):
@@ -232,13 +249,11 @@ class SalesSimulation:
             draft = self._draft_by_reference(reference)
             if draft is None:
                 raise SalesNotFound
-            draft.update(issue_date=issue_date, due_date=due_date, lines=lines)
+            _require_token(draft, token)
+            draft.update(token=_new_token(), issue_date=issue_date, due_date=due_date, lines=lines)
             return _draft_view(draft)
 
-    def _issue(self, reference: str) -> dict:
-        draft = self._draft_by_reference(reference)
-        if draft is None:
-            raise SalesNotFound
+    def _issue(self, draft: dict) -> dict:
         total = _draft_total(draft)
         if not draft["lines"] or total is None:
             raise SalesRuleError("A draft needs at least one line with a valid quantity.")
@@ -248,7 +263,7 @@ class SalesSimulation:
             raise SalesRuleError("The due date cannot be before the issue date.")
         # Copies catalogue facts onto the invoice so nothing later can reprice it.
         invoice = {
-            "reference": reference, "seller": "MTN", "buyer": _PARTNERS_BY_CODE[draft["account_code"]],
+            "reference": draft["reference"], "token": draft["token"], "seller": "MTN", "buyer": _PARTNERS_BY_CODE[draft["account_code"]],
             "period": draft["period"], "issue_date": draft["issue_date"], "due_date": draft["due_date"],
             "currency": "NGN", "total_minor": total,
             "lines": [
@@ -260,11 +275,19 @@ class SalesSimulation:
         self._invoices.append(invoice)
         return invoice
 
-    def issue(self, reference: str) -> dict:
-        """Issuing consumes the draft, so repeating the action returns the same invoice."""
+    def issue(self, reference: str, token: str) -> dict:
+        """Issuing consumes the draft and the invoice keeps its token, so repeating the
+        action returns the same invoice."""
         with self._lock:
             existing = self._invoice(reference)
-            return existing if existing else self._issue(reference)
+            if existing:
+                _require_token(existing, token)
+                return existing
+            draft = self._draft_by_reference(reference)
+            if draft is None:
+                raise SalesNotFound
+            _require_token(draft, token)
+            return self._issue(draft)
 
     def _invoice(self, reference: str) -> dict | None:
         return next((invoice for invoice in self._invoices if invoice["reference"] == reference), None)
@@ -289,15 +312,16 @@ class SalesSimulation:
             "as_of": history[-1]["date"] if history else invoice["issue_date"],
         }
 
-    def record_collection(self, action_id: str, invoice_reference: str, collected_on: str, amount_minor: int) -> dict:
+    def record_collection(self, action_id: str, invoice_reference: str, token: str, collected_on: str, amount_minor: int) -> dict:
         """Repeating an action returns what it recorded and has no further effect."""
         with self._lock:
-            repeated = next((collection for collection in self._collections if collection["action_id"] == action_id), None)
-            if repeated:
-                return repeated
             invoice = self._invoice(invoice_reference)
             if invoice is None:
                 raise SalesNotFound
+            _require_token(invoice, token)
+            repeated = next((collection for collection in self._collections if collection["action_id"] == action_id), None)
+            if repeated:
+                return repeated
             if not _is_date(collected_on):
                 raise SalesRuleError("Enter a valid collection date.")
             if collected_on < invoice["issue_date"]:
@@ -363,7 +387,7 @@ class SalesSimulation:
                 _draft_record(draft) for draft in self._drafts.values() if draft["account_code"] == account_code
             ])
         return {
-            "invoices": _page(invoices, limit, offset), "drafts": _page(drafts, limit, 0)["items"],
+            "invoices": _page(invoices, limit, offset), "drafts": _page(drafts, _MAX_DRAFTS_LISTED, 0),
             "outstanding_minor": _outstanding(invoices), "as_of": _latest_activity(invoices),
         }
 

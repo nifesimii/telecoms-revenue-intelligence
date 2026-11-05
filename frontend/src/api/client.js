@@ -424,8 +424,8 @@ export async function updateSalesDraft(reference, change) {
   return data;
 }
 
-export async function issueSalesDraft(reference) {
-  const { data } = await api.post(`/partner-sales/drafts/${encodeURIComponent(reference)}/issue`);
+export async function issueSalesDraft(reference, token) {
+  const { data } = await api.post(`/partner-sales/drafts/${encodeURIComponent(reference)}/issue`, { token });
   return data;
 }
 

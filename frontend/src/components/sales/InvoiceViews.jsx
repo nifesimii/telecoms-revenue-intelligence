@@ -10,7 +10,7 @@ import { getSalesInvoice, getSalesObligations, getSalesRecords } from '../../api
 import { formatCount, formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
 import { invoiceOpenerId, partnerLabel, quantityLabel } from './salesDisplay.js';
 import { collectionErrors, parseAmountMinor } from './salesFormChecks.js';
-import { failureMessage } from './useSalesActions.js';
+import { failureMessage, isRefusal } from './useSalesActions.js';
 import { retryUnlessMissing, salesKeys } from './useSalesQueries.js';
 
 const displayDate = (date) => (date ? formatDate(date) : 'Not set');
@@ -42,7 +42,9 @@ function PageControls({ pagination, headingId, onOffsetChange, onLimitChange }) 
 }
 
 // The page wanted from the server. A new scope starts at the first page, and the
-// server moves a page past the end of a shrunken set back to its last.
+// server moves a page past the end of a shrunken set back to its last. Recording that
+// move means a set that regrows never revives the old page. A placeholder still
+// describes the previous request, so it says nothing about this one.
 function useServerPage(scope, headingId) {
   const [limit, setLimit] = useState(25);
   const [position, setPosition] = useState({ scope, offset: 0 });
@@ -51,6 +53,9 @@ function useServerPage(scope, headingId) {
   return {
     limit,
     offset,
+    settle: (pagination, isPlaceholder) => {
+      if (pagination && !isPlaceholder && pagination.offset !== offset) setPosition({ scope, offset: pagination.offset });
+    },
     controls: (pagination) => <PageControls pagination={pagination} headingId={headingId}
       onOffsetChange={(next) => setPosition({ scope, offset: next })} onLimitChange={(next) => { setLimit(next); setPosition({ scope, offset: 0 }); }} />,
   };
@@ -64,6 +69,13 @@ function ReadState({ query, what }) {
   return query.data ? null : <p role="status" className="text-sm text-gray-600 mt-4">Loading {what}…</p>;
 }
 
+// Shown in place of the failed action, on the same screen, so nothing is lost until
+// the person chooses to load the latest records.
+export function RefusedChange({ onLoadLatest }) {
+  return <div role="alert" className="sales-alert">This changed elsewhere or the simulation was reset, so nothing here was applied. Loading the latest discards what you typed on this page.
+    <div className="mt-2"><button type="button" className="sales-button" onClick={onLoadLatest}>Load latest</button></div></div>;
+}
+
 const PURCHASE_NOTE = 'A purchase obligation is what the partner would owe MTN for goods bought. It is not commission, and it is not netted against the Partner Commission Account, the separate record of commission owed by MTN.';
 
 export function InvoiceList({ period, statuses, onOpenInvoice, onOpenPartner, onOpenDraft }) {
@@ -71,9 +83,10 @@ export function InvoiceList({ period, statuses, onOpenInvoice, onOpenPartner, on
   const [status, setStatus] = useState('');
   const periodLabel = formatPeriod(period);
   const term = search.trim();
-  const { limit, offset, controls } = useServerPage(`${period}|${term.toLowerCase()}|${status}`, 'sales-invoices-heading');
+  const { limit, offset, settle, controls } = useServerPage(`${period}|${term.toLowerCase()}|${status}`, 'sales-invoices-heading');
   const params = { mon_period: period, search: term, status, limit, offset };
   const records = useQuery({ queryKey: salesKeys.records(params), queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
+  settle(records.data?.pagination, records.isPlaceholderData);
   const summary = records.data?.summary;
   const visible = records.data?.items ?? [];
   const filtered = Boolean(search.trim() || status);
@@ -132,10 +145,11 @@ export function InvoiceList({ period, statuses, onOpenInvoice, onOpenPartner, on
 }
 
 export function PartnerObligations({ partner, headingId, backLabel, onBack, onOpenInvoice, onOpenCommission }) {
-  const { limit, offset, controls } = useServerPage(partner.code, headingId);
+  const { limit, offset, settle, controls } = useServerPage(partner.code, headingId);
   const params = { limit, offset };
   const obligations = useQuery({ queryKey: salesKeys.obligations(partner.code, params), queryFn: ({ signal }) => getSalesObligations(partner.code, params, signal), placeholderData: keepPreviousData });
-  const { invoices, drafts = [], outstanding_minor: outstandingMinor, as_of: asOf } = obligations.data ?? {};
+  const { invoices, drafts, outstanding_minor: outstandingMinor, as_of: asOf } = obligations.data ?? {};
+  settle(invoices?.pagination, obligations.isPlaceholderData);
   const visible = invoices?.items ?? [];
   return <section className="sales-paper" aria-labelledby={headingId}>
     <p className="text-xs font-semibold tracking-widest uppercase text-amber-800">Fictional simulation</p>
@@ -163,9 +177,10 @@ export function PartnerObligations({ partner, headingId, backLabel, onBack, onOp
       </table>
       {controls(invoices.pagination)}
     </> : <p role="status" className="text-sm text-gray-600 mt-4">No issued invoices for this account in this simulation, so it has no simulated purchase obligation to show.</p>}
-    {drafts.length > 0 && <div className="mt-4">
+    {drafts?.items.length > 0 && <div className="mt-4">
       <h3 className="text-sm font-semibold">Drafts excluded from outstanding</h3>
-      <ul aria-label="Drafts excluded from outstanding" className="mt-2 text-sm text-gray-600">{drafts.map((draft) => <li key={draft.reference}>{draft.reference} · intended {formatPeriod(draft.period)} · {displayAmount(draft.amount_minor)}</li>)}</ul>
+      <ul aria-label="Drafts excluded from outstanding" className="mt-2 text-sm text-gray-600">{drafts.items.map((draft) => <li key={draft.reference}>{draft.reference} · intended {formatPeriod(draft.period)} · {displayAmount(draft.amount_minor)}</li>)}</ul>
+      {drafts.pagination.has_more && <p className="text-xs text-gray-600 mt-2">Showing the newest {formatCount(drafts.pagination.returned)} of {formatCount(drafts.pagination.total)} drafts. Open the others from their reporting month.</p>}
     </div>}
     <div className="sales-actions"><button type="button" className="sales-button" onClick={onBack}>{backLabel}</button>
       <button id={`sales-obligations-commission-${partner.code}`} type="button" className="sales-button" onClick={() => onOpenCommission(partner.code, `sales-obligations-commission-${partner.code}`)}>View commission account for {partnerLabel(partner)}</button></div>
@@ -177,13 +192,14 @@ const ignoreRepeatClick = (event) => {
   if (event.detail > 1) event.preventDefault();
 };
 
-function InvoiceCollections({ invoice, balance, collections, controls, headingId, onRecord }) {
+function InvoiceCollections({ invoice, balance, collections, controls, headingId, onRecord, onLoadLatest }) {
   const [date, setDate] = useState(balance.as_of);
   const [amount, setAmount] = useState('');
   const [attempted, setAttempted] = useState(false);
   const [recorded, setRecorded] = useState(null);
   const [recording, setRecording] = useState(false);
   const [failure, setFailure] = useState(null);
+  const [refused, setRefused] = useState(false);
   // Kept until the server accepts it, so retrying a lost response records one collection.
   const action = useRef(null);
   const busy = useRef(false);
@@ -211,7 +227,7 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
     setFailure(null);
     const amountMinor = parseAmountMinor(amount);
     try {
-      const collection = await onRecord(invoice.reference, { action_id: action.current, date, amount_minor: amountMinor });
+      const collection = await onRecord(invoice.reference, { token: invoice.token, action_id: action.current, date, amount_minor: amountMinor });
       action.current = null;
       setRecorded({ reference: collection.reference, amountMinor });
       setAmount('');
@@ -219,7 +235,8 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
       // Paying in full removes the form and the button holding focus.
       requestAnimationFrame(() => document.getElementById(headingId)?.focus());
     } catch (error) {
-      setFailure(failureMessage(error, 'This collection could not be recorded, so the balance is unchanged. Try again.'));
+      if (isRefusal(error)) setRefused(true);
+      else setFailure(failureMessage(error, 'This collection could not be recorded, so the balance is unchanged. Try again.'));
     } finally {
       busy.current = false;
       setRecording(false);
@@ -231,6 +248,7 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
     <p className="text-xs text-gray-600 mt-1">Fictional collections reduce only this invoice's purchase obligation. They never generate commission or offset commission outstanding, and no money moves.</p>
     {recorded && <p role="status" className="sales-notice mt-3">Recorded {recorded.reference} for {formatMinorNGN(recorded.amountMinor)}.</p>}
     {failure && <p role="alert" className="sales-alert">{failure}</p>}
+    {refused && <RefusedChange onLoadLatest={onLoadLatest} />}
     {history.length ? <>
       <table className="sales-table mt-3">
         <caption className="sr-only">Collections recorded against {invoice.reference}</caption>
@@ -262,12 +280,18 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
 }
 
 // The heading shows at once, so opening an invoice can move focus before it loads.
-export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenPartner, onRecordCollection }) {
+export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenPartner, onRecordCollection, onLoadLatest }) {
   const collectionsHeadingId = `sales-collections-heading-${reference}`;
-  const { limit, offset, controls } = useServerPage(reference, collectionsHeadingId);
+  const { limit, offset, settle, controls } = useServerPage(reference, collectionsHeadingId);
   const params = { limit, offset };
   const detail = useQuery({ queryKey: salesKeys.invoice(reference, params), queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });
   const { invoice, balance, collections } = detail.data ?? {};
+  settle(collections?.pagination, detail.isPlaceholderData);
+  // The refused form disappears while the invoice reloads, taking focus with it.
+  const loadLatest = () => {
+    onLoadLatest(reference);
+    document.getElementById(headingId)?.focus();
+  };
   const openerId = `sales-invoice-partner-${reference}`;
   return <section className="sales-paper" aria-labelledby={headingId}>
     <p className="text-xs font-semibold tracking-widest uppercase text-amber-800">Fictional simulation</p>
@@ -297,7 +321,7 @@ export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenP
       </tr>)}</tbody>
       <tfoot><tr><th scope="row">Total</th><td className="hidden sm:table-cell" /><td className="hidden sm:table-cell" /><td className="sales-amount">{formatMinorNGN(invoice.total_minor)}</td></tr></tfoot>
     </table>
-    <InvoiceCollections invoice={invoice} balance={balance} collections={collections} controls={controls} headingId={collectionsHeadingId} onRecord={onRecordCollection} />
+    <InvoiceCollections key={invoice.token} invoice={invoice} balance={balance} collections={collections} controls={controls} headingId={collectionsHeadingId} onRecord={onRecordCollection} onLoadLatest={loadLatest} />
     <p className="sales-notice mt-5">Simplified fictional demonstration with fictional prices: not an actual purchase obligation or an operational tax invoice. Taxes and discounts are not modeled. {PURCHASE_NOTE} These details stay fixed after issue, whichever reporting month is selected.</p>
     </>}
     <div className="sales-actions">

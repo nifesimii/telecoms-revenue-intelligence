@@ -3,10 +3,10 @@ import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
 import { draftTotalMinor, invoiceOpenerId, lineTotalMinor, partnerLabel, partnerMatches, quantityLabel } from './salesDisplay.js';
 import { dueDateError, issueDateError, lastDayOf, quantityError } from './salesFormChecks.js';
-import { failureMessage, useSalesActions } from './useSalesActions.js';
+import { failureMessage, isRefusal, useSalesActions } from './useSalesActions.js';
 import { useSalesDraft, useSalesReference, useSalesSimulationStatus } from './useSalesQueries.js';
 import { useSelectedPartner } from './useSelectedPartner.js';
-import { InvoiceDetail, InvoiceList, PartnerObligations } from './InvoiceViews.jsx';
+import { InvoiceDetail, InvoiceList, PartnerObligations, RefusedChange } from './InvoiceViews.jsx';
 import CommissionAccount from './CommissionAccount.jsx';
 import './sales.css';
 
@@ -105,6 +105,20 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
       setCreating(false);
     }
   };
+  const latestRequested = useRef(false);
+  const loadLatestDraft = (reference) => {
+    latestRequested.current = true;
+    draftFocus.current = 'sales-draft-heading';
+    return actions.loadLatest(reference);
+  };
+  // The draft may no longer exist, so its heading cannot take focus.
+  useEffect(() => {
+    if (!latestRequested.current || !draftQuery.data) return;
+    latestRequested.current = false;
+    if (draft) return;
+    draftFocus.current = null;
+    document.getElementById('sales-no-draft')?.focus();
+  }, [draftQuery.data]);
   // Open detail views, innermost last. Views underneath stay mounted but hidden,
   // so returning finds their filters, page and opener exactly as they were.
   const [trail, setTrail] = useState([]);
@@ -186,7 +200,7 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
             ? <CommissionAccount partner={partnerByCode(entry.accountCode)} period={period} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenObligations={openPartner}
               onExplain={(view, context, openerId) => onNavigate(view, { ...context, origin: { commission_partner: entry.accountCode, opener_id: openerId } })} />
             : entry.type === 'invoice'
-            ? <InvoiceDetail reference={entry.reference} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenPartner={openPartner} onRecordCollection={recordInvoiceCollection} />
+            ? <InvoiceDetail reference={entry.reference} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenPartner={openPartner} onRecordCollection={recordInvoiceCollection} onLoadLatest={actions.loadLatest} />
             : <PartnerObligations partner={partnerByCode(entry.accountCode)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenInvoice={openInvoice} onOpenCommission={openCommission} />}
         </div>;
       })}
@@ -213,18 +227,18 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
         </section>
         : !draftQuery.data ? <p role="status" className="sales-paper text-sm text-gray-600">Loading draft…</p>
         : !draft ? <section className="sales-paper" aria-label="No draft">
-          <p className="text-sm text-gray-600">No draft for {partnerLabel(partner)} in {formatPeriod(period)}.</p>
+          <p id="sales-no-draft" tabIndex={-1} className="text-sm text-gray-600">No draft for {partnerLabel(partner)} in {formatPeriod(period)}.</p>
           {createFailed && <p role="alert" className="sales-alert">The draft could not be created. Try again.</p>}
           <button type="button" className="sales-button sales-primary mt-3" disabled={creating} onClick={createDraft}>Create draft</button>
         </section>
-        : <DraftEditor key={draft.reference} draft={draft} partner={partner} catalogue={catalogue} maxQuantity={maxQuantity} focusRequest={draftFocus} saved={actions.draftSave.reference === draft.reference ? actions.draftSave : { state: 'idle' }} onChange={actions.changeDraft} onRetrySave={actions.retryDraftSave} onIssue={issue} />}
+        : <DraftEditor key={draft.reference} draft={draft} partner={partner} catalogue={catalogue} maxQuantity={maxQuantity} focusRequest={draftFocus} saved={actions.draftSave.reference === draft.reference ? actions.draftSave : { state: 'idle' }} onChange={actions.changeDraft} onRetrySave={actions.retryDraftSave} onOpen={actions.forgetFinishedSaves} onLoadLatest={loadLatestDraft} onIssue={issue} />}
       <InvoiceList key={invoiceListKey} period={period} statuses={statuses} onOpenInvoice={openInvoice} onOpenPartner={openPartner} onOpenDraft={openDraft} />
       </div>
     </div>
   </main>;
 }
 
-function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focusRequest, saved, onChange, onRetrySave, onIssue }) {
+function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focusRequest, saved, onChange, onRetrySave, onOpen, onLoadLatest, onIssue }) {
   // Edits apply here at once, so typing keeps its caret and a new line can take focus.
   const [draft, setDraft] = useState(loadedDraft);
   const change = (next) => {
@@ -241,6 +255,7 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
   const quantityInputs = useRef({});
   const productByCode = (code) => catalogue.find((product) => product.code === code);
   useEffect(() => {
+    onOpen(loadedDraft.reference);
     if (focusRequest.current) document.getElementById(focusRequest.current)?.focus();
     focusRequest.current = null;
   }, []);
@@ -270,7 +285,7 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
     requestAnimationFrame(() => previewHeading.current?.focus());
   };
   if (previewing) {
-    return <InvoicePreview draft={draft} partner={partner} productByCode={productByCode} maxQuantity={maxQuantity} total={total} headingRef={previewHeading} onIssue={() => onIssue(draft)} onBack={() => {
+    return <InvoicePreview draft={draft} partner={partner} productByCode={productByCode} maxQuantity={maxQuantity} total={total} headingRef={previewHeading} onIssue={() => onIssue(draft)} onLoadLatest={() => onLoadLatest(draft.reference)} onBack={() => {
       setPreviewing(false);
       requestAnimationFrame(() => previewOpener.current?.focus());
     }} />;
@@ -323,6 +338,7 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
       {saved.state === 'saved' && <p role="status" className="text-xs text-gray-600 mt-2">Draft saved.</p>}
       {saved.state === 'failed' && <div role="alert" className="sales-alert">{saved.message}
         <div className="mt-2"><button type="button" className="sales-button" onClick={() => onRetrySave(draft)}>Try saving again</button></div></div>}
+      {saved.state === 'refused' && <RefusedChange onLoadLatest={() => onLoadLatest(draft.reference)} />}
       {attempted && (empty || invalid) && <p role="alert" className="sales-alert">{empty && !invalid ? 'Add at least one product line before previewing.' : 'Correct the highlighted fields before previewing.'}</p>}
       <div className="sales-actions"><button ref={previewOpener} type="button" className="sales-button sales-primary" onClick={requestPreview}>Preview invoice</button>
         <p className="text-xs text-gray-600">Drafts do not create an invoice obligation or commission.</p></div>
@@ -330,9 +346,10 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focu
   </>;
 }
 
-function InvoicePreview({ draft, partner, productByCode, maxQuantity, total, headingRef, onIssue, onBack }) {
+function InvoicePreview({ draft, partner, productByCode, maxQuantity, total, headingRef, onIssue, onLoadLatest, onBack }) {
   const [issuing, setIssuing] = useState(false);
   const [failure, setFailure] = useState(null);
+  const [refused, setRefused] = useState(false);
   const busy = useRef(false);
   // A repeated click finds the first still running. A failed issue changes nothing.
   const issue = async () => {
@@ -343,7 +360,8 @@ function InvoicePreview({ draft, partner, productByCode, maxQuantity, total, hea
     try {
       await onIssue();
     } catch (error) {
-      setFailure(failureMessage(error, 'This invoice could not be issued, so the draft is unchanged. Try again.'));
+      if (isRefusal(error)) setRefused(true);
+      else setFailure(failureMessage(error, 'This invoice could not be issued, so the draft is unchanged. Try again.'));
     } finally {
       busy.current = false;
       setIssuing(false);
@@ -377,6 +395,7 @@ function InvoicePreview({ draft, partner, productByCode, maxQuantity, total, hea
     </table>
     <p className="sales-notice mt-5">Simplified fictional demonstration with fictional prices. Taxes and discounts are not modeled, and this is not an operational tax invoice. This preview does not create an invoice obligation or commission.</p>
     {failure && <p role="alert" className="sales-alert">{failure}</p>}
+    {refused && <RefusedChange onLoadLatest={onLoadLatest} />}
     <div className="sales-actions"><button type="button" className="sales-button sales-primary" disabled={issuing} onClick={issue}>Issue simulated invoice</button>
       <button type="button" className="sales-button" onClick={onBack}>Back to draft</button>
       <p className="text-xs text-gray-600">Issuing fixes the buyer, lines and total and starts an unpaid purchase obligation. It never creates commission.</p></div>

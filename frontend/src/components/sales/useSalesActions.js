@@ -5,6 +5,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { createSalesDraft, issueSalesDraft, recordSalesCollection, resetSalesSimulation, updateSalesDraft } from '../../api/client.js';
 import { isDraft, isSharedRecord, salesKeys } from './useSalesQueries.js';
 
+// The server refused a change to a record that changed elsewhere or is gone. Nothing was overwritten.
+export const isRefusal = (error) => [404, 409].includes(error.response?.status);
+
 export const failureMessage = (error, fallback) => (error.response?.status === 422 && typeof error.response.data?.detail === 'string' ? error.response.data.detail : fallback);
 
 export function useSalesActions() {
@@ -23,10 +26,13 @@ export function useSalesActions() {
       const change = entry.waiting;
       entry.waiting = null;
       try {
-        await updateSalesDraft(draft.reference, change);
+        const saved = await updateSalesDraft(draft.reference, { token: entry.token, ...change });
+        entry.token = saved.token;
+        queryClient.setQueryData(salesKeys.draft(draft.account_code, draft.period), (current) => (current?.draft?.reference === saved.reference ? { draft: { ...current.draft, token: saved.token } } : current));
       } catch (error) {
         entry.waiting ??= change;
-        setDraftSave({ state: 'failed', reference: draft.reference, message: failureMessage(error, 'This draft could not be saved, so your latest changes are only on this page.') });
+        entry.failure = error;
+        setDraftSave(isRefusal(error) ? { state: 'refused', reference: draft.reference } : { state: 'failed', reference: draft.reference, message: failureMessage(error, 'This draft could not be saved, so your latest changes are only on this page.') });
         return false;
       }
     }
@@ -38,10 +44,12 @@ export function useSalesActions() {
     entry.running ??= runSaves(draft, entry).finally(() => { entry.running = null; });
     return entry.running;
   };
+  // Each save answers with the token the next must send. An editor keeps its first
+  // token, so it stays tied to the version it loaded, not one that arrives later.
   const changeDraft = (draft) => {
-    queryClient.setQueryData(salesKeys.draft(draft.account_code, draft.period), { draft });
-    const entry = saves.current.get(draft.reference) ?? {};
+    const entry = saves.current.get(draft.reference) ?? { token: draft.token };
     saves.current.set(draft.reference, entry);
+    queryClient.setQueryData(salesKeys.draft(draft.account_code, draft.period), { draft: { ...draft, token: entry.token } });
     entry.waiting = { issue_date: draft.issue_date, due_date: draft.due_date, lines: draft.lines };
     setDraftSave({ state: 'saving', reference: draft.reference });
     startSaves(draft, entry);
@@ -51,6 +59,12 @@ export function useSalesActions() {
     if (!entry?.waiting) return;
     setDraftSave({ state: 'saving', reference: draft.reference });
     startSaves(draft, entry);
+  };
+
+  // A newly opened editor starts from what it just read, not from finished saves.
+  const forgetFinishedSaves = (reference) => {
+    const entry = saves.current.get(reference);
+    if (entry && !entry.running && !entry.waiting) saves.current.delete(reference);
   };
 
   const createDraft = async (accountCode, period) => {
@@ -64,8 +78,8 @@ export function useSalesActions() {
   const issueDraft = async (draft) => {
     const entry = saves.current.get(draft.reference);
     if (entry?.running) await entry.running;
-    if (entry?.waiting && !(await startSaves(draft, entry))) throw new Error('Unsaved draft');
-    const invoice = await issueSalesDraft(draft.reference);
+    if (entry?.waiting && !(await startSaves(draft, entry))) throw entry.failure;
+    const invoice = await issueSalesDraft(draft.reference, entry?.token ?? draft.token);
     await refresh();
     return invoice;
   };
@@ -86,5 +100,13 @@ export function useSalesActions() {
     return status;
   };
 
-  return { draftSave, changeDraft, retryDraftSave, createDraft, issueDraft, recordCollection, reset };
+  // After a refusal: replaces everything on screen with the server's records, which
+  // is the point at which unsaved edits are discarded.
+  const loadLatest = (reference) => {
+    saves.current.delete(reference);
+    setDraftSave({ state: 'idle' });
+    return queryClient.resetQueries({ predicate: isSharedRecord });
+  };
+
+  return { draftSave, changeDraft, retryDraftSave, forgetFinishedSaves, loadLatest, createDraft, issueDraft, recordCollection, reset };
 }

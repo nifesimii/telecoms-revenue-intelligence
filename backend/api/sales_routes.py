@@ -5,9 +5,9 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, StrictInt
 
-from backend.sales.simulation import CATALOGUE, MAX_QUANTITY, PARTNERS, STATUSES, SalesNotFound, SalesRuleError, simulation
+from backend.sales.simulation import CATALOGUE, MAX_QUANTITY, PARTNERS, STATUSES, SalesConflict, SalesNotFound, SalesRuleError, simulation
 
 router = APIRouter(prefix="/partner-sales", tags=["partner-sales"])
 
@@ -15,6 +15,7 @@ PERIOD_PATTERN = r"^[0-9]{4}(0[1-9]|1[0-2])$"
 Period = Annotated[str, Query(pattern=PERIOD_PATTERN)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 Offset = Annotated[int, Query(ge=0)]
+Token = Annotated[str, Field(min_length=1, max_length=64)]
 
 
 class NewDraft(BaseModel):
@@ -28,15 +29,21 @@ class DraftLine(BaseModel):
 
 
 class DraftChange(BaseModel):
+    token: Token
     issue_date: str = Field(max_length=20)
     due_date: str = Field(max_length=20)
     lines: list[DraftLine] = Field(max_length=len(CATALOGUE))
 
 
+class IssueRequest(BaseModel):
+    token: Token
+
+
 class NewCollection(BaseModel):
+    token: Token
     action_id: str = Field(min_length=1, max_length=100)
     date: str = Field(max_length=20)
-    amount_minor: int
+    amount_minor: StrictInt
 
 
 def _run(action):
@@ -44,6 +51,8 @@ def _run(action):
         return action()
     except SalesNotFound:
         raise HTTPException(status_code=404, detail="Not found in this simulation.") from None
+    except SalesConflict:
+        raise HTTPException(status_code=409, detail="This changed elsewhere or the simulation was reset.") from None
     except SalesRuleError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None
 
@@ -81,12 +90,12 @@ def create_draft(body: NewDraft) -> dict:
 @router.put("/drafts/{reference}")
 def update_draft(reference: str, body: DraftChange) -> dict:
     lines = [line.model_dump() for line in body.lines]
-    return _run(lambda: simulation.update_draft(reference, body.issue_date, body.due_date, lines))
+    return _run(lambda: simulation.update_draft(reference, body.token, body.issue_date, body.due_date, lines))
 
 
 @router.post("/drafts/{reference}/issue")
-def issue_draft(reference: str) -> dict:
-    return _run(lambda: simulation.issue(reference))
+def issue_draft(reference: str, body: IssueRequest) -> dict:
+    return _run(lambda: simulation.issue(reference, body.token))
 
 
 @router.get("/invoices/{reference}")
@@ -96,7 +105,7 @@ def invoice_detail(reference: str, limit: Limit = 25, offset: Offset = 0) -> dic
 
 @router.post("/invoices/{reference}/collections")
 def record_collection(reference: str, body: NewCollection) -> dict:
-    return _run(lambda: simulation.record_collection(body.action_id, reference, body.date, body.amount_minor))
+    return _run(lambda: simulation.record_collection(body.action_id, reference, body.token, body.date, body.amount_minor))
 
 
 @router.get("/partners/{account_code}/obligations")

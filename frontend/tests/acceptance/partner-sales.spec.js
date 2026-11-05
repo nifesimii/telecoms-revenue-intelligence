@@ -525,6 +525,7 @@ const seededInvoice = (sequence, issueDate = '2026-05-10') => {
   const buyer = sequence % 2 ? { code: '296065', name: 'River Isle Ventures' } : { code: '74050', name: 'Stone Light Networks' };
   return {
     reference: `SIM-INV-${String(sequence).padStart(4, '0')}`,
+    token: `seeded-invoice-${sequence}`,
     seller: 'MTN',
     buyer,
     period: issueDate.slice(0, 7).replace('-', ''),
@@ -539,7 +540,7 @@ const seededSimulation = () => ({
   next_sequence: 208,
   next_collection_sequence: 1,
   collections: [],
-  drafts: [{ reference: 'SIM-INV-0207', account_code: '296065', period: '202605', issue_date: '2026-05-31', due_date: '', lines: [{ product_code: 'FBB-5G-ROUTER', quantity: '1' }] }],
+  drafts: [{ reference: 'SIM-INV-0207', token: 'seeded-draft', account_code: '296065', period: '202605', issue_date: '2026-05-31', due_date: '', lines: [{ product_code: 'FBB-5G-ROUTER', quantity: '1' }] }],
   invoices: [...Array.from({ length: 205 }, (_, index) => seededInvoice(index + 1)), seededInvoice(206, '2026-06-02')],
 });
 const firstReferences = (page, count) => invoiceList(page).locator('tbody tr th > span:first-child').evaluateAll((cells, n) => cells.slice(0, n).map((cell) => cell.textContent), count);
@@ -814,7 +815,8 @@ test('a collection the server refuses leaves the balance unchanged and gives its
   await openSales(page);
   await issueMixedInvoice(page);
   // Another session collects first, so this page's balance is out of date.
-  await page.request.post(`${API_BASE}/partner-sales/invoices/SIM-INV-0001/collections`, { data: { action_id: 'other-session', date: '2026-06-01', amount_minor: 10999999 } });
+  const { invoice } = await (await page.request.get(`${API_BASE}/partner-sales/invoices/SIM-INV-0001`)).json();
+  await page.request.post(`${API_BASE}/partner-sales/invoices/SIM-INV-0001/collections`, { data: { token: invoice.token, action_id: 'other-session', date: '2026-06-01', amount_minor: 10999999 } });
   await recordCollection(page, '2026-06-10', '40000');
   await expect(collections(page).getByRole('alert')).toContainText('no more than the outstanding balance');
   await expect(history(page).locator('tbody tr')).toHaveCount(0);
@@ -1857,6 +1859,167 @@ test('a reset that fails says nothing changed, and succeeds on retry', async ({ 
   await confirmReset(page).click();
   await expect(resetNotice(page)).toBeFocused();
   await expect(matchingRecordCount(page)).toHaveText('3');
+});
+
+// What another session does while this page still shows what it loaded earlier.
+const salesApi = (page, path) => `${API_BASE}/partner-sales/${path}`;
+const draftOf = async (page, accountCode) => (await (await page.request.get(salesApi(page, 'drafts'), { params: { account_code: accountCode, mon_period: '202605' } })).json()).draft;
+const resetElsewhere = (page) => page.request.post(salesApi(page, 'reset'));
+const editElsewhere = async (page, accountCode, lines) => {
+  const draft = await draftOf(page, accountCode);
+  const saved = await page.request.put(salesApi(page, `drafts/${draft.reference}`), { data: { token: draft.token, issue_date: draft.issue_date, due_date: draft.due_date, lines } });
+  expect(saved.ok()).toBe(true);
+  return saved.json();
+};
+const draftForAnotherAccount = async (page) => {
+  const created = await page.request.post(salesApi(page, 'drafts'), { data: { account_code: '74050', mon_period: '202605' } });
+  return editElsewhere(page, (await created.json()).account_code, [{ product_code: 'RCC-0500', quantity: '7' }]);
+};
+const refused = (page) => workspace(page).getByRole('alert').filter({ hasText: 'This changed elsewhere or the simulation was reset' });
+const loadLatest = (page) => workspace(page).getByRole('button', { name: 'Load latest' });
+
+test('a save from before a reset is refused and cannot touch another account’s draft with the same reference', async ({ page }) => {
+  await mockApi(page, { examples: true });
+  await openSales(page);
+  await startDraft(page);
+  await addLine(page, 'FBB-5G-ROUTER', '2');
+  await draftSaved(page);
+  await resetElsewhere(page);
+  const theirs = await draftForAnotherAccount(page);
+
+  await quantity(page, 'FBB-5G-ROUTER').fill('3');
+  await expect(refused(page)).toBeVisible();
+  await expect(quantity(page, 'FBB-5G-ROUTER')).toHaveValue('3');
+  expect(await draftOf(page, '74050')).toEqual(theirs);
+
+  await loadLatest(page).click();
+  await expect(workspace(page).getByRole('button', { name: 'Create draft' })).toBeVisible();
+  await expect(workspace(page).getByText('No draft for River Isle Ventures · Account 296065')).toBeFocused();
+  await expect(refused(page)).toHaveCount(0);
+  expect(await draftOf(page, '74050')).toEqual(theirs);
+});
+
+test('issuing from before a reset is refused and issues nothing', async ({ page }) => {
+  await mockApi(page, { examples: true });
+  await openSales(page);
+  await buildMixedDraft(page);
+  await draftSaved(page);
+  await previewButton(page).click();
+  await resetElsewhere(page);
+  const theirs = await draftForAnotherAccount(page);
+
+  await issueButton(page).click();
+  await expect(refused(page)).toBeVisible();
+  await expect(preview(page)).toBeVisible();
+  expect(await draftOf(page, '74050')).toEqual(theirs);
+  expect((await (await page.request.get(salesApi(page, 'status'))).json()).invoices).toBe(3);
+
+  await loadLatest(page).click();
+  await expect(workspace(page).getByRole('button', { name: 'Create draft' })).toBeVisible();
+});
+
+test('a draft changed in another session is refused, and Load latest shows that version in place of unsaved edits', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await startDraft(page);
+  await addLine(page, 'FBB-5G-ROUTER', '2');
+  await draftSaved(page);
+  await editElsewhere(page, '296065', [{ product_code: 'RCC-0100', quantity: '9' }]);
+
+  await quantity(page, 'FBB-5G-ROUTER').fill('3');
+  await expect(refused(page)).toBeVisible();
+  await expect(quantity(page, 'FBB-5G-ROUTER')).toHaveValue('3');
+  expect((await draftOf(page, '296065')).lines).toEqual([{ product_code: 'RCC-0100', quantity: '9' }]);
+
+  await loadLatest(page).click();
+  await expect(quantity(page, 'RCC-0100')).toHaveValue('9');
+  await expect(quantity(page, 'FBB-5G-ROUTER')).toHaveCount(0);
+  await expect(refused(page)).toHaveCount(0);
+  await expect(workspace(page).getByRole('heading', { name: /^Draft for / })).toBeFocused();
+
+  await quantity(page, 'RCC-0100').fill('10');
+  await draftSaved(page);
+  expect((await draftOf(page, '296065')).lines).toEqual([{ product_code: 'RCC-0100', quantity: '10' }]);
+});
+
+test('previewing an older copy of a draft refuses the issue, so the invoice is never other than what was shown', async ({ page }) => {
+  await mockApi(page);
+  await openSales(page);
+  await buildMixedDraft(page);
+  await draftSaved(page);
+  await previewButton(page).click();
+  await editElsewhere(page, '296065', [{ product_code: 'RCC-0100', quantity: '9' }]);
+
+  await issueButton(page).click();
+  await expect(refused(page)).toBeVisible();
+  await expect(preview(page)).toBeVisible();
+  await loadLatest(page).click();
+  await expect(quantity(page, 'RCC-0100')).toHaveValue('9');
+});
+
+test('a collection from before a reset is refused, and Load latest shows the invoice now holding that reference', async ({ page }) => {
+  await mockApi(page, { examples: true });
+  await openSales(page);
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0003' }).click();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0003'), 'Status')).toHaveText('Unpaid');
+  await resetElsewhere(page);
+
+  await recordCollection(page, '2026-06-10', '100', 'SIM-INV-0003');
+  await expect(refused(page)).toBeVisible();
+  await loadLatest(page).click();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0003'), 'Collected')).toHaveText('NGN 0.00');
+  await expect(refused(page)).toHaveCount(0);
+  await expect(issuedInvoice(page, 'SIM-INV-0003').getByRole('heading', { name: 'Simulated invoice SIM-INV-0003' })).toBeFocused();
+  await recordCollection(page, '2026-06-10', '100', 'SIM-INV-0003');
+  await expect(collections(page, 'SIM-INV-0003').getByRole('status')).toContainText('Recorded');
+});
+
+test('Load latest on an invoice a reset removed says it is gone', async ({ page }) => {
+  await mockApi(page, { examples: true });
+  await openSales(page);
+  await issueMixedInvoice(page, 'SIM-INV-0004');
+  await resetElsewhere(page);
+  await recordCollection(page, '2026-06-10', '100', 'SIM-INV-0004');
+  await expect(refused(page)).toBeVisible();
+  await loadLatest(page).click();
+  await expect(issuedInvoice(page, 'SIM-INV-0004').getByRole('alert')).toContainText('no longer in the simulation');
+});
+
+test('says when an account has more drafts than the obligations view lists', async ({ page }) => {
+  await mockApi(page);
+  const month = (index) => `${2015 + Math.floor(index / 12)}${String(index % 12 + 1).padStart(2, '0')}`;
+  await seed(page, { ...EMPTY_SIMULATION, next_sequence: 102, drafts: Array.from({ length: 101 }, (_, index) => ({
+    reference: `SIM-INV-${String(index + 1).padStart(4, '0')}`, token: `seeded-draft-${index}`, account_code: '296065', period: month(index),
+    issue_date: `${month(index).slice(0, 4)}-${month(index).slice(4)}-01`, due_date: '', lines: [],
+  })) });
+  await openSales(page);
+  await choosePartner(page, 'River Isle Ventures · Account 296065');
+  await workspace(page).getByRole('button', { name: 'View purchase obligations for River Isle Ventures · Account 296065' }).click();
+  const listed = workspace(page).getByRole('list', { name: 'Drafts excluded from outstanding' }).getByRole('listitem');
+  await expect(listed).toHaveCount(100);
+  await expect(workspace(page).getByText('Showing the newest 100 of 101 drafts')).toBeVisible();
+});
+
+test('a list that shrinks and regrows stays on the page it fell back to', async ({ page }) => {
+  await mockApi(page);
+  const simulation = seededSimulation();
+  simulation.drafts = [];
+  simulation.invoices = simulation.invoices.slice(0, 26);
+  await seed(page, simulation);
+  await openSales(page);
+  await invoiceList(page).getByRole('button', { name: 'Next' }).click();
+  await expect(rows(page)).toHaveCount(1);
+
+  await seed(page, { ...simulation, invoices: simulation.invoices.slice(0, 5) });
+  await startDraft(page, 'River Isle Ventures · Account 296065');
+  await expect(summary(page, 'Matching records')).toHaveText('6');
+  await expect(rows(page)).toHaveCount(6);
+
+  await seed(page, simulation);
+  await startDraft(page, 'River Isle Ventures · Account 353072');
+  await expect(summary(page, 'Matching records')).toHaveText('27');
+  await expect(rows(page)).toHaveCount(25);
+  await expect(invoiceList(page).getByRole('button', { name: 'Previous' })).toBeDisabled();
 });
 
 test('a reset reaches another session on its next refresh', async ({ page, browser }) => {

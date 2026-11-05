@@ -368,6 +368,10 @@ backend/
 │                            get_kb_section tool — kept OUT of the base prompt to
 │                            save tokens.
 │
+├── sales/                 simulation.py — the fictional Partner Sales simulation, in
+│                          process memory. Served by api/sales_routes.py. Touches no
+│                          financial source (docs/adr/0002-partner-sales-two-logins.md).
+│
 ├── models/                Pydantic domain models (e.g. activation_summary).
 ├── data/                  generate_payment_simulation.py — builds the simulated
 │                          payment CSV from real commission + exception data.
@@ -403,15 +407,17 @@ frontend/src/
     │                       full-period summary and on-demand account evidence.
     ├── inventory/          Inventory Intelligence tab + DataCoverageTicketModal.
     ├── payment/            Payment Intelligence tab + DisputeDraftModal.
-    ├── sales/              Partner Sales presentation simulation: fictional seed data,
-    │                       session-scoped drafts, one-time issuance of frozen invoices,
+    ├── sales/              Partner Sales presentation simulation over /partner-sales: drafts,
+    │                       one-time issuance of frozen invoices,
     │                       idempotent invoice collections, a bounded invoice list and partner
     │                       purchase obligations. Collections never touch commission. A separate
     │                       fictional Partner Commission Account links to existing explanations
-    │                       only after read-only sample evidence reconciles to the kobo. An explicit
-    │                       reset restores the versioned starting seed (three example invoices) for
-    │                       this tab only. No writes (see docs/adr/0001-partner-sales-presentation-boundary.md and
-    │                       docs/PARTNER_SALES_REHEARSAL.md).
+    │                       only after read-only sample evidence reconciles to the kobo. Records are
+    │                       held by the server and shared by everyone signed in. A reset restores the
+    │                       starting seed (three example invoices) for all of them, and a change to a
+    │                       record that has since changed or been reset is refused (see
+    │                       docs/adr/0001-partner-sales-presentation-boundary.md,
+    │                       docs/adr/0002-partner-sales-two-logins.md and docs/PARTNER_SALES_REHEARSAL.md).
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).
     ├── audit/AuditTrailPanel.jsx            Audit Trails tab (browse verification chains).
     └── shared/HelpIcon.jsx                  Tooltip + glossary (qualified vs unqualified).

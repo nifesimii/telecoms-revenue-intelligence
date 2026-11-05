@@ -20,29 +20,45 @@ def clean_simulation():
     simulation.reset()
 
 
-def draft(partner="296065", period=PERIOD, lines=((ROUTER, "2"), (CARD, "100")), issue_date="2026-05-20", due_date=""):
+def change_of(lines=((ROUTER, "2"), (CARD, "100")), issue_date="2026-05-20", due_date=""):
+    return {"issue_date": issue_date, "due_date": due_date, "lines": [{"product_code": code, "quantity": units} for code, units in lines]}
+
+
+def save(saved_draft, **change):
+    return client.put(f"/partner-sales/drafts/{saved_draft['reference']}", json={"token": saved_draft["token"], **change_of(**change)})
+
+
+def saved_draft(partner="296065", period=PERIOD, **change):
     created = client.post("/partner-sales/drafts", json={"account_code": partner, "mon_period": period})
     assert created.status_code == 200
-    reference = created.json()["reference"]
-    change = {"issue_date": issue_date, "due_date": due_date, "lines": [{"product_code": code, "quantity": units} for code, units in lines]}
-    assert client.put(f"/partner-sales/drafts/{reference}", json=change).status_code == 200
-    return reference
+    saved = save(created.json(), **change)
+    assert saved.status_code == 200
+    return saved.json()
+
+
+def draft(**kwargs):
+    return saved_draft(**kwargs)["reference"]
+
+
+def issue(a_draft):
+    return client.post(f"/partner-sales/drafts/{a_draft['reference']}/issue", json={"token": a_draft["token"]})
 
 
 def invoice(**kwargs):
-    reference = draft(**kwargs)
-    assert client.post(f"/partner-sales/drafts/{reference}/issue").status_code == 200
-    return reference
-
-
-def collect(reference, amount_minor, date="2026-05-25", action_id=None):
-    return client.post(f"/partner-sales/invoices/{reference}/collections", json={
-        "action_id": action_id or f"action-{reference}-{amount_minor}-{date}", "date": date, "amount_minor": amount_minor,
-    })
+    issued = issue(saved_draft(**kwargs))
+    assert issued.status_code == 200
+    return issued.json()["reference"]
 
 
 def detail(reference):
     return client.get(f"/partner-sales/invoices/{reference}").json()
+
+
+def collect(reference, amount_minor, date="2026-05-25", action_id=None, token=None):
+    return client.post(f"/partner-sales/invoices/{reference}/collections", json={
+        "token": token or detail(reference)["invoice"]["token"],
+        "action_id": action_id or f"action-{reference}-{amount_minor}-{date}", "date": date, "amount_minor": amount_minor,
+    })
 
 
 def records(**params):
@@ -95,8 +111,9 @@ def test_kobo_stays_exact():
     {"due_date": "2026-05-01"},
 ])
 def test_invalid_drafts_stay_drafts(change):
-    reference = draft(**change)
-    assert client.post(f"/partner-sales/drafts/{reference}/issue").status_code == 422
+    a_draft = saved_draft(**change)
+    reference = a_draft["reference"]
+    assert issue(a_draft).status_code == 422
     assert client.get("/partner-sales/status").json()["invoices"] == 3
     assert reference in references(records())
 
@@ -110,8 +127,7 @@ def test_invalid_quantities_remain_as_typed_on_the_draft():
 @pytest.mark.parametrize("lines", [((ROUTER, "1"), (ROUTER, "2")), (("NOT-A-PRODUCT", "1"),)])
 def test_draft_lines_must_name_different_catalogue_products(lines):
     created = client.post("/partner-sales/drafts", json={"account_code": "296065", "mon_period": PERIOD}).json()
-    change = {"issue_date": "", "due_date": "", "lines": [{"product_code": code, "quantity": units} for code, units in lines]}
-    assert client.put(f"/partner-sales/drafts/{created['reference']}", json=change).status_code == 422
+    assert save(created, lines=lines, issue_date="").status_code == 422
 
 
 @pytest.mark.parametrize("period", ["202613", "202600", "20260", "٢٠٢٦٠٥"])
@@ -141,18 +157,16 @@ def test_drafts_do_not_count_as_obligations():
 
 
 def test_issuing_twice_creates_one_invoice():
-    reference = draft()
-    first = client.post(f"/partner-sales/drafts/{reference}/issue").json()
-    second = client.post(f"/partner-sales/drafts/{reference}/issue").json()
-    assert first == second
+    a_draft = saved_draft()
+    assert issue(a_draft).json() == issue(a_draft).json()
     assert client.get("/partner-sales/status").json()["invoices"] == 4
 
 
 def test_issued_invoice_is_frozen():
-    reference = invoice()
+    a_draft = saved_draft()
+    reference = issue(a_draft).json()["reference"]
     before = detail(reference)["invoice"]
-    change = {"issue_date": "2026-05-01", "due_date": "", "lines": []}
-    assert client.put(f"/partner-sales/drafts/{reference}", json=change).status_code == 404
+    assert save(a_draft, issue_date="2026-05-01", lines=()).status_code == 404
     assert detail(reference)["invoice"] == before
 
 
@@ -177,7 +191,7 @@ def test_paid_invoices_and_drafts_cannot_be_collected_against():
     paid = invoice()
     assert collect(paid, 11_000_000).status_code == 200
     assert collect(paid, 1).status_code == 422
-    assert collect(draft(partner="353072"), 1).status_code == 404
+    assert collect(draft(partner="353072"), 1, token="any").status_code == 404
 
 
 def test_collections_stay_on_their_exact_account():
@@ -236,7 +250,7 @@ def test_invoices_keep_their_issue_month():
 def test_unknown_records_are_not_found():
     assert client.get("/partner-sales/invoices/SIM-INV-9999").status_code == 404
     assert client.get("/partner-sales/partners/000000/obligations").status_code == 404
-    assert client.post("/partner-sales/drafts/SIM-INV-9999/issue").status_code == 404
+    assert client.post("/partner-sales/drafts/SIM-INV-9999/issue", json={"token": "any"}).status_code == 404
 
 
 def test_reset_restores_the_seed_and_restarts_references():
@@ -256,6 +270,116 @@ def test_sales_actions_leave_existing_evidence_unchanged():
     reference = invoice()
     collect(reference, 100)
     assert read_evidence() == before
+    assert client.post("/partner-sales/reset").status_code == 200
+    assert read_evidence() == before
+
+
+def status():
+    return client.get("/partner-sales/status").json()
+
+
+def stale_session_and_a_new_record_with_the_same_reference():
+    """A draft held by one session, then a reset, then someone else's draft reusing its reference."""
+    stale = saved_draft()
+    assert client.post("/partner-sales/reset").status_code == 200
+    current = saved_draft(partner="74050")
+    assert current["reference"] == stale["reference"]
+    return stale, current
+
+
+def test_a_save_from_before_a_reset_cannot_change_a_new_draft_with_the_same_reference():
+    stale, current = stale_session_and_a_new_record_with_the_same_reference()
+    assert save(stale, lines=((CARD, "1"),)).status_code == 409
+    kept = client.get("/partner-sales/drafts", params={"account_code": "74050", "mon_period": PERIOD}).json()["draft"]
+    assert kept == current
+
+
+def test_issuing_from_before_a_reset_cannot_issue_a_new_draft_with_the_same_reference():
+    stale, current = stale_session_and_a_new_record_with_the_same_reference()
+    assert issue(stale).status_code == 409
+    assert status()["invoices"] == 3
+    assert issue(current).status_code == 200
+
+
+def test_issuing_from_before_a_reset_cannot_return_a_new_invoice_with_the_same_reference():
+    stale, current = stale_session_and_a_new_record_with_the_same_reference()
+    assert issue(current).status_code == 200
+    assert issue(stale).status_code == 409
+
+
+def test_a_collection_from_before_a_reset_cannot_reach_a_new_invoice_with_the_same_reference():
+    reference = invoice()
+    stale_token = detail(reference)["invoice"]["token"]
+    assert client.post("/partner-sales/reset").status_code == 200
+    assert invoice(partner="74050") == reference
+    assert collect(reference, 100, token=stale_token).status_code == 409
+    assert detail(reference)["balance"]["collected_minor"] == 0
+
+
+def test_tokens_are_never_reused_across_a_reset_or_a_restart():
+    before = detail("SIM-INV-0001")["invoice"]["token"]
+    assert client.post("/partner-sales/reset").status_code == 200
+    assert detail("SIM-INV-0001")["invoice"]["token"] != before
+    restarted = SalesSimulation().invoice_detail("SIM-INV-0001", 25, 0)["invoice"]["token"]
+    assert restarted not in {before, detail("SIM-INV-0001")["invoice"]["token"]}
+
+
+def test_a_draft_changed_in_another_session_refuses_the_older_copy():
+    first_copy = saved_draft()
+    newer = save(first_copy, lines=((CARD, "5"),)).json()
+    assert newer["token"] != first_copy["token"]
+    assert save(first_copy, lines=((CARD, "9"),)).status_code == 409
+    assert issue(first_copy).status_code == 409
+    assert status()["invoices"] == 3
+    issued = issue(newer).json()
+    assert [(line["product_code"], line["quantity"]) for line in issued["lines"]] == [(CARD, 5)]
+
+
+def test_retrying_an_issue_or_collection_still_returns_the_earlier_result():
+    a_draft = saved_draft()
+    issued = issue(a_draft).json()
+    assert issue(a_draft).json() == issued
+    token = issued["token"]
+    first = collect(issued["reference"], 100, action_id="retry", token=token).json()
+    assert collect(issued["reference"], 100, action_id="retry", token=token).json() == first
+    assert detail(issued["reference"])["balance"]["collected_minor"] == 100
+
+
+def test_changing_a_draft_or_invoice_requires_its_token():
+    a_draft = saved_draft()
+    assert client.put(f"/partner-sales/drafts/{a_draft['reference']}", json=change_of()).status_code == 422
+    assert client.post(f"/partner-sales/drafts/{a_draft['reference']}/issue", json={}).status_code == 422
+    collection = {"action_id": "no-token", "date": "2026-05-25", "amount_minor": 100}
+    assert client.post("/partner-sales/invoices/SIM-INV-0003/collections", json=collection).status_code == 422
+
+
+@pytest.mark.parametrize("amount", [True, "100", 100.0, 100.5])
+def test_a_collection_amount_must_be_whole_kobo(amount):
+    reference = invoice()
+    assert collect(reference, amount).status_code == 422
+    assert detail(reference)["balance"]["collected_minor"] == 0
+
+
+@pytest.mark.parametrize("path", ["/partner-sales/invoices/SIM-INV-0001", "/partner-sales/partners/296065/obligations"])
+def test_every_page_is_limited_to_100_rows(path):
+    assert client.get(path, params={"limit": 100}).status_code == 200
+    assert client.get(path, params={"limit": 101}).status_code == 422
+
+
+def test_obligations_return_up_to_100_drafts_and_say_how_many_there_are():
+    months = [f"{year}{month:02d}" for year in range(2015, 2024) for month in range(1, 13)][:101]
+    for month in months:
+        assert client.post("/partner-sales/drafts", json={"account_code": "296065", "mon_period": month}).status_code == 200
+    drafts = client.get("/partner-sales/partners/296065/obligations", params={"limit": 1}).json()["drafts"]
+    assert len(drafts["items"]) == 100
+    assert drafts["pagination"]["total"] == 101
+    assert drafts["pagination"]["has_more"] is True
+
+
+def test_the_reference_data_publishes_the_quantity_limit_and_status_names():
+    published = client.get("/partner-sales/reference").json()
+    assert published["max_quantity"] == 1_000_000
+    assert published["statuses"] == ["Draft", "Unpaid", "Partially paid", "Paid"]
 
 
 def test_simulation_routes_are_internal_only(demo_logins):

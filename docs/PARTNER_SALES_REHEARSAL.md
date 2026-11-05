@@ -3,7 +3,8 @@
 A repeatable presenter script for the invoice, collection and commission
 explanation story. Everything on the Partner Sales screens is fictional and is held in
 the API server's memory, shared by everyone signed in until it restarts. See the [specification](PARTNER_SALES_SPEC.md) and
-[scope decision](adr/0001-partner-sales-presentation-boundary.md).
+scope decisions ([presentation boundary](adr/0001-partner-sales-presentation-boundary.md),
+[two logins](adr/0002-partner-sales-two-logins.md)).
 
 ## Setup
 
@@ -24,7 +25,7 @@ commission account offers no explanation links and says why.
 
 ## Sequence
 
-If the tab has been used before, start at step 1. On a new tab, step 1 is optional.
+Records are shared and outlast the tab, so start at step 1 unless the API server has just started.
 
 | # | Do | Expect |
 | --- | --- | --- |
@@ -57,14 +58,14 @@ If the tab has been used before, start at step 1. On a new tab, step 1 is option
 
 | You see | Meaning | Do |
 | --- | --- | --- |
-| "could not be restored" | The saved simulation is from another version or is damaged | **Start a new simulation** |
-| "could not be saved" | Session storage is unavailable, so a refresh loses the work | Avoid refreshing, or **Try saving again** |
-| "this reset could not be saved" | The earlier simulation may return on refresh | **Try saving again**, or use a new tab |
+| "This changed elsewhere or the simulation was reset" | Someone else changed this record or reset the simulation, so nothing was applied | **Load latest**, which discards what was typed on the page |
+| "could not be saved" | The API could not be reached, so the latest edits are only on this page | Check the API, then **Try saving again** |
+| "could not be reset" | The API could not be reached, so nothing changed | Check the API, then **Reset to starting point** again |
 | "could not be checked" on Existing explanations | Recorded evidence could not be read. Statement figures are still shown | Check the API, then **Retry evidence check** |
 | "does not reconcile" or "No recorded statement" | No explanation stands behind this statement, so no link is offered | Use account 296065 in May 2026 |
 | "Requested account unavailable" in Commission | The explanation's evidence failed to load | **Retry account**, or **Return to Partner Sales** |
 | "Payment position unavailable" in Payments | The settlement explanation's evidence failed to load | **Retry payment**, or **Return to Partner Sales** |
-| "Reporting periods unavailable" | The API cannot be reached. The simulation is kept | Start the API, then reload |
+| "Reporting periods unavailable" | The API cannot be reached | Start the API, then reload. Restarting it returns the simulation to its seed |
 
 A reset returns the simulation to its seed for everyone signed in. It leaves recorded evidence, other
 workspaces, other session data and the reporting month as they were. An explanation
