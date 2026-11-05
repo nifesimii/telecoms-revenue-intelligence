@@ -2135,6 +2135,21 @@ test('a save whose response was lost is saved by retrying, not reported as someo
   expect((await draftOf(page, '296065')).lines).toEqual([{ product_code: 'RCC-0100', quantity: '6' }]);
 });
 
+test('a failed retry after a refusal says so, and the refusal stays', async ({ page }) => {
+  await mockApi(page, { examples: true });
+  await openSales(page);
+  await invoiceList(page).getByRole('button', { name: 'Open invoice SIM-INV-0003' }).click();
+  await expect(fact(issuedInvoice(page, 'SIM-INV-0003'), 'Status')).toHaveText('Unpaid');
+  await resetElsewhere(page);
+  await recordCollection(page, '2026-06-10', '100', 'SIM-INV-0003');
+  await expect(refused(page)).toBeVisible();
+
+  await page.route(/\/partner-sales\/invoices\/SIM-INV-0003\/collections/, (route) => route.abort());
+  await recordButton(page, 'SIM-INV-0003').click();
+  await expect(page.getByRole('alert').filter({ hasText: 'This collection could not be recorded' })).toBeVisible();
+  await expect(refused(page)).toBeVisible();
+});
+
 test('an amount being typed survives the invoice changing underneath it, and is then refused', async ({ page }) => {
   await mockApi(page, { examples: true });
   await openSales(page);

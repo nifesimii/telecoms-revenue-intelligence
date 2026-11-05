@@ -151,7 +151,7 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
   // The explanation's history entry names the account, so returning restores it even
   // after a refresh emptied the trail. An account still open keeps its opener.
   useEffect(() => {
-    const accountCode = navigation?.commission_account;
+    const accountCode = navigation?.commission_account_code;
     if (!partnerByCode(accountCode)) return;
     const entry = { type: 'commission', accountCode };
     focusAfterTrail.current = [navigation.opener_id, detailHeadingId(entry)];
@@ -192,7 +192,7 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
   };
   const detailViews = {
     commission: (entry, shared) => <CommissionAccount {...shared} partner={partnerByCode(entry.accountCode)} period={period} onOpenObligations={openPartner}
-      onExplain={(view, context, openerId) => onNavigate(view, { ...context, origin: { commission_account: entry.accountCode, opener_id: openerId } })} />,
+      onExplain={(view, context, openerId) => onNavigate(view, { ...context, origin: { commission_account_code: entry.accountCode, opener_id: openerId } })} />,
     invoice: (entry, shared) => <InvoiceDetail {...shared} reference={entry.reference} onOpenPartner={openPartner} onRecordCollection={recordInvoiceCollection} onLoadLatest={actions.loadLatestInvoice} />,
     partner: (entry, shared) => <PartnerObligations {...shared} partner={partnerByCode(entry.accountCode)} onOpenInvoice={openInvoice} onOpenCommission={openCommission} />,
   };

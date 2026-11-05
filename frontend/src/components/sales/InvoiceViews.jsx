@@ -73,19 +73,25 @@ export function RefusedChange({ onLoadLatest }) {
 }
 
 // What went wrong with the last attempt at an action. A refusal stays until the latest
-// records are loaded, because no retry or edit can succeed before then.
+// records are loaded, because no retry or edit can succeed before then; a message
+// describes only the latest attempt.
 export function useActionFailure() {
-  const [failure, setFailure] = useState(null);
+  const [failure, setFailure] = useState({ refused: false });
   return {
     failure,
-    clearFailure: () => setFailure((current) => (current?.refused ? current : null)),
-    noteFailure: (error, fallback) => setFailure((current) => (current?.refused ? current : describeFailure(error, fallback))),
+    clearFailure: () => setFailure(({ refused }) => ({ refused })),
+    noteFailure: (error, fallback) => setFailure(({ refused }) => {
+      const latest = describeFailure(error, fallback);
+      return { refused: refused || latest.refused, message: latest.message };
+    }),
   };
 }
 
 export function ActionFailure({ failure, onLoadLatest }) {
-  if (!failure) return null;
-  return failure.refused ? <RefusedChange onLoadLatest={onLoadLatest} /> : <p role="alert" className="sales-alert">{failure.message}</p>;
+  return <>
+    {failure.message && <p role="alert" className="sales-alert">{failure.message}</p>}
+    {failure.refused && <RefusedChange onLoadLatest={onLoadLatest} />}
+  </>;
 }
 
 const PURCHASE_NOTE = 'A purchase obligation is what the partner would owe MTN for goods bought. It is not commission, and it is not netted against the Partner Commission Account, the separate record of commission owed by MTN.';
