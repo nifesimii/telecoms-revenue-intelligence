@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from backend.sales.simulation import CATALOGUE, PARTNERS, SalesNotFound, SalesRuleError, simulation
+from backend.sales.simulation import CATALOGUE, MAX_QUANTITY, PARTNERS, STATUSES, SalesNotFound, SalesRuleError, simulation
 
 router = APIRouter(prefix="/partner-sales", tags=["partner-sales"])
 
@@ -18,8 +18,8 @@ Offset = Annotated[int, Query(ge=0)]
 
 
 class NewDraft(BaseModel):
-    partner_code: str = Field(max_length=20)
-    period: str = Field(pattern=PERIOD_PATTERN)
+    account_code: str = Field(max_length=20)
+    mon_period: str = Field(pattern=PERIOD_PATTERN)
 
 
 class DraftLine(BaseModel):
@@ -50,7 +50,7 @@ def _run(action):
 
 @router.get("/reference")
 def reference() -> dict:
-    return {"partners": PARTNERS, "catalogue": CATALOGUE}
+    return {"partners": PARTNERS, "catalogue": CATALOGUE, "max_quantity": MAX_QUANTITY, "statuses": STATUSES}
 
 
 @router.get("/status")
@@ -69,13 +69,13 @@ def records(mon_period: Period, search: str = Query("", max_length=200), status:
 
 
 @router.get("/drafts")
-def draft_for(partner_code: str, mon_period: Period) -> dict:
-    return {"draft": simulation.draft_for(partner_code, mon_period)}
+def draft_for(account_code: str, mon_period: Period) -> dict:
+    return {"draft": simulation.draft_for(account_code, mon_period)}
 
 
 @router.post("/drafts")
 def create_draft(body: NewDraft) -> dict:
-    return _run(lambda: simulation.create_draft(body.partner_code, body.period))
+    return _run(lambda: simulation.create_draft(body.account_code, body.mon_period))
 
 
 @router.put("/drafts/{reference}")
@@ -99,6 +99,6 @@ def record_collection(reference: str, body: NewCollection) -> dict:
     return _run(lambda: simulation.record_collection(body.action_id, reference, body.date, body.amount_minor))
 
 
-@router.get("/partners/{partner_code}/obligations")
-def obligations(partner_code: str, limit: Limit = 25, offset: Offset = 0) -> dict:
-    return _run(lambda: simulation.obligations(partner_code, limit, offset))
+@router.get("/partners/{account_code}/obligations")
+def obligations(account_code: str, limit: Limit = 25, offset: Offset = 0) -> dict:
+    return _run(lambda: simulation.obligations(account_code, limit, offset))

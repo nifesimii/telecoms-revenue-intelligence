@@ -21,7 +21,7 @@ def clean_simulation():
 
 
 def draft(partner="296065", period=PERIOD, lines=((ROUTER, "2"), (CARD, "100")), issue_date="2026-05-20", due_date=""):
-    created = client.post("/partner-sales/drafts", json={"partner_code": partner, "period": period})
+    created = client.post("/partner-sales/drafts", json={"account_code": partner, "mon_period": period})
     assert created.status_code == 200
     reference = created.json()["reference"]
     change = {"issue_date": issue_date, "due_date": due_date, "lines": [{"product_code": code, "quantity": units} for code, units in lines]}
@@ -103,20 +103,20 @@ def test_invalid_drafts_stay_drafts(change):
 
 def test_invalid_quantities_remain_as_typed_on_the_draft():
     draft(lines=((ROUTER, "abc"),))
-    saved = client.get("/partner-sales/drafts", params={"partner_code": "296065", "mon_period": PERIOD}).json()["draft"]
+    saved = client.get("/partner-sales/drafts", params={"account_code": "296065", "mon_period": PERIOD}).json()["draft"]
     assert saved["lines"][0]["quantity"] == "abc"
 
 
 @pytest.mark.parametrize("lines", [((ROUTER, "1"), (ROUTER, "2")), (("NOT-A-PRODUCT", "1"),)])
 def test_draft_lines_must_name_different_catalogue_products(lines):
-    created = client.post("/partner-sales/drafts", json={"partner_code": "296065", "period": PERIOD}).json()
+    created = client.post("/partner-sales/drafts", json={"account_code": "296065", "mon_period": PERIOD}).json()
     change = {"issue_date": "", "due_date": "", "lines": [{"product_code": code, "quantity": units} for code, units in lines]}
     assert client.put(f"/partner-sales/drafts/{created['reference']}", json=change).status_code == 422
 
 
 @pytest.mark.parametrize("period", ["202613", "202600", "20260", "٢٠٢٦٠٥"])
 def test_drafts_require_a_real_month(period):
-    assert client.post("/partner-sales/drafts", json={"partner_code": "296065", "period": period}).status_code == 422
+    assert client.post("/partner-sales/drafts", json={"account_code": "296065", "mon_period": period}).status_code == 422
 
 
 def test_a_new_process_starts_from_the_seed():
@@ -125,12 +125,12 @@ def test_a_new_process_starts_from_the_seed():
 
 
 def test_drafts_require_a_known_partner():
-    assert client.post("/partner-sales/drafts", json={"partner_code": "000000", "period": PERIOD}).status_code == 404
+    assert client.post("/partner-sales/drafts", json={"account_code": "000000", "mon_period": PERIOD}).status_code == 404
 
 
 def test_repeated_draft_creation_returns_the_same_draft():
-    first = client.post("/partner-sales/drafts", json={"partner_code": "296065", "period": PERIOD}).json()
-    second = client.post("/partner-sales/drafts", json={"partner_code": "296065", "period": PERIOD}).json()
+    first = client.post("/partner-sales/drafts", json={"account_code": "296065", "mon_period": PERIOD}).json()
+    second = client.post("/partner-sales/drafts", json={"account_code": "296065", "mon_period": PERIOD}).json()
     assert first["reference"] == second["reference"]
 
 

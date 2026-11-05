@@ -4,7 +4,7 @@ import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { getCommissionDetail, getDealerStatement, getHealth } from '../../api/client.js';
 import { formatCount, formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
 import { displayAmount, useBoundedPage } from './InvoiceViews.jsx';
-import { partnerLabel } from './salesSimulation.js';
+import { partnerLabel } from './salesDisplay.js';
 import { STREAMS, closingGaps, reconcilesWithRecorded, sortedActivity, statementFor, summarizeStatement } from './commissionAccount.js';
 
 const displayStreamAmount = ({ status, minor }) => (status === 'not_recorded' ? 'No source records' : displayAmount(minor));

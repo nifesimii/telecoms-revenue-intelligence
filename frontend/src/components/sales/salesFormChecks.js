@@ -1,14 +1,8 @@
-// Partner Sales display helpers and form checks. The server owns the simulation
-// (see docs/adr/0002-partner-sales-two-logins.md) and decides every action; these
-// checks only explain a problem before it is sent. Amounts are exact kobo.
+// Partner Sales form checks. The server owns the simulation (see
+// docs/adr/0002-partner-sales-two-logins.md) and decides every action; these only
+// explain a problem before it is sent.
 
 import { formatCount, formatDate, formatMinorNGN } from '../../lib/format.js';
-
-export const partnerLabel = (partner) => `${partner.name} · Account ${partner.code}`;
-export const quantityLabel = (quantity, unit) => `${formatCount(quantity)} ${unit}${quantity === 1 ? '' : 's'}`;
-export const partnerMatches = (partner, term) => partner.code.includes(term) || partner.name.toLowerCase().includes(term);
-
-const MAX_QUANTITY = 1000000;
 
 // Last day of a YYYYMM reporting month, as a date-only string.
 export function lastDayOf(period) {
@@ -19,23 +13,10 @@ export function lastDayOf(period) {
 }
 
 // Quantities stay as typed so an invalid edit remains visible and correctable.
-export function quantityError(quantity) {
+export function quantityError(quantity, maxQuantity) {
   if (!/^\d+$/.test(quantity) || Number(quantity) < 1) return 'Enter a positive whole number.';
-  if (Number(quantity) > MAX_QUANTITY) return `Enter ${formatCount(MAX_QUANTITY)} or fewer.`;
+  if (Number(quantity) > maxQuantity) return `Enter ${formatCount(maxQuantity)} or fewer.`;
   return null;
-}
-
-export const lineTotalMinor = (line, product) => (quantityError(line.quantity) ? null : Number(line.quantity) * product.price_minor);
-
-// Null while any line is invalid: a partial total would misstate the draft.
-export function draftTotalMinor(draft, productByCode) {
-  let total = 0;
-  for (const line of draft.lines) {
-    const lineTotal = lineTotalMinor(line, productByCode(line.product_code));
-    if (lineTotal === null) return null;
-    total += lineTotal;
-  }
-  return total;
 }
 
 // A date input yields five-digit years unless capped, and those do not compare
@@ -56,9 +37,6 @@ export function dueDateError(draft) {
   return draft.issue_date && draft.due_date < draft.issue_date ? 'Due date cannot be before the issue date.' : null;
 }
 
-// The list row that opens an invoice, where focus returns after its detail closes.
-export const invoiceOpenerId = (reference) => `sales-open-${reference}`;
-
 // Exact kobo from typed text, never through a fractional number. Null when the
 // text is not a money amount, which includes any sign.
 export function parseAmountMinor(text) {
@@ -73,5 +51,3 @@ export function collectionErrors(invoice, outstandingMinor, { date, amount }) {
     amount: !amountMinor ? 'Enter a positive NGN amount with at most two decimal places.' : amountMinor > outstandingMinor ? `Enter ${formatMinorNGN(outstandingMinor)} or less, the outstanding balance.` : null,
   };
 }
-
-export const STATUSES = ['Draft', 'Unpaid', 'Partially paid', 'Paid'];

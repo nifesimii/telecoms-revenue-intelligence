@@ -18,32 +18,32 @@ const longActivity = Array.from({ length: 120 }, (_, index) => {
 // statement (backend/tests/test_partner_commission_fixtures.py). These do not, so
 // they offer no explanation links.
 const standaloneStatements = [
-  { partnerCode: '74050', period: '202605', openingMinor: 2000000, openingReference: 'SIM-OPEN-74050-202605', subscriptionRecorded: true, subscriptionRevenueMinor: 24000000, activity: [
+  { accountCode: '74050', period: '202605', openingMinor: 2000000, openingReference: 'SIM-OPEN-74050-202605', subscriptionRecorded: true, subscriptionRevenueMinor: 24000000, activity: [
     entry('2026-05-12', 'SIM-COM-74050-0501', 'activation', 'earning', 900000),
     entry('2026-05-18', 'SIM-SET-74050-0501', 'activation', 'settlement', 750000),
     entry('2026-05-25', 'SIM-COM-74050-0502', 'subscription', 'earning', 600000),
     entry('2026-05-28', 'SIM-SET-74050-0502', 'subscription', 'settlement', 250000),
   ] },
   // A recorded zero settlement: evidence of nothing paid, unlike a missing settlement.
-  { partnerCode: '98052', period: '202605', openingMinor: 500000, openingReference: 'SIM-OPEN-98052-202605', subscriptionRecorded: false, subscriptionRevenueMinor: null, activity: [
+  { accountCode: '98052', period: '202605', openingMinor: 500000, openingReference: 'SIM-OPEN-98052-202605', subscriptionRecorded: false, subscriptionRevenueMinor: null, activity: [
     entry('2026-05-14', 'SIM-COM-98052-0501', 'activation', 'earning', 1200000),
     entry('2026-05-30', 'SIM-SET-98052-0501', 'activation', 'settlement', 0),
   ] },
   // No subscription entries: activation alone would be a misleading partial total.
-  { partnerCode: '98052', period: '202606', openingMinor: 1700000, openingReference: 'SIM-OPEN-98052-202606', subscriptionRecorded: true, subscriptionRevenueMinor: null, activity: [
+  { accountCode: '98052', period: '202606', openingMinor: 1700000, openingReference: 'SIM-OPEN-98052-202606', subscriptionRecorded: true, subscriptionRevenueMinor: null, activity: [
     entry('2026-06-10', 'SIM-COM-98052-0601', 'activation', 'earning', 800000),
     entry('2026-06-20', 'SIM-SET-98052-0601', 'activation', 'settlement', 300000),
   ] },
-  { partnerCode: '205044', period: '202605', openingMinor: 1000000, openingReference: 'SIM-OPEN-205044-202605', subscriptionRecorded: false, subscriptionRevenueMinor: null, activity: [
+  { accountCode: '205044', period: '202605', openingMinor: 1000000, openingReference: 'SIM-OPEN-205044-202605', subscriptionRecorded: false, subscriptionRevenueMinor: null, activity: [
     entry('2026-05-16', 'SIM-COM-205044-0501', 'activation', 'earning', 3000000),
   ] },
-  { partnerCode: '295083', period: '202605', openingMinor: 100000, openingReference: 'SIM-OPEN-295083-202605', subscriptionRecorded: false, subscriptionRevenueMinor: null, activity: longActivity },
+  { accountCode: '295083', period: '202605', openingMinor: 100000, openingReference: 'SIM-OPEN-295083-202605', subscriptionRecorded: false, subscriptionRevenueMinor: null, activity: longActivity },
 ];
 
 const linked = linkedStatements.map((statement) => ({ ...statement, linked: true }));
 const STATEMENTS = [...linked, ...standaloneStatements.map((statement) => ({ ...statement, linked: false }))];
 
-export const statementFor = (partnerCode, period) => STATEMENTS.find((statement) => statement.partnerCode === partnerCode && statement.period === period) ?? null;
+export const statementFor = (accountCode, period) => STATEMENTS.find((statement) => statement.accountCode === accountCode && statement.period === period) ?? null;
 
 export const STREAMS = [['activation', 'Activation commission'], ['subscription', 'Subscription commission']];
 
@@ -89,11 +89,11 @@ const toMinor = (ngn) => Math.round(ngn * 100);
 export function reconcilesWithRecorded(statement, recorded, subscriptionAccount) {
   const { streams } = summarizeStatement(statement);
   const { commission, payment, orsc } = recorded;
-  if (recorded.dealer_id !== statement.partnerCode || recorded.mon_period !== statement.period) return false;
+  if (recorded.dealer_id !== statement.accountCode || recorded.mon_period !== statement.period) return false;
   if (payment.data_source !== 'simulated' || !payment.payment_found) return false;
   if (toMinor(commission.expected_ngn) !== streams.activation.earning.minor || toMinor(payment.amount_paid_ngn) !== streams.activation.settlement.minor) return false;
   if ((orsc ? toMinor(orsc.total_subscription_amount_ngn) : null) !== statement.subscriptionRevenueMinor) return false;
   if (!statement.subscriptionRecorded) return subscriptionAccount === null;
-  return Boolean(subscriptionAccount?.subscription_commission_complete) && subscriptionAccount.dealer_id === statement.partnerCode
+  return Boolean(subscriptionAccount?.subscription_commission_complete) && subscriptionAccount.dealer_id === statement.accountCode
     && toMinor(subscriptionAccount.subscription_commission_ngn) === streams.subscription.earning.minor && toMinor(subscriptionAccount.subscription_settled_ngn) === streams.subscription.settlement.minor;
 }

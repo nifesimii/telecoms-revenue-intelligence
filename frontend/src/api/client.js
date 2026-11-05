@@ -409,13 +409,13 @@ export async function getSalesRecords(params, signal) {
   return data;
 }
 
-export async function getSalesDraft(partner_code, mon_period, signal) {
-  const { data } = await api.get('/partner-sales/drafts', { params: { partner_code, mon_period }, signal });
+export async function getSalesDraft(account_code, mon_period, signal) {
+  const { data } = await api.get('/partner-sales/drafts', { params: { account_code, mon_period }, signal });
   return data;
 }
 
-export async function createSalesDraft(partner_code, period) {
-  const { data } = await api.post('/partner-sales/drafts', { partner_code, period });
+export async function createSalesDraft(account_code, mon_period) {
+  const { data } = await api.post('/partner-sales/drafts', { account_code, mon_period });
   return data;
 }
 
@@ -439,8 +439,8 @@ export async function recordSalesCollection(reference, collection) {
   return data;
 }
 
-export async function getSalesObligations(partnerCode, params, signal) {
-  const { data } = await api.get(`/partner-sales/partners/${encodeURIComponent(partnerCode)}/obligations`, { params, signal });
+export async function getSalesObligations(accountCode, params, signal) {
+  const { data } = await api.get(`/partner-sales/partners/${encodeURIComponent(accountCode)}/obligations`, { params, signal });
   return data;
 }
 

@@ -539,7 +539,7 @@ const seededSimulation = () => ({
   next_sequence: 208,
   next_collection_sequence: 1,
   collections: [],
-  drafts: [{ reference: 'SIM-INV-0207', partner_code: '296065', period: '202605', issue_date: '2026-05-31', due_date: '', lines: [{ product_code: 'FBB-5G-ROUTER', quantity: '1' }] }],
+  drafts: [{ reference: 'SIM-INV-0207', account_code: '296065', period: '202605', issue_date: '2026-05-31', due_date: '', lines: [{ product_code: 'FBB-5G-ROUTER', quantity: '1' }] }],
   invoices: [...Array.from({ length: 205 }, (_, index) => seededInvoice(index + 1)), seededInvoice(206, '2026-06-02')],
 });
 const firstReferences = (page, count) => invoiceList(page).locator('tbody tr th > span:first-child').evaluateAll((cells, n) => cells.slice(0, n).map((cell) => cell.textContent), count);

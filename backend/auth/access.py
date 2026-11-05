@@ -65,7 +65,7 @@ _INTERNAL_PATHS = (
     "/partner-sales/drafts/{reference}/issue",
     "/partner-sales/invoices/{reference}",
     "/partner-sales/invoices/{reference}/collections",
-    "/partner-sales/partners/{partner_code}/obligations",
+    "/partner-sales/partners/{account_code}/obligations",
     "/partner-sales/records",
     "/partner-sales/reference",
     "/partner-sales/reset",

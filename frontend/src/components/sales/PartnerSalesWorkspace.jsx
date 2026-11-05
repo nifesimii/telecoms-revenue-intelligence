@@ -1,13 +1,16 @@
 import { useEffect, useRef, useState } from 'react';
 import { usePeriod } from '../../context/PeriodContext.jsx';
 import { formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
-import { draftTotalMinor, dueDateError, invoiceOpenerId, issueDateError, lastDayOf, lineTotalMinor, partnerLabel, partnerMatches, quantityError, quantityLabel } from './salesSimulation.js';
-import { failureMessage, useSalesActions, useSalesDraft, useSalesReference, useSalesSimulationStatus, useSelectedPartner } from './useSalesSimulation.js';
+import { draftTotalMinor, invoiceOpenerId, lineTotalMinor, partnerLabel, partnerMatches, quantityLabel } from './salesDisplay.js';
+import { dueDateError, issueDateError, lastDayOf, quantityError } from './salesFormChecks.js';
+import { failureMessage, useSalesActions } from './useSalesActions.js';
+import { useSalesDraft, useSalesReference, useSalesSimulationStatus } from './useSalesQueries.js';
+import { useSelectedPartner } from './useSelectedPartner.js';
 import { InvoiceDetail, InvoiceList, PartnerObligations } from './InvoiceViews.jsx';
 import CommissionAccount from './CommissionAccount.jsx';
 import './sales.css';
 
-const detailHeadingId = (entry) => (entry.type === 'invoice' ? `sales-invoice-heading-${entry.reference}` : entry.type === 'commission' ? `sales-commission-heading-${entry.partnerCode}` : `sales-obligations-heading-${entry.partnerCode}`);
+const detailHeadingId = (entry) => (entry.type === 'invoice' ? `sales-invoice-heading-${entry.reference}` : entry.type === 'commission' ? `sales-commission-heading-${entry.accountCode}` : `sales-obligations-heading-${entry.accountCode}`);
 const backLabelTo = (entry) => (entry.type === 'partner' ? 'Back to purchase obligations' : entry.type === 'commission' ? 'Back to commission account' : `Back to invoice ${entry.reference}`);
 
 export default function PartnerSalesWorkspace({ navigation, onNavigate, onClearNavigation }) {
@@ -67,7 +70,7 @@ function SimulationReset({ onReset }) {
   </div>;
 }
 
-function Workspace({ reference: { partners, catalogue }, period, navigation, onNavigate, onClearNavigation }) {
+function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity, statuses }, period, navigation, onNavigate, onClearNavigation }) {
   const actions = useSalesActions();
   const [selectedCode, setSelectedCode] = useSelectedPartner();
   // Remounts the invoice list, so a reset also drops its filters and page.
@@ -116,8 +119,6 @@ function Workspace({ reference: { partners, catalogue }, period, navigation, onN
     setTrail((current) => current.slice(0, -1));
     requestAnimationFrame(() => (document.getElementById(openerId) ?? document.getElementById('sales-invoices-heading'))?.focus());
   };
-  // The explanation's history entry names the account, so returning restores it even
-  // after a refresh emptied the trail. An account still open keeps its opener.
   // Focus for a change that follows a server call or a refresh, first id that rendered wins.
   // It waits for the render itself: a frame later is not always late enough.
   const focusAfterTrail = useRef([]);
@@ -126,10 +127,12 @@ function Workspace({ reference: { partners, catalogue }, period, navigation, onN
     focusAfterTrail.current = [];
     ids.map((id) => document.getElementById(id)).find(Boolean)?.focus();
   }, [trail]);
+  // The explanation's history entry names the account, so returning restores it even
+  // after a refresh emptied the trail. An account still open keeps its opener.
   useEffect(() => {
-    const partnerCode = navigation?.commission_partner;
-    if (!partnerByCode(partnerCode)) return;
-    const entry = { type: 'commission', partnerCode };
+    const accountCode = navigation?.commission_partner;
+    if (!partnerByCode(accountCode)) return;
+    const entry = { type: 'commission', accountCode };
     focusAfterTrail.current = [navigation.opener_id, detailHeadingId(entry)];
     setTrail((current) => {
       const open = current.find((other) => detailHeadingId(other) === detailHeadingId(entry));
@@ -154,8 +157,8 @@ function Workspace({ reference: { partners, catalogue }, period, navigation, onN
     selectPartner(record.partner.code);
   };
   const openInvoice = (reference, openerId) => openDetail({ type: 'invoice', reference }, openerId);
-  const openPartner = (partnerCode, openerId) => openDetail({ type: 'partner', partnerCode }, openerId);
-  const openCommission = (partnerCode, openerId) => openDetail({ type: 'commission', partnerCode }, openerId);
+  const openPartner = (accountCode, openerId) => openDetail({ type: 'partner', accountCode }, openerId);
+  const openCommission = (accountCode, openerId) => openDetail({ type: 'commission', accountCode }, openerId);
   const reset = async () => {
     const status = await actions.reset();
     setResetStatus(status);
@@ -180,11 +183,11 @@ function Workspace({ reference: { partners, catalogue }, period, navigation, onN
         const backLabel = !index ? 'Back to invoices' : backLabelTo(trail[index - 1]);
         return <div key={detailHeadingId(entry)} className={active ? '' : 'hidden'}>
           {entry.type === 'commission'
-            ? <CommissionAccount partner={partnerByCode(entry.partnerCode)} period={period} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenObligations={openPartner}
-              onExplain={(view, context, openerId) => onNavigate(view, { ...context, origin: { commission_partner: entry.partnerCode, opener_id: openerId } })} />
+            ? <CommissionAccount partner={partnerByCode(entry.accountCode)} period={period} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenObligations={openPartner}
+              onExplain={(view, context, openerId) => onNavigate(view, { ...context, origin: { commission_partner: entry.accountCode, opener_id: openerId } })} />
             : entry.type === 'invoice'
             ? <InvoiceDetail reference={entry.reference} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenPartner={openPartner} onRecordCollection={recordInvoiceCollection} />
-            : <PartnerObligations partner={partnerByCode(entry.partnerCode)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenInvoice={openInvoice} onOpenCommission={openCommission} />}
+            : <PartnerObligations partner={partnerByCode(entry.accountCode)} headingId={detailHeadingId(entry)} backLabel={backLabel} onBack={onBack} onOpenInvoice={openInvoice} onOpenCommission={openCommission} />}
         </div>;
       })}
       <div className={trail.length ? 'hidden' : 'flex flex-col gap-6'}>
@@ -214,14 +217,14 @@ function Workspace({ reference: { partners, catalogue }, period, navigation, onN
           {createFailed && <p role="alert" className="sales-alert">The draft could not be created. Try again.</p>}
           <button type="button" className="sales-button sales-primary mt-3" disabled={creating} onClick={createDraft}>Create draft</button>
         </section>
-        : <DraftEditor key={draft.reference} draft={draft} partner={partner} catalogue={catalogue} focusRequest={draftFocus} saved={actions.draftSave.reference === draft.reference ? actions.draftSave : { state: 'idle' }} onChange={actions.changeDraft} onRetrySave={actions.retryDraftSave} onIssue={issue} />}
-      <InvoiceList key={invoiceListKey} period={period} onOpenInvoice={openInvoice} onOpenPartner={openPartner} onOpenDraft={openDraft} />
+        : <DraftEditor key={draft.reference} draft={draft} partner={partner} catalogue={catalogue} maxQuantity={maxQuantity} focusRequest={draftFocus} saved={actions.draftSave.reference === draft.reference ? actions.draftSave : { state: 'idle' }} onChange={actions.changeDraft} onRetrySave={actions.retryDraftSave} onIssue={issue} />}
+      <InvoiceList key={invoiceListKey} period={period} statuses={statuses} onOpenInvoice={openInvoice} onOpenPartner={openPartner} onOpenDraft={openDraft} />
       </div>
     </div>
   </main>;
 }
 
-function DraftEditor({ draft: loadedDraft, partner, catalogue, focusRequest, saved, onChange, onRetrySave, onIssue }) {
+function DraftEditor({ draft: loadedDraft, partner, catalogue, maxQuantity, focusRequest, saved, onChange, onRetrySave, onIssue }) {
   // Edits apply here at once, so typing keeps its caret and a new line can take focus.
   const [draft, setDraft] = useState(loadedDraft);
   const change = (next) => {
@@ -251,10 +254,10 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, focusRequest, sav
     linesHeading.current?.focus();
   };
   const periodLabel = formatPeriod(draft.period);
-  const total = draftTotalMinor(draft, productByCode);
+  const total = draftTotalMinor(draft, productByCode, maxQuantity);
   const issueError = issueDateError(draft, periodLabel);
   const dueError = dueDateError(draft);
-  const invalidLine = draft.lines.find((line) => quantityError(line.quantity));
+  const invalidLine = draft.lines.find((line) => quantityError(line.quantity, maxQuantity));
   const empty = draft.lines.length === 0;
   const invalid = Boolean(invalidLine || issueError || dueError);
   const requestPreview = () => {
@@ -267,7 +270,7 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, focusRequest, sav
     requestAnimationFrame(() => previewHeading.current?.focus());
   };
   if (previewing) {
-    return <InvoicePreview draft={draft} partner={partner} productByCode={productByCode} total={total} headingRef={previewHeading} onIssue={() => onIssue(draft)} onBack={() => {
+    return <InvoicePreview draft={draft} partner={partner} productByCode={productByCode} maxQuantity={maxQuantity} total={total} headingRef={previewHeading} onIssue={() => onIssue(draft)} onBack={() => {
       setPreviewing(false);
       requestAnimationFrame(() => previewOpener.current?.focus());
     }} />;
@@ -301,8 +304,8 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, focusRequest, sav
       {empty ? <p className="text-sm text-gray-600 mt-4">No lines yet. Add a product from the catalogue.</p>
         : <ul aria-label="Draft lines" className="mt-2">{draft.lines.map((line) => {
           const product = productByCode(line.product_code);
-          const lineTotal = lineTotalMinor(line, product);
-          const error = quantityError(line.quantity);
+          const lineTotal = lineTotalMinor(line, product, maxQuantity);
+          const error = quantityError(line.quantity, maxQuantity);
           const errorId = `sales-quantity-error-${line.product_code}`;
           return <li key={line.product_code} className="sales-line">
             <div><span className="block font-semibold">{product.code}</span><span className="block">{product.description}</span><span className="block text-gray-600 mt-1">{formatMinorNGN(product.price_minor)} per {product.unit}</span></div>
@@ -327,7 +330,7 @@ function DraftEditor({ draft: loadedDraft, partner, catalogue, focusRequest, sav
   </>;
 }
 
-function InvoicePreview({ draft, partner, productByCode, total, headingRef, onIssue, onBack }) {
+function InvoicePreview({ draft, partner, productByCode, maxQuantity, total, headingRef, onIssue, onBack }) {
   const [issuing, setIssuing] = useState(false);
   const [failure, setFailure] = useState(null);
   const busy = useRef(false);
@@ -367,7 +370,7 @@ function InvoicePreview({ draft, partner, productByCode, total, headingRef, onIs
             <span className="block sm:hidden text-gray-600 mt-1">{quantityLabel(Number(line.quantity), product.unit)} × {formatMinorNGN(product.price_minor)}</span></th>
           <td className="sales-amount hidden sm:table-cell">{quantityLabel(Number(line.quantity), product.unit)}</td>
           <td className="sales-amount hidden sm:table-cell">{formatMinorNGN(product.price_minor)}</td>
-          <td className="sales-amount">{formatMinorNGN(lineTotalMinor(line, product))}</td>
+          <td className="sales-amount">{formatMinorNGN(lineTotalMinor(line, product, maxQuantity))}</td>
         </tr>;
       })}</tbody>
       <tfoot><tr><th scope="row">Total</th><td className="hidden sm:table-cell" /><td className="hidden sm:table-cell" /><td className="sales-amount">{formatMinorNGN(total)}</td></tr></tfoot>

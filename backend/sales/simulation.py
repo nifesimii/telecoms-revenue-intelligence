@@ -34,17 +34,18 @@ CATALOGUE = [
 # One example of each status, dated before the presentation's own invoice and
 # clear of its account, 296065. Built through the same rules as any other invoice.
 _EXAMPLE_INVOICES = [
-    {"partner_code": "205044", "issue_date": "2026-05-05", "due_date": "2026-06-04",
+    {"account_code": "205044", "issue_date": "2026-05-05", "due_date": "2026-06-04",
      "lines": [{"product_code": "FBB-4G-ROUTER", "quantity": "1"}, {"product_code": "RCC-0500", "quantity": "50"}],
      "collection": {"date": "2026-05-18", "amount_minor": 6000000}},
-    {"partner_code": "98052", "issue_date": "2026-05-08", "due_date": "2026-06-07",
+    {"account_code": "98052", "issue_date": "2026-05-08", "due_date": "2026-06-07",
      "lines": [{"product_code": "FBB-5G-ROUTER", "quantity": "2"}, {"product_code": "RCC-0200", "quantity": "100"}],
      "collection": {"date": "2026-05-20", "amount_minor": 4500000}},
-    {"partner_code": "74050", "issue_date": "2026-05-12", "due_date": "2026-06-11",
+    {"account_code": "74050", "issue_date": "2026-05-12", "due_date": "2026-06-11",
      "lines": [{"product_code": "FBB-4G-ROUTER", "quantity": "3"}]},
 ]
 
-_MAX_QUANTITY = 1_000_000
+MAX_QUANTITY = 1_000_000
+DRAFT, UNPAID, PARTIALLY_PAID, PAID = STATUSES = ["Draft", "Unpaid", "Partially paid", "Paid"]
 _PARTNERS_BY_CODE = {partner["code"]: partner for partner in PARTNERS}
 _PRODUCTS_BY_CODE = {product["code"]: product for product in CATALOGUE}
 
@@ -68,7 +69,7 @@ def _is_date(value: str) -> bool:
 
 
 def _quantity_is_valid(quantity: str) -> bool:
-    return re.fullmatch(r"[0-9]+", quantity) is not None and 1 <= int(quantity) <= _MAX_QUANTITY
+    return re.fullmatch(r"[0-9]+", quantity) is not None and 1 <= int(quantity) <= MAX_QUANTITY
 
 
 def _sequence_of(reference: str) -> int:
@@ -86,6 +87,14 @@ def _collection_reference(sequence: int) -> str:
 def _last_day_of(period: str) -> str:
     year, month = int(period[:4]), int(period[4:6])
     return f"{period[:4]}-{period[4:6]}-{calendar.monthrange(year, month)[1]:02d}"
+
+
+def _period_of(iso_date: str) -> str:
+    return iso_date[:7].replace("-", "")
+
+
+def _draft_key(account_code: str, period: str) -> str:
+    return f"{account_code}|{period}"
 
 
 def _page(items: list, limit: int, offset: int) -> dict:
@@ -110,16 +119,20 @@ def _line_view(line: dict) -> dict:
     }
 
 
+def _line_total(line: dict) -> int:
+    return int(line["quantity"]) * _PRODUCTS_BY_CODE[line["product_code"]]["price_minor"]
+
+
 def _draft_total(draft: dict) -> int | None:
     """None while any line is invalid: a partial total would misstate the draft."""
     if not all(_quantity_is_valid(line["quantity"]) for line in draft["lines"]):
         return None
-    return sum(int(line["quantity"]) * _PRODUCTS_BY_CODE[line["product_code"]]["price_minor"] for line in draft["lines"])
+    return sum(_line_total(line) for line in draft["lines"])
 
 
 def _draft_view(draft: dict) -> dict:
     return {
-        "reference": draft["reference"], "partner_code": draft["partner_code"], "period": draft["period"],
+        "reference": draft["reference"], "account_code": draft["account_code"], "period": draft["period"],
         "issue_date": draft["issue_date"], "due_date": draft["due_date"],
         "lines": [{"product_code": line["product_code"], "quantity": line["quantity"]} for line in draft["lines"]],
     }
@@ -127,7 +140,7 @@ def _draft_view(draft: dict) -> dict:
 
 def _draft_record(draft: dict) -> dict:
     return {
-        "reference": draft["reference"], "status": "Draft", "partner": _PARTNERS_BY_CODE[draft["partner_code"]],
+        "reference": draft["reference"], "status": DRAFT, "partner": _PARTNERS_BY_CODE[draft["account_code"]],
         "date": draft["issue_date"], "amount_minor": _draft_total(draft), "period": draft["period"],
     }
 
@@ -138,7 +151,7 @@ def _newest_first(records: list[dict]) -> list[dict]:
 
 
 def _issued(records: list[dict]) -> list[dict]:
-    return [record for record in records if record["status"] != "Draft"]
+    return [record for record in records if record["status"] != DRAFT]
 
 
 def _outstanding(records: list[dict]) -> int:
@@ -164,26 +177,14 @@ class SalesSimulation:
     def _seed(self) -> None:
         self._empty()
         for example in _EXAMPLE_INVOICES:
-            period = example["issue_date"][:7].replace("-", "")
-            draft = self._create_draft(example["partner_code"], period)
+            draft = self._create_draft(example["account_code"], _period_of(example["issue_date"]))
             draft.update(issue_date=example["issue_date"], due_date=example["due_date"], lines=example["lines"])
             self._issue(draft["reference"])
             if "collection" in example:
-                self._record_collection(
+                self.record_collection(
                     f"seed-{draft['reference']}", draft["reference"],
                     example["collection"]["date"], example["collection"]["amount_minor"],
                 )
-
-    def load_state(self, state: dict) -> None:
-        """Replace all records. Acceptance fixtures only; no route exposes this."""
-        with self._lock:
-            self._next_sequence = state["next_sequence"]
-            self._next_collection_sequence = state["next_collection_sequence"]
-            self._drafts = {
-                f"{draft['partner_code']}|{draft['period']}": draft for draft in state["drafts"]
-            }
-            self._invoices = state["invoices"]
-            self._collections = state["collections"]
 
     def reset(self) -> dict:
         with self._lock:
@@ -197,26 +198,26 @@ class SalesSimulation:
                 "next_draft_reference": _invoice_reference(self._next_sequence),
             }
 
-    def _create_draft(self, partner_code: str, period: str) -> dict:
+    def _create_draft(self, account_code: str, period: str) -> dict:
         draft = {
-            "reference": _invoice_reference(self._next_sequence), "partner_code": partner_code, "period": period,
+            "reference": _invoice_reference(self._next_sequence), "account_code": account_code, "period": period,
             "issue_date": _last_day_of(period), "due_date": "", "lines": [],
         }
         self._next_sequence += 1
-        self._drafts[f"{partner_code}|{period}"] = draft
+        self._drafts[_draft_key(account_code, period)] = draft
         return draft
 
-    def create_draft(self, partner_code: str, period: str) -> dict:
+    def create_draft(self, account_code: str, period: str) -> dict:
         """Each account has one draft per month, so repeating this returns it."""
-        if partner_code not in _PARTNERS_BY_CODE:
+        if account_code not in _PARTNERS_BY_CODE:
             raise SalesNotFound
         with self._lock:
-            existing = self._drafts.get(f"{partner_code}|{period}")
-            return _draft_view(existing or self._create_draft(partner_code, period))
+            existing = self._drafts.get(_draft_key(account_code, period))
+            return _draft_view(existing or self._create_draft(account_code, period))
 
-    def draft_for(self, partner_code: str, period: str) -> dict | None:
+    def draft_for(self, account_code: str, period: str) -> dict | None:
         with self._lock:
-            draft = self._drafts.get(f"{partner_code}|{period}")
+            draft = self._drafts.get(_draft_key(account_code, period))
             return _draft_view(draft) if draft else None
 
     def _draft_by_reference(self, reference: str) -> dict | None:
@@ -241,22 +242,21 @@ class SalesSimulation:
         total = _draft_total(draft)
         if not draft["lines"] or total is None:
             raise SalesRuleError("A draft needs at least one line with a valid quantity.")
-        if not _is_date(draft["issue_date"]) or draft["issue_date"][:7].replace("-", "") != draft["period"]:
+        if not _is_date(draft["issue_date"]) or _period_of(draft["issue_date"]) != draft["period"]:
             raise SalesRuleError("The issue date must be in the draft's month.")
         if draft["due_date"] and (not _is_date(draft["due_date"]) or draft["due_date"] < draft["issue_date"]):
             raise SalesRuleError("The due date cannot be before the issue date.")
         # Copies catalogue facts onto the invoice so nothing later can reprice it.
         invoice = {
-            "reference": reference, "seller": "MTN", "buyer": _PARTNERS_BY_CODE[draft["partner_code"]],
+            "reference": reference, "seller": "MTN", "buyer": _PARTNERS_BY_CODE[draft["account_code"]],
             "period": draft["period"], "issue_date": draft["issue_date"], "due_date": draft["due_date"],
             "currency": "NGN", "total_minor": total,
             "lines": [
-                {**_line_view(line), "quantity": int(line["quantity"]),
-                 "line_total_minor": int(line["quantity"]) * _PRODUCTS_BY_CODE[line["product_code"]]["price_minor"]}
+                {**_line_view(line), "quantity": int(line["quantity"]), "line_total_minor": _line_total(line)}
                 for line in draft["lines"]
             ],
         }
-        del self._drafts[f"{draft['partner_code']}|{draft['period']}"]
+        del self._drafts[_draft_key(draft["account_code"], draft["period"])]
         self._invoices.append(invoice)
         return invoice
 
@@ -283,37 +283,34 @@ class SalesSimulation:
             history.append({**collection, "outstanding_after_minor": outstanding})
         return {
             "history": history,
-            "status": "Unpaid" if not history else "Partially paid" if outstanding else "Paid",
+            "status": UNPAID if not history else PARTIALLY_PAID if outstanding else PAID,
             "outstanding_minor": outstanding,
             "collected_minor": invoice["total_minor"] - outstanding,
             "as_of": history[-1]["date"] if history else invoice["issue_date"],
         }
 
-    def _record_collection(self, action_id: str, invoice_reference: str, collected_on: str, amount_minor: int) -> dict:
-        repeated = next((collection for collection in self._collections if collection["action_id"] == action_id), None)
-        if repeated:
-            return repeated
-        invoice = self._invoice(invoice_reference)
-        if invoice is None:
-            raise SalesNotFound
-        if not _is_date(collected_on):
-            raise SalesRuleError("Enter a valid collection date.")
-        if collected_on < invoice["issue_date"]:
-            raise SalesRuleError("A collection cannot be dated before the invoice's issue date.")
-        if amount_minor <= 0 or amount_minor > self._balance(invoice)["outstanding_minor"]:
-            raise SalesRuleError("A collection must be positive and no more than the outstanding balance.")
-        collection = {
-            "action_id": action_id, "reference": _collection_reference(self._next_collection_sequence),
-            "invoice_reference": invoice_reference, "date": collected_on, "amount_minor": amount_minor,
-        }
-        self._next_collection_sequence += 1
-        self._collections.append(collection)
-        return collection
-
     def record_collection(self, action_id: str, invoice_reference: str, collected_on: str, amount_minor: int) -> dict:
         """Repeating an action returns what it recorded and has no further effect."""
         with self._lock:
-            return self._record_collection(action_id, invoice_reference, collected_on, amount_minor)
+            repeated = next((collection for collection in self._collections if collection["action_id"] == action_id), None)
+            if repeated:
+                return repeated
+            invoice = self._invoice(invoice_reference)
+            if invoice is None:
+                raise SalesNotFound
+            if not _is_date(collected_on):
+                raise SalesRuleError("Enter a valid collection date.")
+            if collected_on < invoice["issue_date"]:
+                raise SalesRuleError("A collection cannot be dated before the invoice's issue date.")
+            if amount_minor <= 0 or amount_minor > self._balance(invoice)["outstanding_minor"]:
+                raise SalesRuleError("A collection must be positive and no more than the outstanding balance.")
+            collection = {
+                "action_id": action_id, "reference": _collection_reference(self._next_collection_sequence),
+                "invoice_reference": invoice_reference, "date": collected_on, "amount_minor": amount_minor,
+            }
+            self._next_collection_sequence += 1
+            self._collections.append(collection)
+            return collection
 
     def _invoice_record(self, invoice: dict) -> dict:
         balance = self._balance(invoice)
@@ -354,16 +351,16 @@ class SalesSimulation:
         history = balance.pop("history")
         return {"invoice": invoice, "balance": balance, "collections": _page(history, limit, offset)}
 
-    def obligations(self, partner_code: str, limit: int, offset: int) -> dict:
+    def obligations(self, account_code: str, limit: int, offset: int) -> dict:
         """One exact account across every month, up to its latest simulated activity."""
-        if partner_code not in _PARTNERS_BY_CODE:
+        if account_code not in _PARTNERS_BY_CODE:
             raise SalesNotFound
         with self._lock:
             invoices = _newest_first([
-                self._invoice_record(invoice) for invoice in self._invoices if invoice["buyer"]["code"] == partner_code
+                self._invoice_record(invoice) for invoice in self._invoices if invoice["buyer"]["code"] == account_code
             ])
             drafts = _newest_first([
-                _draft_record(draft) for draft in self._drafts.values() if draft["partner_code"] == partner_code
+                _draft_record(draft) for draft in self._drafts.values() if draft["account_code"] == account_code
             ])
         return {
             "invoices": _page(invoices, limit, offset), "drafts": _page(drafts, limit, 0)["items"],

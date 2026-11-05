@@ -60,6 +60,16 @@ _Avoid_: Receivable account (without identifying whose receivable and its source
 A fictional invoice used to demonstrate a sales workflow. It does not establish
 an actual purchase obligation or an invoice issued by MTN.
 
+**Draft**:
+An unissued simulated invoice being prepared for one trade partner account. It
+establishes no obligation, and what it contains when issued is what the preview showed.
+_Avoid_: Proforma, quote
+
+**Simulation reset**:
+Returning the whole simulation to its starting example records for everyone signed in.
+Records from before the reset can no longer be changed, even where a later record has
+the same reference.
+
 **Invoice collection**:
 A payment from a trade partner toward a specific MTN sales invoice. It reduces
 the invoice obligation and is distinct from MTN settling commission to the partner.
@@ -71,6 +81,11 @@ by opening-balance evidence rather than inferred from that period's earnings.
 **Closing outstanding commission**:
 Opening outstanding commission plus recorded period earnings less period
 settlements, when all components are evidenced. Invoice collections do not change it.
+
+**Account code**:
+The identifier of one exact trade partner account. Same-named accounts have
+different account codes.
+_Avoid_: Partner code (that names an audit subject)
 
 **Partner login**:
 A demonstration sign-in tied to exactly one trade partner account code. Same-named

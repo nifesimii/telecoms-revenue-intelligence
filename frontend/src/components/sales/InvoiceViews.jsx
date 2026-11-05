@@ -8,8 +8,10 @@ import PaginationControls from '../shared/PaginationControls.jsx';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { getSalesInvoice, getSalesObligations, getSalesRecords } from '../../api/client.js';
 import { formatCount, formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
-import { STATUSES, collectionErrors, invoiceOpenerId, parseAmountMinor, partnerLabel, quantityLabel } from './salesSimulation.js';
-import { failureMessage, retryUnlessMissing } from './useSalesSimulation.js';
+import { invoiceOpenerId, partnerLabel, quantityLabel } from './salesDisplay.js';
+import { collectionErrors, parseAmountMinor } from './salesFormChecks.js';
+import { failureMessage } from './useSalesActions.js';
+import { retryUnlessMissing, salesKeys } from './useSalesQueries.js';
 
 const displayDate = (date) => (date ? formatDate(date) : 'Not set');
 const recordDate = (record) => (record.status === 'Draft' ? `Intended ${displayDate(record.date)}` : displayDate(record.date));
@@ -64,14 +66,14 @@ function ReadState({ query, what }) {
 
 const PURCHASE_NOTE = 'A purchase obligation is what the partner would owe MTN for goods bought. It is not commission, and it is not netted against the Partner Commission Account, the separate record of commission owed by MTN.';
 
-export function InvoiceList({ period, onOpenInvoice, onOpenPartner, onOpenDraft }) {
+export function InvoiceList({ period, statuses, onOpenInvoice, onOpenPartner, onOpenDraft }) {
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
   const periodLabel = formatPeriod(period);
   const term = search.trim();
   const { limit, offset, controls } = useServerPage(`${period}|${term.toLowerCase()}|${status}`, 'sales-invoices-heading');
   const params = { mon_period: period, search: term, status, limit, offset };
-  const records = useQuery({ queryKey: ['partner-sales', 'records', params], queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
+  const records = useQuery({ queryKey: salesKeys.records(params), queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
   const summary = records.data?.summary;
   const visible = records.data?.items ?? [];
   const filtered = Boolean(search.trim() || status);
@@ -87,7 +89,7 @@ export function InvoiceList({ period, onOpenInvoice, onOpenPartner, onOpenDraft 
       <label className="sales-field">Search invoices by partner or account code<input id="sales-invoice-search" type="search" value={search} maxLength={200} placeholder="Name or account code" onChange={(event) => setSearch(event.target.value)} /></label>
       <label className="sales-field">Status<select value={status} onChange={(event) => setStatus(event.target.value)}>
         <option value="">All statuses</option>
-        {STATUSES.map((option) => <option key={option} value={option}>{option}</option>)}
+        {statuses.map((option) => <option key={option} value={option}>{option}</option>)}
       </select></label>
     </div>
     <ReadState query={records} what="invoice list" />
@@ -132,7 +134,7 @@ export function InvoiceList({ period, onOpenInvoice, onOpenPartner, onOpenDraft 
 export function PartnerObligations({ partner, headingId, backLabel, onBack, onOpenInvoice, onOpenCommission }) {
   const { limit, offset, controls } = useServerPage(partner.code, headingId);
   const params = { limit, offset };
-  const obligations = useQuery({ queryKey: ['partner-sales', 'obligations', partner.code, params], queryFn: ({ signal }) => getSalesObligations(partner.code, params, signal), placeholderData: keepPreviousData });
+  const obligations = useQuery({ queryKey: salesKeys.obligations(partner.code, params), queryFn: ({ signal }) => getSalesObligations(partner.code, params, signal), placeholderData: keepPreviousData });
   const { invoices, drafts = [], outstanding_minor: outstandingMinor, as_of: asOf } = obligations.data ?? {};
   const visible = invoices?.items ?? [];
   return <section className="sales-paper" aria-labelledby={headingId}>
@@ -264,7 +266,7 @@ export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenP
   const collectionsHeadingId = `sales-collections-heading-${reference}`;
   const { limit, offset, controls } = useServerPage(reference, collectionsHeadingId);
   const params = { limit, offset };
-  const detail = useQuery({ queryKey: ['partner-sales', 'invoice', reference, params], queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });
+  const detail = useQuery({ queryKey: salesKeys.invoice(reference, params), queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });
   const { invoice, balance, collections } = detail.data ?? {};
   const openerId = `sales-invoice-partner-${reference}`;
   return <section className="sales-paper" aria-labelledby={headingId}>

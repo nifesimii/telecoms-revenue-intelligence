@@ -36,9 +36,9 @@ def client(monkeypatch):
         yield test_client
 
 
-@pytest.mark.parametrize("statement", FIXTURES, ids=lambda s: f"{s['partnerCode']}-{s['period']}")
+@pytest.mark.parametrize("statement", FIXTURES, ids=lambda s: f"{s['accountCode']}-{s['period']}")
 def test_linked_fixture_reconciles_to_the_recorded_statement(client, statement):
-    response = client.get(f"/dealers/{statement['partnerCode']}/statement",
+    response = client.get(f"/dealers/{statement['accountCode']}/statement",
                           params={"mon_period": statement["period"]})
     assert response.status_code == 200
     recorded = response.json()
@@ -47,7 +47,7 @@ def test_linked_fixture_reconciles_to_the_recorded_statement(client, statement):
     assert _sum(statement, "activation", "settlement") == _minor(recorded["payment"]["amount_paid_ngn"])
     assert recorded["payment"]["payment_found"] is True
 
-    detail = client.get(f"/commissions/{statement['partnerCode']}/detail",
+    detail = client.get(f"/commissions/{statement['accountCode']}/detail",
                         params={"mon_period": statement["period"], "stream": "orsc"})
     if statement["subscriptionRecorded"]:
         assert detail.status_code == 200
@@ -64,7 +64,7 @@ def test_linked_fixture_reconciles_to_the_recorded_statement(client, statement):
 
 
 def test_linked_months_of_one_account_carry_the_closing_balance_forward():
-    may, june = [s for s in FIXTURES if s["partnerCode"] == "296065"]
+    may, june = [s for s in FIXTURES if s["accountCode"] == "296065"]
     earned = _sum(may, "activation", "earning") + _sum(may, "subscription", "earning")
     settled = _sum(may, "activation", "settlement") + _sum(may, "subscription", "settlement")
     assert june["openingMinor"] == may["openingMinor"] + earned - settled

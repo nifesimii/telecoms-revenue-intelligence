@@ -942,7 +942,7 @@ on the same (dealer, period).
   assurance/audit modules directly — go through `execute_query`. (This is a hard
   rule in `CLAUDE.md`.)
 - **Config via `backend/config.py`.** All env vars are read once there into
-  module constants. Don't call `os.getenv` elsewhere. `.env.example` documents
+  module constants. Don't call `os.getenv` elsewhere; test setup that configures a server it starts is exempt. `.env.example` documents
   every variable; copy it to `.env` for local runs.
 - **Mode flags.** `USE_SAMPLE_DATA` (CSV vs Presto) and `PAYMENT_SOURCE`
   (simulated vs apdp) are the two switches that change where data comes from.
@@ -965,6 +965,7 @@ on the same (dealer, period).
   | **Agent tool INPUT parameters** (`get_dealer_summary`, `get_zero_commission_records`, etc.) | `distributor_code` | Documented in CLAUDE.md and grounded into the KB. Renaming would invalidate the model's tool schema. |
   | **API response fields** (`GET /dealers`, `GET /payments/summary`, everything the frontend consumes) | `dealer_id` / `dealer_name` | User-facing vocabulary — Finance/RA talk about "dealers", not "distributors". Uniform across every endpoint. |
   | **Audit-trail subject** (`audit.verification_trail.partner_code`) | `partner_code` / `partner_name` | Generic — supports composite keys like `"{dealer}:{product}"` for the `inventory_mismatch` module. |
+  | **Partner Sales simulation** (`/partner-sales/*`, `backend/sales/`) | `account_code` | One exact trade partner account; same-named accounts have different codes. Used by the two-login demo sessions too. Never a dealer aggregate or an audit subject. |
 
   **How to remember this in code.**
   - If you're writing SQL or reading from a raw DataFrame → `distributor_code`.
