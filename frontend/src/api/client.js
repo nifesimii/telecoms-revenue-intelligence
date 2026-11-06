@@ -485,6 +485,16 @@ export async function getOwnOrder(reference, signal) {
   return data;
 }
 
+export async function getOwnInvoices(params, signal) {
+  const { data } = await api.get('/partner-sales/my/invoices', { params, signal });
+  return data;
+}
+
+export async function getOwnInvoice(reference, params, signal) {
+  const { data } = await api.get(`/partner-sales/my/invoices/${encodeURIComponent(reference)}`, { params, signal });
+  return data;
+}
+
 export default api;
 
 

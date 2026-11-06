@@ -137,6 +137,18 @@ def own_order(reference: str, account_code: OwnAccount) -> dict:
     return _run(lambda: simulation.order(account_code, reference))
 
 
+# A partner's own invoices and collections, read-only: recording a collection is Finance's.
+
+@router.get("/my/invoices")
+def own_invoices(account_code: OwnAccount, status: str = Query("", max_length=20), limit: Limit = 25, offset: Offset = 0) -> dict:
+    return _run(lambda: simulation.own_invoices(account_code, status, limit, offset))
+
+
+@router.get("/my/invoices/{reference}")
+def own_invoice(reference: str, account_code: OwnAccount, limit: Limit = 25, offset: Offset = 0) -> dict:
+    return _run(lambda: simulation.own_invoice(account_code, reference, limit, offset))
+
+
 # Finance's review of submitted partner orders.
 
 class OrderIssue(BaseModel):

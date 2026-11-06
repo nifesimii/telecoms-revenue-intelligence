@@ -209,6 +209,15 @@ def _latest_activity(records: list[dict]) -> str:
     return max((record["as_of"] for record in records), default="")
 
 
+def _without(record: dict, field: str) -> dict:
+    return {key: value for key, value in record.items() if key != field}
+
+
+def _summary(records: list[dict]) -> dict:
+    """Describes the whole matching set, whichever page is returned."""
+    return {"count": len(records), "outstanding_minor": _outstanding(records), "as_of": _latest_activity(records)}
+
+
 class SalesSimulation:
     def __init__(self) -> None:
         self._lock = threading.RLock()
@@ -327,28 +336,29 @@ class SalesSimulation:
             and (not status or record["status"] == status)
             and (term in record["partner"]["code"] or term in record["partner"]["name"].lower())
         ])
-        return {
-            **_page(matching, limit, offset),
-            "summary": {"count": len(matching), "outstanding_minor": _outstanding(matching), "as_of": _latest_activity(matching)},
-        }
+        return {**_page(matching, limit, offset), "summary": _summary(matching)}
+
+    def _detail(self, invoice: dict | None, limit: int, offset: int) -> dict:
+        if invoice is None:
+            raise SalesNotFound
+        balance = self._balance(invoice)
+        history = balance.pop("history")
+        return {"invoice": invoice, "balance": balance, "collections": _page(history, limit, offset)}
 
     def invoice_detail(self, reference: str, limit: int, offset: int) -> dict:
         with self._lock:
-            invoice = self._invoice(reference)
-            if invoice is None:
-                raise SalesNotFound
-            balance = self._balance(invoice)
-        history = balance.pop("history")
-        return {"invoice": invoice, "balance": balance, "collections": _page(history, limit, offset)}
+            return self._detail(self._invoice(reference), limit, offset)
+
+    def _account_records(self, account_code: str) -> list[dict]:
+        """One exact account's invoices from every issue month, newest first."""
+        with self._lock:
+            return _newest_first([self._invoice_record(invoice) for invoice in self._invoices if invoice["buyer"]["code"] == account_code])
 
     def obligations(self, account_code: str, limit: int, offset: int) -> dict:
         """One exact account across every month, up to its latest simulated activity."""
         if account_code not in _PARTNERS_BY_CODE:
             raise SalesNotFound
-        with self._lock:
-            invoices = _newest_first([
-                self._invoice_record(invoice) for invoice in self._invoices if invoice["buyer"]["code"] == account_code
-            ])
+        invoices = self._account_records(account_code)
         return {
             "invoices": _page(invoices, limit, offset),
             "outstanding_minor": _outstanding(invoices), "as_of": _latest_activity(invoices),
@@ -359,7 +369,7 @@ class SalesSimulation:
 
     def ordering_reference(self, account_code: str) -> dict:
         """What a partner may see: their own account, never the other partners."""
-        return {"account": _require_partner(account_code), "catalogue": CATALOGUE, "max_quantity": MAX_QUANTITY, "statuses": ORDER_STATUSES}
+        return {"account": _require_partner(account_code), "catalogue": CATALOGUE, "max_quantity": MAX_QUANTITY, "statuses": ORDER_STATUSES, "invoice_statuses": STATUSES}
 
     def order_draft(self, account_code: str) -> dict | None:
         with self._lock:
@@ -435,6 +445,26 @@ class SalesSimulation:
             if found is None:
                 raise SalesNotFound
             return _order_view(found)
+
+    def own_invoices(self, account_code: str, status: str, limit: int, offset: int) -> dict:
+        """A partner's invoices from every issue month, newest first."""
+        records = self._account_records(_require_partner(account_code)["code"])
+        matching = [record for record in records if not status or record["status"] == status]
+        return {**_page(matching, limit, offset), "summary": _summary(matching)}
+
+    def own_invoice(self, account_code: str, reference: str, limit: int, offset: int) -> dict:
+        """Read-only: without the invoice's token or Finance's action ids, the partner holds
+        nothing a change could send."""
+        code = _require_partner(account_code)["code"]
+        with self._lock:
+            invoice = self._invoice(reference)
+            detail = self._detail(invoice if invoice and invoice["buyer"]["code"] == code else None, limit, offset)
+        collections = detail["collections"]
+        return {
+            **detail,
+            "invoice": _without(detail["invoice"], "token"),
+            "collections": {**collections, "items": [_without(item, "action_id") for item in collections["items"]]},
+        }
 
     # Finance's review of submitted orders, across every partner.
 

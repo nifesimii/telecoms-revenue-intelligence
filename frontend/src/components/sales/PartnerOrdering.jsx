@@ -1,16 +1,17 @@
 // A partner's own ordering: one draft order built from the fictional catalogue, then
-// submitted to MTN Finance as a read-only order. The server takes the account from
-// the session, so nothing here names or chooses one.
+// submitted to MTN Finance as a read-only order, and the invoices Finance issued. The
+// server takes the account from the session, so nothing here names or chooses one.
 
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createOwnOrderDraft, deleteOwnOrderDraft, saveOwnOrderDraft, submitOwnOrderDraft } from '../../api/client.js';
 import { formatDate, formatMinorNGN } from '../../lib/format.js';
 import { draftPricing } from './draftPricing.js';
-import { ActionFailure, ReadState, useActionFailure, usePagedQuery } from './InvoiceViews.jsx';
+import { ActionFailure, InvoiceDetail, ReadState, useActionFailure, usePagedQuery } from './InvoiceViews.jsx';
 import OrderLines from './OrderLines.jsx';
+import PartnerInvoices from './PartnerInvoices.jsx';
 import { partnerLabel } from './salesDisplay.js';
-import { ownOrdersQuery, salesKeys, useOwnOrder, useOwnOrderDraft, useOwnOrderingReference } from './useSalesQueries.js';
+import { ownInvoiceQuery, ownOrdersQuery, salesKeys, useOwnOrder, useOwnOrderDraft, useOwnOrderingReference } from './useSalesQueries.js';
 import './sales.css';
 
 const ORDER_NOTE = 'Submitting sends this order to MTN Finance for review. A submitted order cannot be changed or withdrawn.';
@@ -24,27 +25,36 @@ export default function PartnerOrdering() {
     <div className="mt-2"><button type="button" className="sales-button" onClick={() => reference.refetch()}>Try again</button></div></div>;
 }
 
-function Ordering({ reference: { account, catalogue, max_quantity: maxQuantity } }) {
+// Where focus returns when the opener has gone, such as after a refresh changed the list.
+const LIST_HEADING = { order: 'sales-orders-heading', invoice: 'sales-own-invoices-heading' };
+const detailHeadingId = ({ type, reference }) => `sales-${type}-heading-${reference}`;
+
+function Ordering({ reference: { account, catalogue, max_quantity: maxQuantity, invoice_statuses: invoiceStatuses } }) {
   const pricing = draftPricing(catalogue, maxQuantity);
-  // An open order hides the rest, which stays mounted so returning finds its page.
+  // An open order or invoice hides the rest, which stays mounted so returning finds its page.
   const [open, setOpen] = useState(null);
-  const closeOrder = () => {
-    const openerId = open.openerId;
+  const openDetail = (type) => (reference, openerId) => {
+    const next = { type, reference, openerId };
+    setOpen(next);
+    requestAnimationFrame(() => document.getElementById(detailHeadingId(next))?.focus());
+  };
+  const closeDetail = () => {
+    const { type, openerId } = open;
     setOpen(null);
-    requestAnimationFrame(() => (document.getElementById(openerId) ?? document.getElementById('sales-orders-heading'))?.focus());
+    requestAnimationFrame(() => (document.getElementById(openerId) ?? document.getElementById(LIST_HEADING[type]))?.focus());
   };
   return <div className="sales-workspace mt-2 flex flex-col gap-6">
     <div>
       <p className="text-sm text-gray-700">Order fictional FBB devices and physical recharge cards from MTN for {partnerLabel(account)}.</p>
       <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. Your draft is private to you until you submit it. Nothing here is an actual order, invoice or commission.</p>
     </div>
-    {open && <OrderDetail reference={open.reference} onBack={closeOrder} />}
+    {open?.type === 'order' && <OrderDetail reference={open.reference} onBack={closeDetail} />}
+    {open?.type === 'invoice' && <InvoiceDetail reference={open.reference} headingId={detailHeadingId(open)} backLabel="Back to your invoices" onBack={closeDetail}
+      queryFor={ownInvoiceQuery} useRead={useQuery} />}
     <div className={open ? 'hidden' : 'flex flex-col gap-6'}>
       <DraftOrder account={account} pricing={pricing} />
-      <OrderList onOpen={(reference, openerId) => {
-        setOpen({ reference, openerId });
-        requestAnimationFrame(() => document.getElementById(`sales-order-heading-${reference}`)?.focus());
-      }} />
+      <OrderList onOpen={openDetail('order')} />
+      <PartnerInvoices statuses={invoiceStatuses} onOpen={openDetail('invoice')} />
     </div>
   </div>;
 }
@@ -334,7 +344,7 @@ function OrderList({ onOpen }) {
 
 function OrderDetail({ reference, onBack }) {
   const order = useOwnOrder(reference);
-  const headingId = `sales-order-heading-${reference}`;
+  const headingId = detailHeadingId({ type: 'order', reference });
   return <section className="sales-paper" aria-labelledby={headingId}>
     <p className="text-xs font-semibold tracking-widest uppercase text-amber-800">Fictional simulation</p>
     <h2 id={headingId} tabIndex={-1} className="text-lg font-semibold mt-1">Order {reference}</h2>

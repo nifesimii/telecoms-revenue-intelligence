@@ -27,6 +27,8 @@ class Access(Enum):
 _PARTNER_PATHS = (
     "/partner-sales/my/draft",
     "/partner-sales/my/draft/submit",
+    "/partner-sales/my/invoices",
+    "/partner-sales/my/invoices/{reference}",
     "/partner-sales/my/orders",
     "/partner-sales/my/orders/{reference}",
     "/partner-sales/my/reference",

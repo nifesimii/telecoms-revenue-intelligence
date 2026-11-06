@@ -1,6 +1,7 @@
 // Partner Sales invoice browsing: the bounded list, one partner's purchase
 // obligations and a frozen invoice with its collections. The server pages and totals
-// every set, and recording a collection goes through onRecordCollection.
+// every set, and recording a collection goes through onRecordCollection. Without it,
+// as for a partner, the invoice is read-only.
 
 import { useRef, useState } from 'react';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
@@ -270,6 +271,7 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
       {controls}
     </> : <p className="text-sm text-gray-600 mt-3">No collections recorded against this invoice yet.</p>}
     {balance.outstanding_minor === 0 ? <p className="text-sm font-medium mt-4">Paid in full. No further collections can be recorded.</p>
+      : !onRecord ? <p className="text-sm text-gray-600 mt-4">{formatMinorNGN(balance.outstanding_minor)} outstanding. MTN Finance records collections against this invoice. Refresh to see new ones.</p>
       : <form noValidate className="mt-4" aria-label={`Record a collection against ${invoice.reference}`} onSubmit={submit}>
         <div className="sales-dates">
           <div className="flex flex-col gap-2"><label className="sales-field">Collection date<input id={`sales-collection-date-${invoice.reference}`} type="date" min={invoice.issue_date} max="9999-12-31" disabled={recording} aria-invalid={Boolean(errors.date)} aria-describedby={errors.date ? dateErrorId : undefined} value={date} onChange={edit(setDate)} /></label>
@@ -284,9 +286,9 @@ function InvoiceCollections({ invoice, balance, collections, controls, headingId
 }
 
 // The heading shows at once, so opening an invoice can move focus before it loads.
-export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenPartner, onRecordCollection, onLoadLatest }) {
+export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenPartner, onRecordCollection, onLoadLatest, queryFor = invoiceQuery, useRead }) {
   const collectionsHeadingId = `sales-collections-heading-${reference}`;
-  const { query: detail, controls } = usePagedQuery(reference, collectionsHeadingId, (page) => invoiceQuery(reference, page), (data) => data.collections.pagination);
+  const { query: detail, controls } = usePagedQuery(reference, collectionsHeadingId, (page) => queryFor(reference, page), (data) => data.collections.pagination, useRead);
   const { invoice, balance, collections } = detail.data ?? {};
   // The refused form disappears while the invoice reloads, taking focus with it.
   const loadLatest = () => {
@@ -328,7 +330,7 @@ export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenP
     </>}
     <div className="sales-actions">
       <button type="button" className="sales-button" onClick={onBack}>{backLabel}</button>
-      {invoice && <button id={openerId} type="button" className="sales-button" onClick={() => onOpenPartner(invoice.buyer.code, openerId)}>View purchase obligations for {partnerLabel(invoice.buyer)}</button>}
+      {invoice && onOpenPartner && <button id={openerId} type="button" className="sales-button" onClick={() => onOpenPartner(invoice.buyer.code, openerId)}>View purchase obligations for {partnerLabel(invoice.buyer)}</button>}
     </div>
   </section>;
 }

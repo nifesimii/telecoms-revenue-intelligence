@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery as useMonthlessQuery } from '@tanstack/react-query';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
-import { getOrderQueue, getOwnOrder, getOwnOrderDraft, getOwnOrderingReference, getOwnOrders, getSalesInvoice, getSalesObligations, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
+import { getOrderQueue, getOwnInvoice, getOwnInvoices, getOwnOrder, getOwnOrderDraft, getOwnOrderingReference, getOwnOrders, getSalesInvoice, getSalesObligations, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
 
 const SALES = 'partner-sales';
 
@@ -20,6 +20,8 @@ export const salesKeys = {
   // Every page of a partner's order list, for invalidating them together.
   allOwnOrders: () => [SALES, 'own-orders'],
   ownOrder: (reference) => [SALES, 'own-order', reference],
+  ownInvoices: (params) => [SALES, 'own-invoices', params],
+  ownInvoice: (reference, params) => [SALES, 'own-invoice', reference, params],
 };
 
 // Everything that can change while the page is open. The reference data cannot.
@@ -42,3 +44,5 @@ export const useOwnOrderingReference = () => useMonthlessQuery({ queryKey: sales
 export const useOwnOrderDraft = () => useMonthlessQuery({ queryKey: salesKeys.ownDraft(), queryFn: ({ signal }) => getOwnOrderDraft(signal) });
 export const useOwnOrder = (reference) => useMonthlessQuery({ queryKey: salesKeys.ownOrder(reference), queryFn: ({ signal }) => getOwnOrder(reference, signal), retry: retryUnlessMissing });
 export const ownOrdersQuery = (params) => ({ queryKey: salesKeys.ownOrders(params), queryFn: ({ signal }) => getOwnOrders(params, signal), placeholderData: keepPreviousData });
+export const ownInvoicesQuery = (params) => ({ queryKey: salesKeys.ownInvoices(params), queryFn: ({ signal }) => getOwnInvoices(params, signal), placeholderData: keepPreviousData });
+export const ownInvoiceQuery = (reference, params) => ({ queryKey: salesKeys.ownInvoice(reference, params), queryFn: ({ signal }) => getOwnInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });

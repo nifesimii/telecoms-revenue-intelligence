@@ -35,9 +35,10 @@ async function mockApi(page, { signedInAs = null, reachable = true, configured =
     if (pathname === '/auth/session') return route.fulfill({ headers: cors, json: state.session });
     if (state.session.role === 'partner' && pathname.startsWith('/partner-sales/my/')) {
       const own = {
-        '/partner-sales/my/reference': { account: { code: state.session.account_code, name: 'River Isle Ventures' }, catalogue: [], max_quantity: 1000000, statuses: ['Submitted'] },
+        '/partner-sales/my/reference': { account: { code: state.session.account_code, name: 'River Isle Ventures' }, catalogue: [], max_quantity: 1000000, statuses: ['Submitted'], invoice_statuses: ['Unpaid'] },
         '/partner-sales/my/draft': { draft: null },
         '/partner-sales/my/orders': { items: [], pagination: { total: 0, returned: 0, offset: 0, limit: 25, has_more: false } },
+        '/partner-sales/my/invoices': { items: [], pagination: { total: 0, returned: 0, offset: 0, limit: 25, has_more: false }, summary: { count: 0, outstanding_minor: 0, as_of: '' } },
       }[pathname];
       return route.fulfill({ headers: cors, json: own });
     }
@@ -86,6 +87,7 @@ test('a partner sees only their own account and requests nothing internal', asyn
   const main = page.getByRole('main', { name: 'Partner Sales' });
   await expect(main.getByText('River Isle Ventures · Account 296065')).toBeVisible();
   await expect(main.getByText('You have not submitted any orders yet.')).toBeVisible();
+  await expect(main.getByText('MTN Finance has not issued you any invoices yet.')).toBeVisible();
   await expect(page.getByText('Signed in as Partner account 296065')).toBeVisible();
   await expect(page.getByText('Synthetic demonstration')).toBeVisible();
   await expect(workspaces(page)).toHaveCount(0);

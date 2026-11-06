@@ -419,7 +419,9 @@ frontend/src/
     │                       reset is refused. OrderReview.jsx is Finance's queue of submitted orders,
     │                       each issued as an invoice or rejected with a reason, once. A partner login
     │                       sees only PartnerOrdering.jsx: one private draft order for its own
-    │                       account and its orders with Finance's decisions, over /partner-sales/my/* (see
+    │                       account, its orders with Finance's decisions, and its invoices with their
+    │                       collections and balances read-only (PartnerInvoices.jsx; recording a
+    │                       collection is Finance's), over /partner-sales/my/* (see
     │                       docs/adr/0001-partner-sales-presentation-boundary.md,
     │                       docs/adr/0002-partner-sales-two-logins.md and docs/PARTNER_SALES_REHEARSAL.md).
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).

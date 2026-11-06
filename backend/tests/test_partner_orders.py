@@ -198,6 +198,7 @@ def test_the_partner_reads_their_own_account_and_the_catalogue(river_isle):
     assert published["max_quantity"] == 1_000_000
     assert [product["code"] for product in published["catalogue"]][:2] == [ROUTER, "FBB-4G-ROUTER"]
     assert "partners" not in published
+    assert published["invoice_statuses"] == ["Unpaid", "Partially paid", "Paid"]
 
 
 def test_reset_discards_drafts_and_orders_and_restarts_order_references(river_isle):

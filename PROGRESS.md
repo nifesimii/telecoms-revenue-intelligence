@@ -3,6 +3,25 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-06 (Partner Sales: partner sees invoices and balances, #12)
+
+- A partner login now sees "Your invoices" under its orders. It lists the invoices Finance issued to its
+  account from every issue month, newest first, with a status filter and totals over every matching
+  invoice. Opening one shows the invoice detail read-only: lines, dates, the order it came from, its
+  collections and the outstanding balance. There is no collection form and no link to obligations. Routes
+  are `GET /partner-sales/my/invoices` and `/my/invoices/{reference}`. Like every `/my/*` route, the
+  account comes from the session, and another account's invoice is a 404, the same as a missing one.
+- Recording a collection stays internal-only: a partner gets 403 and the balance is unchanged. The partner
+  detail leaves out the invoice token and Finance's collection action ids.
+- Decided here: one `InvoiceDetail` serves both sides. Without `onRecordCollection` it is read-only, and a
+  query factory lets it read the partner route. `/my/reference` now publishes `invoice_statuses` for the filter.
+- Acceptance: the two-login journey now goes past issuing. Finance records NGN 40,000 and then NGN 70,000,
+  the partner sees Partially paid and then Paid after each refresh, and partner-353072 sees none of it. A
+  new journey covers the read-only detail by keyboard at 360px, the partner's refused collection and the
+  status filter.
+- Next: #13 (the partner's Commission Account), then #14.
+- Verification: backend 1,419 passed and 37 skipped; acceptance 97 passed; the production build passed.
+
 ## Session — 2026-11-06 (Partner Sales: every invoice comes from a partner order, #15)
 
 - Finance can no longer draft or issue an invoice directly. The `/partner-sales/drafts` routes, their access
