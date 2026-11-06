@@ -15,4 +15,7 @@ configuration leaves the application closed, never open.
 Simulation records stay in server memory, separate from every financial evidence
 source, and return to the seed on restart. This is not production identity or a
 partner portal: a real pilot needs enterprise identity, audit logging, a production
-datastore, and invoicing and tax sign-off, as a separate scope decision.
+datastore, and invoicing and tax sign-off, as a separate scope decision. A partner
+ordering in the simulation is therefore not the partner self-service portal that stays
+out of scope: it changes only fictional simulation records and reads no partner's
+financial evidence.
