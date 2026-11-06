@@ -58,12 +58,15 @@ _Avoid_: Receivable account (without identifying whose receivable and its source
 
 **Simulated invoice**:
 A fictional invoice used to demonstrate a sales workflow. It does not establish
-an actual purchase obligation or an invoice issued by MTN.
+an actual purchase obligation or an invoice issued by MTN. Each one comes from a
+partner order MTN Finance issued, apart from the example invoices the simulation
+starts with.
 
-**Draft**:
-An unissued simulated invoice being prepared for one trade partner account. It
-establishes no obligation, and what it contains when issued is what the preview showed.
-_Avoid_: Proforma, quote
+**Draft order**:
+An unsubmitted partner order a partner login is preparing for its own account. It
+is private to that partner and establishes no obligation. Finance has no invoice
+drafts: it issues what partners submit.
+_Avoid_: Proforma, quote, invoice draft
 
 **Simulation reset**:
 Returning the whole simulation to its starting example records for everyone signed in.
@@ -99,7 +102,7 @@ What a partner login submits from its own draft order: fixed lines and total und
 `SIM-ORD-` reference, read-only once submitted. It is not an invoice or a purchase
 obligation; only MTN Finance issuing it makes one. A draft order is private to its
 partner and reaches Finance only by submission.
-_Avoid_: Purchase order, invoice draft (an internal draft priced for one issue month)
+_Avoid_: Purchase order
 
 **Rejected order**:
 A partner order MTN Finance declined, with the reason it gave the partner. It is final:

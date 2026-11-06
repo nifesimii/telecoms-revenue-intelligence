@@ -407,8 +407,8 @@ frontend/src/
     │                       full-period summary and on-demand account evidence.
     ├── inventory/          Inventory Intelligence tab + DataCoverageTicketModal.
     ├── payment/            Payment Intelligence tab + DisputeDraftModal.
-    ├── sales/              Partner Sales presentation simulation over /partner-sales: drafts,
-    │                       one-time issuance of frozen invoices,
+    ├── sales/              Partner Sales presentation simulation over /partner-sales: invoices
+    │                       frozen once from issued partner orders (Finance has no invoice drafts),
     │                       idempotent invoice collections, a bounded invoice list and partner
     │                       purchase obligations. Collections never touch commission. A separate
     │                       fictional Partner Commission Account links to existing explanations
@@ -465,7 +465,7 @@ workspaces. Public view IDs remain `overview`, `commission`, `activation`,
 
 Workspace switches push history entries; initial URL normalization and period
 changes replace the current entry. `popstate` restores the URL view and month.
-`partner-sales` is a fictional simulation. Its drafts, invoices and collections live in
+`partner-sales` is a fictional simulation. Its partner orders, invoices and collections live in
 server process memory (`backend/sales/simulation.py`, `/partner-sales/*`), reset on restart, and never reach
 Atlas, the audit datastore or other workspaces. The header shows the synthetic badge there even in live-read mode. Its commission statements are fixtures too; only the account and month leave
 the browser, in existing GET reads that are skipped in live-read mode. Explanation handoffs carry a serializable

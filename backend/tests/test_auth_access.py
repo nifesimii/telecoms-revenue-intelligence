@@ -46,6 +46,10 @@ def test_every_route_has_an_access_classification():
     assert {path for _, path in api_operations()} - set(access.ROUTE_ACCESS) == set()
 
 
+def test_every_access_classification_names_a_route():
+    assert set(access.ROUTE_ACCESS) - {path for _, path in api_operations()} == set()
+
+
 def test_only_the_expected_routes_are_open():
     open_paths = {path for path, level in access.ROUTE_ACCESS.items() if level is access.Access.OPEN}
     assert open_paths == {"/health", "/auth/login", "/auth/logout"}

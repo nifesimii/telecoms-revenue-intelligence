@@ -19,25 +19,9 @@ Offset = Annotated[int, Query(ge=0)]
 Token = Annotated[str, Field(min_length=1, max_length=64)]
 
 
-class NewDraft(BaseModel):
-    account_code: str = Field(max_length=20)
-    mon_period: str = Field(pattern=PERIOD_PATTERN)
-
-
 class DraftLine(BaseModel):
     product_code: str = Field(max_length=40)
     quantity: str = Field(max_length=20)
-
-
-class DraftChange(BaseModel):
-    token: Token
-    issue_date: str = Field(max_length=20)
-    due_date: str = Field(max_length=20)
-    lines: list[DraftLine] = Field(max_length=len(CATALOGUE))
-
-
-class IssueRequest(BaseModel):
-    token: Token
 
 
 class NewCollection(BaseModel):
@@ -76,27 +60,6 @@ def reset() -> dict:
 @router.get("/records")
 def records(mon_period: Period, search: str = Query("", max_length=200), status: str = Query("", max_length=20), limit: Limit = 25, offset: Offset = 0) -> dict:
     return simulation.records(mon_period, search, status, limit, offset)
-
-
-@router.get("/drafts")
-def draft_for(account_code: str, mon_period: Period) -> dict:
-    return {"draft": simulation.draft_for(account_code, mon_period)}
-
-
-@router.post("/drafts")
-def create_draft(body: NewDraft) -> dict:
-    return _run(lambda: simulation.create_draft(body.account_code, body.mon_period))
-
-
-@router.put("/drafts/{reference}")
-def update_draft(reference: str, body: DraftChange) -> dict:
-    lines = [line.model_dump() for line in body.lines]
-    return _run(lambda: simulation.update_draft(RecordHandle(reference, body.token), body.issue_date, body.due_date, lines))
-
-
-@router.post("/drafts/{reference}/issue")
-def issue_draft(reference: str, body: IssueRequest) -> dict:
-    return _run(lambda: simulation.issue(RecordHandle(reference, body.token)))
 
 
 @router.get("/invoices/{reference}")

@@ -3,6 +3,26 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-06 (Partner Sales: every invoice comes from a partner order, #15)
+
+- Finance can no longer draft or issue an invoice directly. The `/partner-sales/drafts` routes, their access
+  entries, the draft editor, preview and autosave are gone. A new access test fails if a classification names a
+  route that no longer exists. Lists, summaries and obligations hold invoices only: there is no drafts count, no
+  `is_draft`, and no Draft status filter. The status key is now `next_invoice_reference`, and the reset notice
+  reads "the next invoice will be SIM-INV-0004". The reset confirmation no longer counts drafts but still
+  mentions partners' draft orders.
+- This resolves the previous session's "kept on purpose: the internal invoice-draft flow".
+- Decided here: the three example invoices are built directly in the simulation, with no orders behind them.
+  SIM-ORD-0001 stays the waiting order. `_issue` is the one path for both the examples and an issued order.
+- Acceptance: the draft-only journeys were deleted, not ported. The handoff and complete-presentation journeys
+  now go partner submission → Finance issue. The other tests start from a prepared simulation.
+- Found while testing: a spec that clears captured requests right after opening the Overview can catch that
+  page's failed read retrying (TanStack `retry: 1`). It now opens Partner Sales directly.
+- Rehearsal: only steps 1–5 (invoice creation) were rewritten: partner-296065 orders, Finance issues
+  SIM-INV-0004. The duplicate step-9 row is left for #14.
+- Verification: backend 1,401 passed and 37 skipped; acceptance 96 passed (Partner Sales spec 76, also 3
+  repeats); the production build passed.
+
 ## Session — 2026-11-06 (Partner Sales: Finance issues or rejects an order, #11)
 
 - Finance's Partner Sales workspace opens on "Orders awaiting review": submitted orders from every partner,

@@ -409,26 +409,6 @@ export async function getSalesRecords(params, signal) {
   return data;
 }
 
-export async function getSalesDraft(account_code, mon_period, signal) {
-  const { data } = await api.get('/partner-sales/drafts', { params: { account_code, mon_period }, signal });
-  return data;
-}
-
-export async function createSalesDraft(account_code, mon_period) {
-  const { data } = await api.post('/partner-sales/drafts', { account_code, mon_period });
-  return data;
-}
-
-export async function updateSalesDraft(reference, change) {
-  const { data } = await api.put(`/partner-sales/drafts/${encodeURIComponent(reference)}`, change);
-  return data;
-}
-
-export async function issueSalesDraft(reference, token) {
-  const { data } = await api.post(`/partner-sales/drafts/${encodeURIComponent(reference)}/issue`, { token });
-  return data;
-}
-
 export async function getSalesInvoice(reference, params, signal) {
   const { data } = await api.get(`/partner-sales/invoices/${encodeURIComponent(reference)}`, { params, signal });
   return data;

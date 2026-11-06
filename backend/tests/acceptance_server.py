@@ -21,7 +21,7 @@ config.DEMO_LOGINS = json.dumps([
 ])
 
 from backend.main import app  # noqa: E402
-from backend.sales.simulation import _draft_key, simulation  # noqa: E402
+from backend.sales.simulation import simulation  # noqa: E402
 
 
 @app.put("/__acceptance__/simulation", status_code=204)
@@ -29,7 +29,6 @@ def replace_simulation(state: dict) -> None:
     with simulation._lock:
         simulation._next_sequence = state["next_sequence"]
         simulation._next_collection_sequence = state["next_collection_sequence"]
-        simulation._drafts = {_draft_key(draft["account_code"], draft["period"]): draft for draft in state["drafts"]}
         simulation._invoices = state["invoices"]
         simulation._collections = state["collections"]
         simulation._next_order_sequence = state.get("next_order_sequence", 1)

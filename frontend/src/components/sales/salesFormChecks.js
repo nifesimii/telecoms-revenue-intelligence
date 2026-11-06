@@ -25,17 +25,6 @@ const isDate = (value) => /^\d{4}-\d{2}-\d{2}$/.test(value) && new Date(`${value
 // Date-only values compare correctly as strings and never shift across time zones.
 const inMonth = (date, period) => date.slice(0, 7) === `${period.slice(0, 4)}-${period.slice(4, 6)}`;
 
-export function issueDateError(draft, periodLabel) {
-  if (!draft.issue_date) return 'Enter an intended issue date.';
-  return isDate(draft.issue_date) && inMonth(draft.issue_date, draft.period) ? null : `Choose a date in ${periodLabel}.`;
-}
-
-export function dueDateError(draft) {
-  if (!draft.due_date) return null;
-  if (!isDate(draft.due_date)) return 'Enter a valid due date.';
-  return draft.issue_date && draft.due_date < draft.issue_date ? 'Due date cannot be before the issue date.' : null;
-}
-
 // Issuing a partner order sets both dates. The invoice's month is its issue date's, so
 // keeping that in the selected month keeps the invoice in the list being reviewed.
 export function orderIssueErrors({ issueDate, dueDate }, period, periodLabel) {

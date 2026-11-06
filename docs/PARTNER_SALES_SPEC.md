@@ -6,6 +6,9 @@ await confirmation. Issue-tracker setup is not recorded; publication is pending.
 > Partly superseded by [ADR 0002](adr/0002-partner-sales-two-logins.md). Partner and
 > internal logins and server-held simulation records replace the presenter-only,
 > browser-session behavior described here. GitHub issue #7 has the current design.
+> Since issue #15, Finance no longer drafts invoices: every invoice comes from a
+> partner order that Finance issues, apart from the seeded example invoices. The
+> invoice stories and defaults below are written that way.
 
 ## Problem Statement
 
@@ -49,15 +52,15 @@ a partner portal, or a replacement commission engine.
 6. As a presenter, I want to retain my reporting month when entering the workspace, so that the sales and commission story has a consistent context.
 7. As a presenter, I want a catalogue containing FBB devices and physical recharge cards, so that I can demonstrate the agreed product range.
 8. As a presenter, I want to see each product's code, description, unit, and fictional unit price, so that invoice lines are understandable.
-9. As a presenter, I want to create an invoice draft for one selected partner, so that the buyer is explicit before issuance.
-10. As a presenter, I want to add multiple products and quantities to a draft, so that a mixed purchase can be demonstrated.
-11. As a presenter, I want to edit or remove draft lines, so that mistakes can be corrected before issuance.
-12. As a presenter, I want invalid quantities or incomplete drafts to produce clear validation messages, so that I can correct the input.
+9. As a presenter, I want each invoice to come from one partner's submitted order, so that the buyer is explicit before issuance.
+10. As a presenter, I want a partner order to hold multiple products and quantities, so that a mixed purchase can be demonstrated.
+11. As a partner, I want to edit or remove lines of my draft order, so that mistakes can be corrected before submission.
+12. As a partner, I want invalid quantities or an empty order to produce clear validation messages, so that I can correct the input.
 13. As a Finance user, I want line totals and invoice totals to reconcile exactly, so that the displayed purchase obligation is credible.
-14. As a presenter, I want to preview the draft with seller, buyer, reference, dates, lines, and total, so that I can explain it before issuance.
-15. As a presenter, I want to simulate issuance explicitly, so that saving a draft does not create an outstanding invoice balance.
+14. As a Finance user, I want to review a submitted order's partner, lines, and total before issuing it, so that I can explain it before issuance.
+15. As a Finance user, I want to issue an order explicitly, so that submitting an order does not create an outstanding invoice balance.
 16. As a Finance user, I want an issued invoice's commercial details to remain fixed, so that later payments refer to a stable obligation.
-17. As a presenter, I want to distinguish draft, unpaid, partially paid, and paid invoices, so that each example is easy to explain.
+17. As a presenter, I want to distinguish unpaid, partially paid, and paid invoices, so that each example is easy to explain.
 18. As a presenter, I want to record a fictional payment against an issued invoice, so that I can demonstrate collection.
 19. As a presenter, I want to record a partial payment, so that the remaining balance is visible.
 20. As a presenter, I want to record the remaining payment, so that an invoice can reach a paid state.
@@ -93,8 +96,7 @@ a partner portal, or a replacement commission engine.
   trade-partner-to-retailer invoicing.
 - The catalogue covers FBB devices and physical recharge cards. Recharge-card
   commission policies and calculations are excluded.
-- Support draft creation and editing, preview, simulated issuance, partial/full
-  payment recording, invoice balances, and a dated Partner Commission Account.
+- Support simulated issuance of partner orders, partial/full payment recording, invoice balances, and a dated Partner Commission Account.
 - Sales obligations and commission outstanding are separately labelled. There
   is no combined net balance, commission wallet, or commission-funded payment.
 - Commission entries are recorded evidence or explicit fictional demonstration
@@ -115,33 +117,31 @@ a partner portal, or a replacement commission engine.
 These details close unspecified implementation choices; they were not separately
 approved business policies. They apply only to this presentation simulation.
 
-- Keep synthetic invoice drafts, issued invoices, and collections in a dedicated
-  browser simulation store. Use session-scoped persistence across refresh and
-  workspace navigation, with explicit reset to versioned seed data. Do not share
-  records between users or write them to backend financial sources. If storage
-  is unavailable or incompatible, show a clear recovery/reset state.
+- Keep partner orders, synthetic issued invoices and collections in one
+  in-memory server simulation shared by every login, with explicit reset to the
+  starting example records. Never write them to backend financial sources.
 - Use a small, explicitly bounded fictional catalogue and partner cohort. New
   invoice and activity lists use bounded views (at most 100 rows per page),
   deterministic ordering, and summaries over the complete matching simulation
-  set. Browser-owned simulation state is not a replacement for backend-owned
+  set. The simulation's own lists are not a replacement for backend-owned
   Inventory or Payments collection processing.
 - Represent money with exact minor-unit arithmetic and display NGN X,XXX,XXX.XX.
   Catalogue prices are fixed demo values; quantities are positive whole units.
   Invoice totals are the sum of line totals. Taxes and discounts are not modeled;
   the preview must say this is a simplified demonstration, not a tax invoice.
 - An invoice includes a stable simulation identifier/reference, exact dealer
-  account, seller label, issue date, optional due date, currency, product lines,
+  account, seller label, issue date, due date, currency, product lines,
   quantities, unit prices, total, and synthetic provenance. Use date-only values
   consistently and do not change amounts when the reporting month changes.
-- Drafts do not contribute to invoice obligations. On simulated issuance,
+- Partner orders do not contribute to invoice obligations. On simulated issuance,
   freeze partner, lines, and total. Status derives from issuance and collections:
   unpaid when none, partially paid when below total, paid when equal to total.
-  Issuance must not occur twice for the same draft.
+  Issuance must not occur twice for the same order.
 - Payments apply to one issued invoice and contain a unique action identifier,
   date, reference, and positive amount no greater than its outstanding balance.
-  Duplicate submission of the same action is idempotent. Reject draft payments,
-  payments dated before issuance, and payments on fully paid invoices.
-- Invoice lists are scoped by invoice issue month (drafts by intended issue month).
+  Duplicate submission of the same action is idempotent. Reject payments on
+  anything not issued, payments dated before issuance, and payments on fully paid invoices.
+- Invoice lists are scoped by invoice issue month.
   Detail shows all recorded collections and an explicit balance-as-of date;
   later collections must not be silently presented as a historical month-end
   balance. Commission statements are scoped to the selected calendar month.
@@ -182,7 +182,7 @@ Proposed boundaries await user confirmation before issue publication.
   statement evidence tests. Browser checks are documented, but the frontend
   package currently has no configured browser-test runner. The implementation
   must establish a reproducible browser acceptance harness for this boundary.
-- Cover draft editing and validation; exact invoice totals; one-time issuance;
+- Cover order validation; exact invoice totals; one-time issuance;
   partial and full payments; invalid and duplicate payment actions; isolation
   between partners; deterministic paging/filter summaries; and unchanged
   commission balances after all sales actions.
@@ -237,7 +237,7 @@ sample evidence instead.
 1. Simulation foundation: bounded seed catalogue/cohort, invoice and collection
    behavior, provenance, exact money, session persistence/reset, and browser
    acceptance harness. Establish a minimal observable workspace entry point.
-2. Partner Sales invoice journey: partner selection, drafts, validation, preview,
+2. Partner Sales invoice journey: partner selection, order review,
    one-time issuance, invoice list, filtering/paging, and partner detail.
 3. Collections: partial/full payments, history, duplicate-action protection,
    outstanding summaries, and invalid-action behavior.

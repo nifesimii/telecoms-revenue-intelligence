@@ -29,11 +29,11 @@ Records are shared and outlast the tab, so start at step 1 unless the API server
 
 | # | Do | Expect |
 | --- | --- | --- |
-| 1 | **Reset simulation**, then **Reset to starting point** | Notice says 3 example invoices in May 2026 and the next draft will be SIM-INV-0004. No partner selected. 3 matching records: Paid, Partially paid and Unpaid, with NGN 180,000.00 outstanding. |
-| 2 | Select **River Isle Ventures · Account 296065**, then **Create draft** | Draft SIM-INV-0004, May 2026, intended issue date 31 May 2026. |
-| 3 | Add **FBB-5G-ROUTER**, quantity 2. Add **RCC-0100**, quantity 100 | Lines NGN 100,000.00 and NGN 10,000.00. Draft total NGN 110,000.00. |
-| 4 | **Preview invoice** | MTN as seller, the exact account as buyer, total NGN 110,000.00, and a statement that this is not a tax invoice. |
-| 5 | **Issue simulated invoice** | Status Unpaid. Outstanding NGN 110,000.00. |
+| 1 | **Reset simulation**, then **Reset to starting point** | Notice says 3 example invoices in May 2026 and the next invoice will be SIM-INV-0004. No partner selected. 3 matching invoices: Paid, Partially paid and Unpaid, with NGN 180,000.00 outstanding. Order SIM-ORD-0001 awaits review. |
+| 2 | In a second browser window, sign in as **partner-296065** and **Start a draft order** | An empty draft order for River Isle Ventures · Account 296065. |
+| 3 | Add **FBB-5G-ROUTER**, quantity 2. Add **RCC-0100**, quantity 100. **Preview order**, then **Submit order** | Lines NGN 100,000.00 and NGN 10,000.00, total NGN 110,000.00. The order is listed as SIM-ORD-0002, Submitted. |
+| 4 | Back in the Finance window, refresh the page, then **Review** SIM-ORD-0002 | The order for River Isle Ventures · Account 296065, total NGN 110,000.00, with issue date 31 May 2026. |
+| 5 | Enter a due date, then **Issue invoice** | Invoice SIM-INV-0004 from partner order SIM-ORD-0002. Status Unpaid. Outstanding NGN 110,000.00. |
 | 6 | Record a collection of **40000** | Recorded SIM-PAY-0003. Status Partially paid. Outstanding NGN 70,000.00. |
 | 7 | Optional: refresh the page, then open SIM-INV-0004 from the list | The invoice and collection are still there. A refresh returns to the list and clears list filters. |
 | 8 | Record a collection of **70000** | Recorded SIM-PAY-0004. Status Paid. Collected NGN 110,000.00. Outstanding NGN 0.00. History shows NGN 70,000.00 then NGN 0.00 outstanding after each collection. |
