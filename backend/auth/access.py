@@ -32,6 +32,7 @@ _PARTNER_PATHS = (
     "/partner-sales/my/orders",
     "/partner-sales/my/orders/{reference}",
     "/partner-sales/my/reference",
+    "/partner-sales/my/statement",
 )
 
 
@@ -80,6 +81,7 @@ _INTERNAL_PATHS = (
     "/partner-sales/orders/{reference}/issue",
     "/partner-sales/orders/{reference}/reject",
     "/partner-sales/partners/{account_code}/obligations",
+    "/partner-sales/partners/{account_code}/statement",
     "/partner-sales/records",
     "/partner-sales/reference",
     "/partner-sales/reset",

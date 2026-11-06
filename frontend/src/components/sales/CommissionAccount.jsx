@@ -1,15 +1,17 @@
-// One partner's fictional commission statement for the selected reporting month.
+// One partner's fictional commission statement for one month, read from the server.
+// Finance sees it with explanation links; a partner sees the same statement without.
 
 import useQuery from '../../hooks/useWorkspaceQuery.js';
 import { getCommissionDetail, getDealerStatement, getHealth } from '../../api/client.js';
 import { formatCount, formatDate, formatMinorNGN, formatPeriod } from '../../lib/format.js';
-import { displayAmount, useBoundedPage } from './InvoiceViews.jsx';
+import { ReadState, displayAmount, useBoundedPage } from './InvoiceViews.jsx';
 import { partnerLabel } from './salesDisplay.js';
-import { STREAMS, closingGaps, reconcilesWithRecorded, sortedActivity, statementFor, summarizeStatement } from './commissionAccount.js';
+import { STREAMS, closingGaps, reconcilesWithRecorded, sortedActivity, summarizeStatement } from './commissionAccount.js';
+import { statementQuery } from './useSalesQueries.js';
 
 const displayStreamAmount = ({ status, minor }) => (status === 'not_recorded' ? 'No source records' : displayAmount(minor));
 const STREAM_LABEL = Object.fromEntries(STREAMS);
-const entryLabel = (item) => (item.amountMinor === 0 ? `Recorded zero ${item.kind}` : item.kind === 'earning' ? 'Earning' : 'Settlement');
+const entryLabel = (item) => (item.amount_minor === 0 ? `Recorded zero ${item.kind}` : item.kind === 'earning' ? 'Earning' : 'Settlement');
 
 function ClosingNote({ summary }) {
   const gaps = closingGaps(summary);
@@ -54,11 +56,11 @@ function Activity({ statement, summary, partner, period, headingId }) {
           <th scope="row"><span className="block whitespace-nowrap">{formatDate(item.date)}</span>
             <span className="block md:hidden font-semibold mt-1">{item.reference}</span>
             <span className="block md:hidden mt-1">{STREAM_LABEL[item.stream]} · {entryLabel(item)}</span>
-            <span className="block md:hidden font-semibold mt-1 whitespace-nowrap">{formatMinorNGN(item.amountMinor)}</span></th>
+            <span className="block md:hidden font-semibold mt-1 whitespace-nowrap">{formatMinorNGN(item.amount_minor)}</span></th>
           <td className="hidden md:table-cell font-semibold">{item.reference}</td>
           <td className="hidden md:table-cell">{STREAM_LABEL[item.stream]}</td>
           <td className="hidden md:table-cell">{entryLabel(item)}</td>
-          <td className="sales-amount hidden md:table-cell">{formatMinorNGN(item.amountMinor)}</td>
+          <td className="sales-amount hidden md:table-cell">{formatMinorNGN(item.amount_minor)}</td>
         </tr>)}</tbody>
       </table>
       {controls}
@@ -101,26 +103,24 @@ function ExplanationLinks({ statement, summary, partner, period, onExplain }) {
         <p className="text-sm text-gray-600 mt-2">Period earnings and settlements match recorded evidence for {accountLabel}, {periodLabel}, stream by stream. Existing explanations show period-only totals, so they {summary.openingMinor === null ? 'carry no opening balance. The opening balance is unavailable here too' : `do not include the fictional opening carry-forward of ${formatMinorNGN(summary.openingMinor)}`}.</p>
         <div className="sales-actions">
           {button('activation', 'Explain activation commission', 'commission', { stream: 'activation' })}
-          {statement.subscriptionRecorded && button('subscription', 'Explain subscription commission', 'commission', { stream: 'orsc' })}
+          {statement.subscription_recorded && button('subscription', 'Explain subscription commission', 'commission', { stream: 'orsc' })}
           {button('settlement', 'Explain settlement', 'payment', { tab: 'all' })}
         </div>
       </>}
   </section>;
 }
 
-export default function CommissionAccount({ partner, period, headingId, backLabel, onBack, onExplain, onOpenObligations }) {
-  const statement = statementFor(partner.code, period);
+// The statement itself, the same for Finance and the partner. A missing statement
+// leaves every figure unavailable, never zero.
+export function CommissionStatement({ statement, partner, period }) {
   const periodLabel = formatPeriod(period);
   const summary = summarizeStatement(statement);
-  return <section className="sales-paper" aria-labelledby={headingId}>
-    <p className="text-xs font-semibold tracking-widest uppercase text-amber-800">Fictional simulation</p>
-    <h2 id={headingId} tabIndex={-1} className="text-lg font-semibold mt-1">Partner Commission Account for {partnerLabel(partner)}</h2>
-    <p className="text-xs text-gray-600 mt-1">Statement for {periodLabel}</p>
+  return <>
     <p className="sales-notice mt-3">Fictional statement: its opening balance, dates, references and the way amounts divide into entries are demonstration values, not recorded evidence or amounts owed. Commission here is what MTN would owe the partner. Purchase obligations are a separate balance, and invoices and collections never change this account. Recharge-card commissions are excluded.</p>
     {!statement && <p role="status" className="text-sm text-gray-600 mt-4">No fictional statement exists for {partnerLabel(partner)} in {periodLabel}. These amounts are unavailable, not zero.</p>}
     <dl className="sales-facts" aria-label="Statement reconciliation">
       <div><dt>Opening outstanding</dt><dd>{displayAmount(summary.openingMinor)}</dd>
-        {statement?.openingReference && <dd className="text-xs !font-normal text-gray-600">Source reference {statement.openingReference}</dd>}</div>
+        {statement?.opening_reference && <dd className="text-xs !font-normal text-gray-600">Source reference {statement.opening_reference}</dd>}</div>
       <div><dt>Period earnings</dt><dd>{displayAmount(summary.earningsMinor)}</dd></div>
       <div><dt>Period settlements</dt><dd>{displayAmount(summary.settlementsMinor)}</dd></div>
       <div><dt>Closing outstanding</dt><dd>{displayAmount(summary.closingMinor)}</dd></div>
@@ -131,12 +131,26 @@ export default function CommissionAccount({ partner, period, headingId, backLabe
       <dl className="sales-facts">
         <div><dt>Period-only outstanding</dt><dd>{displayAmount(summary.periodOutstandingMinor)}</dd>
           <dd className="text-xs !font-normal text-gray-600">Period earnings less period settlements, before any opening balance.</dd></div>
-        <div><dt>Subscription revenue</dt><dd>{statement.subscriptionRevenueMinor !== null ? formatMinorNGN(statement.subscriptionRevenueMinor) : statement.subscriptionRecorded ? 'Unavailable' : 'No source records'}</dd>
+        <div><dt>Subscription revenue</dt><dd>{statement.subscription_revenue_minor !== null ? formatMinorNGN(statement.subscription_revenue_minor) : statement.subscription_recorded ? 'Unavailable' : 'No source records'}</dd>
           <dd className="text-xs !font-normal text-gray-600">Revenue is not commission entitlement, and it is in no total on this statement.</dd></div>
       </dl>
       <Activity statement={statement} summary={summary} partner={partner} period={period} headingId={`sales-commission-activity-${partner.code}`} />
     </>}
-    <ExplanationLinks statement={statement} summary={summary} partner={partner} period={period} onExplain={onExplain} />
+  </>;
+}
+
+export default function CommissionAccount({ partner, period, headingId, backLabel, onBack, onExplain, onOpenObligations }) {
+  const read = useQuery(statementQuery(partner.code, period));
+  const statement = read.data?.statement ?? null;
+  return <section className="sales-paper" aria-labelledby={headingId}>
+    <p className="text-xs font-semibold tracking-widest uppercase text-amber-800">Fictional simulation</p>
+    <h2 id={headingId} tabIndex={-1} className="text-lg font-semibold mt-1">Partner Commission Account for {partnerLabel(partner)}</h2>
+    <p className="text-xs text-gray-600 mt-1">Statement for {formatPeriod(period)}</p>
+    <ReadState query={read} what="commission statement" />
+    {read.data && <>
+      <CommissionStatement statement={statement} partner={partner} period={period} />
+      <ExplanationLinks statement={statement} summary={summarizeStatement(statement)} partner={partner} period={period} onExplain={onExplain} />
+    </>}
     <div className="sales-actions"><button type="button" className="sales-button" onClick={onBack}>{backLabel}</button>
       <button id={`sales-commission-obligations-${partner.code}`} type="button" className="sales-button" onClick={() => onOpenObligations(partner.code, `sales-commission-obligations-${partner.code}`)}>View purchase obligations for {partnerLabel(partner)}</button></div>
   </section>;

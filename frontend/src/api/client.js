@@ -495,6 +495,16 @@ export async function getOwnInvoice(reference, params, signal) {
   return data;
 }
 
+export async function getPartnerStatement(accountCode, period, signal) {
+  const { data } = await api.get(`/partner-sales/partners/${encodeURIComponent(accountCode)}/statement`, { params: { mon_period: period }, signal });
+  return data;
+}
+
+export async function getOwnStatement(period, signal) {
+  const { data } = await api.get('/partner-sales/my/statement', { params: { mon_period: period }, signal });
+  return data;
+}
+
 export default api;
 
 

@@ -369,8 +369,11 @@ backend/
 │                            save tokens.
 │
 ├── sales/                 simulation.py — the fictional Partner Sales simulation, in
-│                          process memory. Served by api/sales_routes.py. Touches no
-│                          financial source (docs/adr/0002-partner-sales-two-logins.md).
+│                          process memory. statements.py — the fixed fictional Partner
+│                          Commission Account statements (linked ones in
+│                          linked_commission_statements.json), served per account so a
+│                          partner receives only their own. Served by api/sales_routes.py.
+│                          Touches no financial source (docs/adr/0002-partner-sales-two-logins.md).
 │
 ├── models/                Pydantic domain models (e.g. activation_summary).
 ├── data/                  generate_payment_simulation.py — builds the simulated
@@ -421,7 +424,8 @@ frontend/src/
     │                       sees only PartnerOrdering.jsx: one private draft order for its own
     │                       account, its orders with Finance's decisions, and its invoices with their
     │                       collections and balances read-only (PartnerInvoices.jsx; recording a
-    │                       collection is Finance's), over /partner-sales/my/* (see
+    │                       collection is Finance's), and its own Commission Account without
+    │                       explanation links (PartnerCommission.jsx), over /partner-sales/my/* (see
     │                       docs/adr/0001-partner-sales-presentation-boundary.md,
     │                       docs/adr/0002-partner-sales-two-logins.md and docs/PARTNER_SALES_REHEARSAL.md).
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).
@@ -469,8 +473,7 @@ Workspace switches push history entries; initial URL normalization and period
 changes replace the current entry. `popstate` restores the URL view and month.
 `partner-sales` is a fictional simulation. Its partner orders, invoices and collections live in
 server process memory (`backend/sales/simulation.py`, `/partner-sales/*`), reset on restart, and never reach
-Atlas, the audit datastore or other workspaces. The header shows the synthetic badge there even in live-read mode. Its commission statements are fixtures too; only the account and month leave
-the browser, in existing GET reads that are skipped in live-read mode. Explanation handoffs carry a serializable
+Atlas, the audit datastore or other workspaces. The header shows the synthetic badge there even in live-read mode. Its commission statements are server fixtures too (`backend/sales/statements.py`), read per exact account and month, so the delivered frontend carries none. A statement is a fixed fixture of at most 120 entries, returned whole and paged at up to 100 rows in the browser; reconciling one to recorded evidence sends only the account and month, in existing GET reads that are skipped in live-read mode. Explanation handoffs carry a serializable
 `origin`, so the shell offers a return that restores the statement, including after a refresh. Period validation waits for the available-month list. Serializable investigation
 context/revisions live in each entry's `fbbWorkspace` history state; restoring a
 revision remounts that contextual workspace when necessary. Context is not added

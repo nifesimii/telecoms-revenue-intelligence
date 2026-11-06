@@ -13,6 +13,21 @@ const queue = (page) => workspace(page).getByRole('table', { name: 'Orders await
 const review = (page, reference) => workspace(page).getByRole('region', { name: `Review order ${reference}` });
 const partnerOrders = (page) => workspace(page).getByRole('table', { name: 'Your submitted orders' });
 const partnerInvoices = (page) => workspace(page).getByRole('table', { name: 'Your invoices' });
+const partnerCommission = (page) => workspace(page).getByRole('region', { name: 'Your Partner Commission Account' });
+// The fictional statements for 296065, whose balances no order, invoice or collection changes.
+async function expectCommissionUnchanged(page) {
+  const account = partnerCommission(page);
+  await expect(account.getByLabel('Statement month')).toHaveValue('202606');
+  await expect(account.getByLabel('Statement reconciliation')).toContainText('Closing outstandingNGN 1,418,759.61');
+  await account.getByLabel('Statement month').selectOption('202605');
+  await expect(account.getByLabel('Statement reconciliation')).toContainText('Opening outstandingNGN 250,000.00');
+  await expect(account.getByLabel('Statement reconciliation')).toContainText('Closing outstandingNGN 822,582.53');
+  await expect(account.getByText('Revenue is not commission entitlement, and it is in no total on this statement.')).toBeVisible();
+  await expect(account.getByRole('table', { name: 'Commission by stream' }).getByRole('rowheader', { name: 'Activation commission' })).toBeVisible();
+  await expect(account.getByRole('table', { name: 'Commission by stream' }).getByRole('rowheader', { name: 'Subscription commission' })).toBeVisible();
+  await expect(account.getByRole('button', { name: /^Explain/ })).toHaveCount(0);
+  await expect(account.getByRole('region', { name: 'Existing explanations' })).toHaveCount(0);
+}
 
 // A fresh context per side, so the two logins never share a cookie.
 async function signedIn(browser, username) {
@@ -70,6 +85,7 @@ async function partnerSubmits(browser) {
 test('Finance issues a partner order and the partner sees the invoice', async ({ browser }) => {
   const finance = await openFinance(browser);
   const partner = await partnerSubmits(browser);
+  await expectCommissionUnchanged(partner);
   await openPartnerSales(finance);
   await expect(queue(finance).getByRole('row', { name: /SIM-ORD-0001 Sunset Crest Communications · Account 295083 NGN 109,999\.99/ })).toBeVisible();
   await expect(queue(finance).getByRole('row', { name: /SIM-ORD-0002 River Isle Ventures · Account 296065 NGN 110,000\.00/ })).toBeVisible();
@@ -128,12 +144,16 @@ test('Finance issues a partner order and the partner sees the invoice', async ({
   await expect(seen.getByRole('button', { name: /View purchase obligations/ })).toHaveCount(0);
   await seen.getByRole('button', { name: 'Back to your invoices' }).click();
   await expect(partnerInvoices(partner).getByRole('button', { name: 'Open invoice SIM-INV-0004' })).toBeFocused();
+  await expectCommissionUnchanged(partner);
 
-  // The same-named account sees none of it.
+  // The same-named account sees none of it, and only its own statement.
   const namesake = await signedIn(browser, 'partner-353072');
   await namesake.goto('/');
   await expect(workspace(namesake).getByText('MTN Finance has not issued you any invoices yet.')).toBeVisible();
   await expect(workspace(namesake).getByText('You have not submitted any orders yet.')).toBeVisible();
+  await expect(partnerCommission(namesake).getByLabel('Statement month')).toHaveValue('202605');
+  await expect(partnerCommission(namesake).getByLabel('Statement reconciliation')).toContainText('Opening outstandingUnavailable');
+  await expect(partnerCommission(namesake).getByLabel('Statement month').locator('option')).toHaveText(['May 2026']);
 });
 
 test('a partner sees their invoice without a payment control until Finance collects', async ({ browser }) => {

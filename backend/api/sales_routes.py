@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, StrictInt
 
 from backend.auth import access
 from backend.sales.simulation import CATALOGUE, MAX_QUANTITY, PARTNERS, STATUSES, RecordHandle, SalesConflict, SalesNotFound, SalesRuleError, simulation
+from backend.sales import statements
 
 router = APIRouter(prefix="/partner-sales", tags=["partner-sales"])
 
@@ -77,6 +78,12 @@ def obligations(account_code: str, limit: Limit = 25, offset: Offset = 0) -> dic
     return _run(lambda: simulation.obligations(account_code, limit, offset))
 
 
+@router.get("/partners/{account_code}/statement")
+def statement(account_code: str, mon_period: Period) -> dict:
+    """One exact account's fictional commission statement. A month without one is null, not zero."""
+    return {"statement": _run(lambda: statements.statement_for(account_code, mon_period))}
+
+
 # A partner's own ordering. The account is the session's, and no route accepts one.
 
 def _own_account(request: Request) -> str | None:
@@ -98,7 +105,7 @@ class OrderSubmission(BaseModel):
 
 @router.get("/my/reference")
 def own_reference(account_code: OwnAccount) -> dict:
-    return _run(lambda: simulation.ordering_reference(account_code))
+    return {**_run(lambda: simulation.ordering_reference(account_code)), "statement_periods": statements.statement_periods(account_code)}
 
 
 @router.get("/my/draft")
@@ -147,6 +154,11 @@ def own_invoices(account_code: OwnAccount, status: str = Query("", max_length=20
 @router.get("/my/invoices/{reference}")
 def own_invoice(reference: str, account_code: OwnAccount, limit: Limit = 25, offset: Offset = 0) -> dict:
     return _run(lambda: simulation.own_invoice(account_code, reference, limit, offset))
+
+
+@router.get("/my/statement")
+def own_statement(mon_period: Period, account_code: OwnAccount) -> dict:
+    return {"statement": _run(lambda: statements.own_statement(account_code, mon_period))}
 
 
 # Finance's review of submitted partner orders.

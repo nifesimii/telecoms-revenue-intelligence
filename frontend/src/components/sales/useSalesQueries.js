@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery as useMonthlessQuery } from '@tanstack/react-query';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
-import { getOrderQueue, getOwnInvoice, getOwnInvoices, getOwnOrder, getOwnOrderDraft, getOwnOrderingReference, getOwnOrders, getSalesInvoice, getSalesObligations, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
+import { getOrderQueue, getOwnInvoice, getOwnInvoices, getOwnOrder, getOwnOrderDraft, getOwnOrderingReference, getOwnOrders, getOwnStatement, getPartnerStatement, getSalesInvoice, getSalesObligations, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
 
 const SALES = 'partner-sales';
 
@@ -22,6 +22,8 @@ export const salesKeys = {
   ownOrder: (reference) => [SALES, 'own-order', reference],
   ownInvoices: (params) => [SALES, 'own-invoices', params],
   ownInvoice: (reference, params) => [SALES, 'own-invoice', reference, params],
+  statement: (accountCode, period) => [SALES, 'statement', accountCode, period],
+  ownStatement: (period) => [SALES, 'own-statement', period],
 };
 
 // Everything that can change while the page is open. The reference data cannot.
@@ -46,3 +48,7 @@ export const useOwnOrder = (reference) => useMonthlessQuery({ queryKey: salesKey
 export const ownOrdersQuery = (params) => ({ queryKey: salesKeys.ownOrders(params), queryFn: ({ signal }) => getOwnOrders(params, signal), placeholderData: keepPreviousData });
 export const ownInvoicesQuery = (params) => ({ queryKey: salesKeys.ownInvoices(params), queryFn: ({ signal }) => getOwnInvoices(params, signal), placeholderData: keepPreviousData });
 export const ownInvoiceQuery = (reference, params) => ({ queryKey: salesKeys.ownInvoice(reference, params), queryFn: ({ signal }) => getOwnInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });
+
+// Fictional commission statements, which no simulation action changes.
+export const statementQuery = (accountCode, period) => ({ queryKey: salesKeys.statement(accountCode, period), queryFn: ({ signal }) => getPartnerStatement(accountCode, period, signal), staleTime: Infinity });
+export const ownStatementQuery = (period) => ({ queryKey: salesKeys.ownStatement(period), queryFn: ({ signal }) => getOwnStatement(period, signal), staleTime: Infinity });

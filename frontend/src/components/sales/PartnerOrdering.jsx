@@ -1,6 +1,7 @@
 // A partner's own ordering: one draft order built from the fictional catalogue, then
-// submitted to MTN Finance as a read-only order, and the invoices Finance issued. The
-// server takes the account from the session, so nothing here names or chooses one.
+// submitted to MTN Finance as a read-only order, the invoices Finance issued, and the
+// partner's own commission account. The server takes the account from the session, so
+// nothing here names or chooses one.
 
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -9,6 +10,7 @@ import { formatDate, formatMinorNGN } from '../../lib/format.js';
 import { draftPricing } from './draftPricing.js';
 import { ActionFailure, InvoiceDetail, ReadState, useActionFailure, usePagedQuery } from './InvoiceViews.jsx';
 import OrderLines from './OrderLines.jsx';
+import PartnerCommission from './PartnerCommission.jsx';
 import PartnerInvoices from './PartnerInvoices.jsx';
 import { partnerLabel } from './salesDisplay.js';
 import { ownInvoiceQuery, ownOrdersQuery, salesKeys, useOwnOrder, useOwnOrderDraft, useOwnOrderingReference } from './useSalesQueries.js';
@@ -29,7 +31,7 @@ export default function PartnerOrdering() {
 const LIST_HEADING = { order: 'sales-orders-heading', invoice: 'sales-own-invoices-heading' };
 const detailHeadingId = ({ type, reference }) => `sales-${type}-heading-${reference}`;
 
-function Ordering({ reference: { account, catalogue, max_quantity: maxQuantity, invoice_statuses: invoiceStatuses } }) {
+function Ordering({ reference: { account, catalogue, max_quantity: maxQuantity, invoice_statuses: invoiceStatuses, statement_periods: statementPeriods } }) {
   const pricing = draftPricing(catalogue, maxQuantity);
   // An open order or invoice hides the rest, which stays mounted so returning finds its page.
   const [open, setOpen] = useState(null);
@@ -55,6 +57,7 @@ function Ordering({ reference: { account, catalogue, max_quantity: maxQuantity, 
       <DraftOrder account={account} pricing={pricing} />
       <OrderList onOpen={openDetail('order')} />
       <PartnerInvoices statuses={invoiceStatuses} onOpen={openDetail('invoice')} />
+      <PartnerCommission partner={account} periods={statementPeriods} />
     </div>
   </div>;
 }

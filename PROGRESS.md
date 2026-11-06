@@ -3,6 +3,28 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-06 (Partner Sales: partner sees their own Commission Account, #13)
+
+- The fictional commission statements moved from the frontend bundle to the server
+  (`backend/sales/statements.py`; the linked ones in `backend/sales/linked_commission_statements.json`, still
+  held to the public API by `test_partner_commission_fixtures.py`). The delivered frontend no longer contains
+  any partner's statement; a test fails if `SIM-OPEN-` reappears under `frontend/src`.
+- Finance reads `GET /partner-sales/partners/{account_code}/statement?mon_period=` (404 for an unknown
+  account, `null` for a month with no statement). A partner reads `GET /partner-sales/my/statement?mon_period=`,
+  with the account from the session, and `/my/reference` lists the months that have one as `statement_periods`.
+  A partner gets 403 on the internal route and an internal user 403 on the partner route.
+- A partner login now shows "Your Partner Commission Account" under its invoices, one month at a time, with the
+  same separate streams, Unavailable-versus-zero rules and opening/earnings/settlements/closing reconciliation
+  as Finance's view, but no explanation links. The partner response drops the `linked` flag. Invoice and
+  commission balances stay separate, with no net figure.
+- Decided here: the server sends the raw statement and the frontend keeps the evidence rules
+  (`commissionAccount.js`), so both views read it identically. A statement is returned whole (at most 120
+  entries, a fixed fixture) and activity still pages at up to 100 rows on the client.
+- Acceptance: the two-login journey checks the partner's statement before and after the order is issued and
+  collected, and partner-353072 sees only its own May 2026 statement with an Unavailable opening.
+- Next: #14.
+- Verification: backend 1,435 passed and 37 skipped; acceptance 97 passed; the production build passed.
+
 ## Session — 2026-11-06 (Partner Sales: partner sees invoices and balances, #12)
 
 - A partner login now sees "Your invoices" under its orders. It lists the invoices Finance issued to its
