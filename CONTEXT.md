@@ -100,3 +100,11 @@ What a partner login submits from its own draft order: fixed lines and total und
 obligation; only MTN Finance issuing it makes one. A draft order is private to its
 partner and reaches Finance only by submission.
 _Avoid_: Purchase order, invoice draft (an internal draft priced for one issue month)
+
+**Rejected order**:
+A partner order MTN Finance declined, with the reason it gave the partner. It is final:
+it cannot be resubmitted or issued later, and the partner starts a new draft instead.
+
+**Issued order**:
+A partner order MTN Finance issued as a simulated invoice with the same lines and
+total, and its own dates. Like a rejection, issuing is final.

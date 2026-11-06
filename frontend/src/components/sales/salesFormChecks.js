@@ -36,6 +36,17 @@ export function dueDateError(draft) {
   return draft.issue_date && draft.due_date < draft.issue_date ? 'Due date cannot be before the issue date.' : null;
 }
 
+// Issuing a partner order sets both dates. The invoice's month is its issue date's, so
+// keeping that in the selected month keeps the invoice in the list being reviewed.
+export function orderIssueErrors({ issueDate, dueDate }, period, periodLabel) {
+  return {
+    issueDate: !isDate(issueDate) ? 'Enter a valid issue date.' : inMonth(issueDate, period) ? null : `Choose a date in ${periodLabel}.`,
+    dueDate: isDate(dueDate) && !(isDate(issueDate) && dueDate < issueDate) ? null : 'Enter a due date on or after the issue date.',
+  };
+}
+
+export const rejectionError = (reason) => (reason.trim() ? null : 'Enter a reason for the partner.');
+
 // Exact kobo from typed text, never through a fractional number. Null when the
 // text is not a money amount, which includes any sign. Here because the check below
 // must judge exactly the amount the form then sends.

@@ -320,6 +320,7 @@ export function InvoiceDetail({ reference, headingId, backLabel, onBack, onOpenP
       <div><dt>{`Outstanding as of ${formatDate(balance.as_of)}`}</dt><dd>{formatMinorNGN(balance.outstanding_minor)}</dd></div>
     </dl>
     <p className="text-xs text-gray-600 mt-2">This balance includes every collection recorded up to {formatDate(balance.as_of)}. It is not a month-end balance for any reporting month.</p>
+    {invoice.order_reference && <p className="text-sm mt-3">From partner order {invoice.order_reference}, with its lines and total unchanged.</p>}
     <table className="sales-table mt-5">
       <caption className="sr-only">Invoice lines for {invoice.reference}</caption>
       <thead><tr><th scope="col">Product</th><th scope="col" className="sales-amount hidden sm:table-cell">Quantity</th><th scope="col" className="sales-amount hidden sm:table-cell">Unit price</th><th scope="col" className="sales-amount">Line total</th></tr></thead>

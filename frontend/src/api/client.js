@@ -449,6 +449,22 @@ export async function resetSalesSimulation() {
   return data;
 }
 
+// Finance's review of submitted partner orders.
+export async function getOrderQueue(params, signal) {
+  const { data } = await api.get('/partner-sales/orders', { params, signal });
+  return data;
+}
+
+export async function issueOrder(reference, decision) {
+  const { data } = await api.post(`/partner-sales/orders/${encodeURIComponent(reference)}/issue`, decision);
+  return data;
+}
+
+export async function rejectOrder(reference, decision) {
+  const { data } = await api.post(`/partner-sales/orders/${encodeURIComponent(reference)}/reject`, decision);
+  return data;
+}
+
 // A partner's own ordering. The server takes the account from the session, so none is sent.
 export async function getOwnOrderingReference(signal) {
   const { data } = await api.get('/partner-sales/my/reference', { signal });

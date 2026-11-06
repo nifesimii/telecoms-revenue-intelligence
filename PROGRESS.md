@@ -3,6 +3,27 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-06 (Partner Sales: Finance issues or rejects an order, #11)
+
+- Finance's Partner Sales workspace opens on "Orders awaiting review": submitted orders from every partner,
+  oldest first, each with its exact account code. Reviewing one issues it as a `SIM-INV-` invoice with the
+  order's lines and total, or rejects it with a required reason. The partner sees the invoice reference and
+  dates, or the reason, on their next refresh. Routes are `/partner-sales/orders` (internal only).
+- The seed now holds one submitted order, SIM-ORD-0001 for Sunset Crest 295083, so a partner's first order
+  is SIM-ORD-0002 and the reset confirmation counts it.
+- Decided here (not in the issue): both dates are required. The invoice's month is its issue date's month,
+  and the form keeps the issue date in the selected month (default: its last day), so the new invoice stays in
+  the list being reviewed. The server checks real dates and due ≥ issue, not the month. A decision sends the token of the order as it was
+  queued, so a second decision, or one made on an order replaced by a reset, gets 409 and changes nothing.
+  The UI explains that the order was already decided, then offers to load the latest orders. Decisions take
+  no action id: a retry after a lost response is also refused, and the queue shows the outcome.
+- Kept on purpose: the internal invoice-draft flow (see the comment on #11). It is not an order, so it
+  doesn't conflict with "internal users do not create orders", and removing it would mean rewriting most of
+  the Partner Sales acceptance suite. Whether to remove it is still open, ideally before #14's rehearsal guide.
+- A partner's full invoice and balance view stays in #12; here the partner sees the decision on the order.
+- Verification: backend 1,432 passed and 37 skipped; acceptance 118 tests (4 new order-review journeys, plus
+  #10 specs renumbered for the seeded order) passed; the new spec passed 3 repeats; the production build passed.
+
 ## Session — 2026-11-05 (Partner Sales: partner drafts and submits an order, #10)
 
 - A partner login now builds one private draft order for its own account, previews it, and submits it as a

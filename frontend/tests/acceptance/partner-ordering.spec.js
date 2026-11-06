@@ -64,24 +64,25 @@ test('a partner drafts, previews and submits an order in their own account', asy
   await expect(preview(page).getByRole('heading', { name: 'Order preview' })).toBeFocused();
   await expect(preview(page).getByRole('row', { name: /Total NGN 110,000\.00/ })).toBeVisible();
   const before = await (await internal.get(`${API_BASE}/partner-sales/status`)).json();
-  expect(before.orders).toBe(0);
+  // The seeded order awaits Finance from the start.
+  expect(before.orders).toBe(1);
 
   await preview(page).getByRole('button', { name: 'Submit order' }).dblclick();
-  const notice = workspace(page).getByRole('status').filter({ hasText: 'Order SIM-ORD-0001 for NGN 110,000.00 was submitted' });
+  const notice = workspace(page).getByRole('status').filter({ hasText: 'Order SIM-ORD-0002 for NGN 110,000.00 was submitted' });
   await expect(notice).toBeFocused();
-  await expect(orders(page).getByRole('row', { name: /SIM-ORD-0001 Submitted NGN 110,000\.00/ })).toBeVisible();
+  await expect(orders(page).getByRole('row', { name: /SIM-ORD-0002 Submitted NGN 110,000\.00/ })).toBeVisible();
   await expect(orders(page).getByRole('row')).toHaveCount(2);
-  expect((await (await internal.get(`${API_BASE}/partner-sales/status`)).json()).orders).toBe(1);
+  expect((await (await internal.get(`${API_BASE}/partner-sales/status`)).json()).orders).toBe(2);
 
   await page.reload();
-  await orders(page).getByRole('button', { name: 'Open order SIM-ORD-0001' }).click();
-  const detail = workspace(page).getByRole('region', { name: 'Order SIM-ORD-0001' });
-  await expect(detail.getByRole('heading', { name: 'Order SIM-ORD-0001' })).toBeFocused();
+  await orders(page).getByRole('button', { name: 'Open order SIM-ORD-0002' }).click();
+  const detail = workspace(page).getByRole('region', { name: 'Order SIM-ORD-0002' });
+  await expect(detail.getByRole('heading', { name: 'Order SIM-ORD-0002' })).toBeFocused();
   await expect(detail.getByText('read-only')).toBeVisible();
   await expect(detail.getByRole('textbox')).toHaveCount(0);
   await expect(detail.getByRole('button')).toHaveText(['Back to your orders']);
   await detail.getByRole('button', { name: 'Back to your orders' }).click();
-  await expect(orders(page).getByRole('button', { name: 'Open order SIM-ORD-0001' })).toBeFocused();
+  await expect(orders(page).getByRole('button', { name: 'Open order SIM-ORD-0002' })).toBeFocused();
   expect(outside).toEqual([]);
 });
 
@@ -101,7 +102,7 @@ test('empty drafts and invalid quantities explain themselves and are not sent', 
   await quantity(page, 'FBB-4G-ROUTER').fill('3');
   await expect(orderTotal(page)).toContainText('NGN 105,000.00');
   await expect(preview(page)).toHaveCount(0);
-  expect((await (await internal.get(`${API_BASE}/partner-sales/status`)).json()).orders).toBe(0);
+  expect((await (await internal.get(`${API_BASE}/partner-sales/status`)).json()).orders).toBe(1);
 });
 
 test('a saved draft stays private and survives a refresh, and can be deleted', async ({ page, playwright }) => {
@@ -129,7 +130,7 @@ test('a partner with the same name sees none of another account\'s orders', asyn
   await draftAcceptanceExample(page);
   await workspace(page).getByRole('button', { name: 'Preview order' }).click();
   await preview(page).getByRole('button', { name: 'Submit order' }).click();
-  await expect(orders(page).getByRole('row', { name: /SIM-ORD-0001/ })).toBeVisible();
+  await expect(orders(page).getByRole('row', { name: /SIM-ORD-0002/ })).toBeVisible();
 
   const other = await browser.newContext();
   const otherPage = await other.newPage();

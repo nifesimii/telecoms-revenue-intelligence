@@ -1,7 +1,7 @@
 // Partner Sales changes through the server simulation.
 
 import { useQueryClient } from '@tanstack/react-query';
-import { createSalesDraft, issueSalesDraft, recordSalesCollection, resetSalesSimulation } from '../../api/client.js';
+import { createSalesDraft, issueOrder, issueSalesDraft, recordSalesCollection, rejectOrder, resetSalesSimulation } from '../../api/client.js';
 import { useDraftSaves } from './useDraftSaves.js';
 import { isDraftQuery, isSharedQuery, salesKeys } from './useSalesQueries.js';
 
@@ -33,6 +33,13 @@ export function useSalesActions() {
     return recorded;
   };
 
+  // A decided order leaves the queue, and an issued one adds an invoice.
+  const decideOrder = (decide) => async (reference, decision) => {
+    const decided = await decide(reference, decision);
+    await refresh();
+    return decided;
+  };
+
   // Clears every cached record, so nothing from before the reset can reappear.
   const reset = async () => {
     const status = await resetSalesSimulation();
@@ -53,5 +60,5 @@ export function useSalesActions() {
     return queryClient.resetQueries({ queryKey: salesKeys.invoiceAnyPage(reference) });
   };
 
-  return { ...draftEdits, loadLatestDraft, loadLatestInvoice, createDraft, issueDraft, recordCollection, reset };
+  return { ...draftEdits, loadLatestDraft, loadLatestInvoice, createDraft, issueDraft, recordCollection, issueOrder: decideOrder(issueOrder), rejectOrder: decideOrder(rejectOrder), loadLatestOrders: refresh, reset };
 }

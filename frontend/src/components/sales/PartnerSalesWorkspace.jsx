@@ -9,15 +9,18 @@ import { useSalesDraft, useSalesReference, useSalesSimulationStatus } from './us
 import { useSelectedPartner } from './useSelectedPartner.js';
 import { ActionFailure, InvoiceDetail, InvoiceList, PartnerObligations, RefusedChange, useActionFailure } from './InvoiceViews.jsx';
 import CommissionAccount from './CommissionAccount.jsx';
+import { ORDER_NOTICE, ORDER_QUEUE_HEADING, OrderQueue, OrderReview } from './OrderReview.jsx';
 import './sales.css';
 
 const DETAIL_VIEWS = {
   invoice: { headingId: (entry) => `sales-invoice-heading-${entry.reference}`, backLabel: (entry) => `Back to invoice ${entry.reference}` },
   partner: { headingId: (entry) => `sales-obligations-heading-${entry.accountCode}`, backLabel: () => 'Back to purchase obligations' },
   commission: { headingId: (entry) => `sales-commission-heading-${entry.accountCode}`, backLabel: () => 'Back to commission account' },
+  order: { headingId: (entry) => `sales-review-heading-${entry.reference}`, backLabel: (entry) => `Back to order ${entry.reference}`, rootBackLabel: 'Back to orders awaiting review' },
 };
 const detailHeadingId = (entry) => DETAIL_VIEWS[entry.type].headingId(entry);
 const backLabelTo = (entry) => DETAIL_VIEWS[entry.type].backLabel(entry);
+const rootBackLabel = (entry) => DETAIL_VIEWS[entry.type].rootBackLabel ?? 'Back to invoices';
 
 export default function PartnerSalesWorkspace({ navigation, onNavigate, onClearNavigation }) {
   const { periods, period, loading, error } = usePeriod();
@@ -84,6 +87,8 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
   const [invoiceListKey, setInvoiceListKey] = useState(0);
   // The notice lasts until the next thing the presenter does here.
   const [resetStatus, setResetStatus] = useState(null);
+  // What Finance last decided, until the next decision or reset.
+  const [orderNotice, setOrderNotice] = useState(null);
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
   const matches = partners.filter((partner) => partnerMatches(partner, term));
@@ -160,12 +165,40 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
       return [...current.filter((other) => other !== open), open ?? { ...entry, openerId: 'sales-partner-commission' }];
     });
   }, [navigation?.revision]);
-  const issue = async (issuing) => {
-    const invoice = await actions.issueDraft(issuing);
+  const showIssued = (invoice, openerId = invoiceOpenerId(invoice.reference)) => {
     setResetStatus(null);
-    const entry = { type: 'invoice', reference: invoice.reference, openerId: invoiceOpenerId(invoice.reference) };
+    const entry = { type: 'invoice', reference: invoice.reference, openerId };
     focusAfterTrail.current = [detailHeadingId(entry)];
     setTrail([entry]);
+  };
+  const issue = async (issuing) => {
+    const invoice = await actions.issueDraft(issuing);
+    setOrderNotice(null);
+    showIssued(invoice);
+  };
+  const reviewOrder = (order, openerId) => {
+    setOrderNotice(null);
+    openDetail({ type: 'order', reference: order.reference, order }, openerId);
+  };
+  const issueOrder = async (reference, decision) => {
+    const invoice = await actions.issueOrder(reference, decision);
+    setOrderNotice(`Order ${reference} was issued as invoice ${invoice.reference}.`);
+    // Leaving the invoice returns to what says where the order went.
+    showIssued(invoice, ORDER_NOTICE);
+  };
+  // The order has left the queue, so focus goes to what says what happened to it.
+  const rejectOrder = async (reference, decision) => {
+    await actions.rejectOrder(reference, decision);
+    setResetStatus(null);
+    setOrderNotice(`Order ${reference} was rejected. The partner sees your reason when they next refresh.`);
+    focusAfterTrail.current = [ORDER_NOTICE];
+    setTrail([]);
+  };
+  const loadLatestOrders = async () => {
+    await actions.loadLatestOrders();
+    setOrderNotice(null);
+    focusAfterTrail.current = [ORDER_QUEUE_HEADING];
+    setTrail([]);
   };
   const recordInvoiceCollection = (reference, collection) => {
     setResetStatus(null);
@@ -183,6 +216,7 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
   const reset = async () => {
     const status = await actions.reset();
     setResetStatus(status);
+    setOrderNotice(null);
     setSelectedCode('');
     setSearch('');
     focusAfterTrail.current = ['sales-reset-notice'];
@@ -194,22 +228,24 @@ function Workspace({ reference: { partners, catalogue, max_quantity: maxQuantity
     commission: (entry, shared) => <CommissionAccount {...shared} partner={partnerByCode(entry.accountCode)} period={period} onOpenObligations={openPartner}
       onExplain={(view, context, openerId) => onNavigate(view, { ...context, origin: { commission_account_code: entry.accountCode, opener_id: openerId } })} />,
     invoice: (entry, shared) => <InvoiceDetail {...shared} reference={entry.reference} onOpenPartner={openPartner} onRecordCollection={recordInvoiceCollection} onLoadLatest={actions.loadLatestInvoice} />,
+    order: (entry, shared) => <OrderReview {...shared} order={entry.order} period={period} onIssue={issueOrder} onReject={rejectOrder} onLoadLatest={loadLatestOrders} />,
     partner: (entry, shared) => <PartnerObligations {...shared} partner={partnerByCode(entry.accountCode)} onOpenInvoice={openInvoice} onOpenCommission={openCommission} />,
   };
   return <main className="sales-workspace h-full overflow-y-auto bg-gray-50" aria-label="Partner Sales">
     <div className="mx-auto max-w-7xl p-4 sm:p-6 lg:p-8 flex flex-col gap-6">
       <header><p className="text-xs font-semibold tracking-widest uppercase text-gray-500">MTN sales to trade partners</p>
         <h1 id="sales-workspace-heading" tabIndex={-1} className="text-2xl font-semibold tracking-tight mt-1">Partner Sales</h1>
-        <p className="text-sm text-gray-600 mt-2">Draft, preview and issue what MTN would invoice a trade partner in {formatPeriod(period)}, record fictional collections against issued invoices, and explain a partner's fictional commission account.</p>
-        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. It starts with example invoices in May 2026. Drafts, simulated invoices and collections are shared by everyone signed in and last until the server restarts or the simulation is reset. They stay separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p>
+        <p className="text-sm text-gray-600 mt-2">Review the orders partners submit, draft, preview and issue what MTN would invoice a trade partner in {formatPeriod(period)}, record fictional collections against issued invoices, and explain a partner's fictional commission account.</p>
+        <p className="sales-notice mt-3">Fictional simulation using sample partner identities and fictional products and prices. It starts with example invoices in May 2026. Partner orders, drafts, simulated invoices and collections are shared by everyone signed in and last until the server restarts or the simulation is reset. They stay separate from recorded commission, payment and inventory evidence, including when the application reads live data.</p>
         <SimulationReset onReset={reset} />
         {resetStatus && <p id="sales-reset-notice" role="status" tabIndex={-1} className="sales-notice mt-3">Simulation reset to its starting point: {resetStatus.invoices} example invoices in May 2026, and the next draft will be {resetStatus.next_draft_reference}.</p>}</header>
       {trail.map((entry, index) => {
         const active = index === trail.length - 1;
-        const shared = { headingId: detailHeadingId(entry), backLabel: !index ? 'Back to invoices' : backLabelTo(trail[index - 1]), onBack: () => closeDetail(entry.openerId) };
+        const shared = { headingId: detailHeadingId(entry), backLabel: !index ? rootBackLabel(entry) : backLabelTo(trail[index - 1]), onBack: () => closeDetail(entry.openerId) };
         return <div key={shared.headingId} className={active ? '' : 'hidden'}>{detailViews[entry.type](entry, shared)}</div>;
       })}
       <div className={trail.length ? 'hidden' : 'flex flex-col gap-6'}>
+      <OrderQueue notice={orderNotice} onReview={reviewOrder} />
       <section className="sales-paper" aria-labelledby="sales-partner-heading">
         <h2 id="sales-partner-heading" className="text-lg font-semibold">Trade partner</h2>
         <label className="sales-field mt-4">Find a partner

@@ -172,3 +172,31 @@ def own_orders(account_code: OwnAccount, limit: Limit = 25, offset: Offset = 0) 
 @router.get("/my/orders/{reference}")
 def own_order(reference: str, account_code: OwnAccount) -> dict:
     return _run(lambda: simulation.order(account_code, reference))
+
+
+# Finance's review of submitted partner orders.
+
+class OrderIssue(BaseModel):
+    token: Token
+    issue_date: str = Field(max_length=20)
+    due_date: str = Field(max_length=20)
+
+
+class OrderRejection(BaseModel):
+    token: Token
+    reason: str = Field(max_length=500)
+
+
+@router.get("/orders")
+def review_queue(limit: Limit = 25, offset: Offset = 0) -> dict:
+    return simulation.review_queue(limit, offset)
+
+
+@router.post("/orders/{reference}/issue")
+def issue_order(reference: str, body: OrderIssue) -> dict:
+    return _run(lambda: simulation.issue_order(RecordHandle(reference, body.token), body.issue_date, body.due_date))
+
+
+@router.post("/orders/{reference}/reject")
+def reject_order(reference: str, body: OrderRejection) -> dict:
+    return _run(lambda: simulation.reject_order(RecordHandle(reference, body.token), body.reason))

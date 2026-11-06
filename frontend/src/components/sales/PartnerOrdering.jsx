@@ -5,10 +5,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createOwnOrderDraft, deleteOwnOrderDraft, saveOwnOrderDraft, submitOwnOrderDraft } from '../../api/client.js';
-import { formatMinorNGN } from '../../lib/format.js';
+import { formatDate, formatMinorNGN } from '../../lib/format.js';
 import { draftPricing } from './draftPricing.js';
 import { ActionFailure, ReadState, useActionFailure, usePagedQuery } from './InvoiceViews.jsx';
-import { partnerLabel, quantityLabel } from './salesDisplay.js';
+import OrderLines from './OrderLines.jsx';
+import { partnerLabel } from './salesDisplay.js';
 import { ownOrdersQuery, salesKeys, useOwnOrder, useOwnOrderDraft, useOwnOrderingReference } from './useSalesQueries.js';
 import './sales.css';
 
@@ -264,21 +265,6 @@ function DraftOrderEditor({ draft, account, pricing, onSaved, onSubmitted, onDel
   </>;
 }
 
-function OrderLines({ caption, lines, totalMinor }) {
-  return <table className="sales-table mt-5">
-    <caption className="sr-only">{caption}</caption>
-    <thead><tr><th scope="col">Product</th><th scope="col" className="sales-amount hidden sm:table-cell">Quantity</th><th scope="col" className="sales-amount hidden sm:table-cell">Unit price</th><th scope="col" className="sales-amount">Line total</th></tr></thead>
-    <tbody>{lines.map((line) => <tr key={line.product_code}>
-      <th scope="row"><span className="block font-semibold">{line.product_code}</span> <span className="block">{line.description}</span>
-        <span className="block sm:hidden text-gray-600 mt-1">{quantityLabel(line.quantity, line.unit)} × {formatMinorNGN(line.unit_price_minor)}</span></th>
-      <td className="sales-amount hidden sm:table-cell">{quantityLabel(line.quantity, line.unit)}</td>
-      <td className="sales-amount hidden sm:table-cell">{formatMinorNGN(line.unit_price_minor)}</td>
-      <td className="sales-amount">{formatMinorNGN(line.line_total_minor)}</td>
-    </tr>)}</tbody>
-    <tfoot><tr><th scope="row">Total</th><td className="hidden sm:table-cell" /><td className="hidden sm:table-cell" /><td className="sales-amount">{formatMinorNGN(totalMinor)}</td></tr></tfoot>
-  </table>;
-}
-
 // Shows the saved copy, and submits exactly that copy's token.
 function OrderPreview({ draft, account, pricing, onSubmitted, onLoadLatest, onBack }) {
   const [submitting, setSubmitting] = useState(false);
@@ -328,7 +314,7 @@ function OrderList({ onOpen }) {
   const visible = orders.data?.items ?? [];
   return <section className="sales-paper" aria-labelledby="sales-orders-heading">
     <h2 id="sales-orders-heading" tabIndex={-1} className="text-lg font-semibold">Your orders</h2>
-    <p className="text-xs text-gray-600 mt-1">Submitted orders await review by MTN Finance and cannot be changed or withdrawn. Refresh to see changes.</p>
+    <p className="text-xs text-gray-600 mt-1">Submitted orders cannot be changed or withdrawn. MTN Finance issues each as an invoice or rejects it with a reason. Refresh to see their decisions.</p>
     <ReadState query={orders} what="order list" />
     {orders.data && (!orders.data.pagination.total ? <p role="status" className="text-sm text-gray-600 mt-4">You have not submitted any orders yet.</p> : <>
       <table className="sales-table mt-4">
@@ -361,8 +347,21 @@ function OrderDetail({ reference, onBack }) {
         <div><dt>Currency</dt><dd>{order.data.currency}</dd></div>
       </dl>
       <OrderLines caption={`Lines in order ${reference}`} lines={order.data.lines} totalMinor={order.data.total_minor} />
+      <OrderDecision order={order.data} />
       <p className="sales-notice mt-5">This order is read-only. It is not an invoice or a purchase obligation unless MTN Finance issues it.</p>
     </>}
     <div className="sales-actions"><button type="button" className="sales-button" onClick={onBack}>Back to your orders</button></div>
   </section>;
+}
+
+function OrderDecision({ order }) {
+  if (order.status === 'Issued') {
+    const { reference, issue_date: issued, due_date: due } = order.invoice;
+    return <p className="text-sm font-medium mt-5">MTN Finance issued this order as invoice {reference} on {formatDate(issued)}, due {formatDate(due)}.</p>;
+  }
+  if (order.status === 'Rejected') {
+    return <div className="mt-5 text-sm"><p className="font-medium">MTN Finance rejected this order: {order.rejection_reason}</p>
+      <p className="text-gray-600 mt-1">A rejected order is final. Start a new draft to order again.</p></div>;
+  }
+  return <p className="text-sm text-gray-600 mt-5">Awaiting review by MTN Finance.</p>;
 }

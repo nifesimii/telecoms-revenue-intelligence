@@ -2,7 +2,7 @@
 
 import { keepPreviousData, useQuery as useMonthlessQuery } from '@tanstack/react-query';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
-import { getOwnOrder, getOwnOrderDraft, getOwnOrderingReference, getOwnOrders, getSalesDraft, getSalesInvoice, getSalesObligations, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
+import { getOrderQueue, getOwnOrder, getOwnOrderDraft, getOwnOrderingReference, getOwnOrders, getSalesDraft, getSalesInvoice, getSalesObligations, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
 
 const SALES = 'partner-sales';
 
@@ -14,6 +14,7 @@ export const salesKeys = {
   obligations: (accountCode, params) => [SALES, 'obligations', accountCode, params],
   invoiceAnyPage: (reference) => [SALES, 'invoice', reference],
   invoice: (reference, params) => [SALES, 'invoice', reference, params],
+  orderQueue: (params) => [SALES, 'order-queue', params],
   ownReference: () => [SALES, 'reference', 'own'],
   ownDraft: () => [SALES, 'own-draft'],
   ownOrders: (params) => [SALES, 'own-orders', params],
@@ -36,6 +37,7 @@ export const useSalesDraft = (accountCode, period) => useQuery({ queryKey: sales
 // The paged reads, for usePagedQuery to run once it knows the page.
 export const recordsQuery = (params) => ({ queryKey: salesKeys.records(params), queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
 export const obligationsQuery = (accountCode, params) => ({ queryKey: salesKeys.obligations(accountCode, params), queryFn: ({ signal }) => getSalesObligations(accountCode, params, signal), placeholderData: keepPreviousData });
+export const orderQueueQuery = (params) => ({ queryKey: salesKeys.orderQueue(params), queryFn: ({ signal }) => getOrderQueue(params, signal), placeholderData: keepPreviousData });
 export const invoiceQuery = (reference, params) => ({ queryKey: salesKeys.invoice(reference, params), queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });
 
 // A partner's own ordering, which belongs to no reporting month.

@@ -57,7 +57,8 @@ def order(client, **kwargs):
 
 def test_a_partner_submits_a_draft_as_an_order(river_isle):
     submitted = order(river_isle)
-    assert submitted["reference"] == "SIM-ORD-0001"
+    # SIM-ORD-0001 is the order seeded for Finance to review.
+    assert submitted["reference"] == "SIM-ORD-0002"
     assert submitted["status"] == "Submitted"
     assert submitted["account"] == {"code": "296065", "name": "River Isle Ventures"}
     assert river_isle.get("/partner-sales/my/draft").json() == {"draft": None}
@@ -102,7 +103,7 @@ def test_an_action_id_never_reaches_another_partners_order(river_isle, demo_logi
     attempt = submit(same_name, saved_draft(same_name, lines=((CARD, "1"),)), action_id="shared-id")
     assert attempt.status_code == 200
     assert attempt.json()["account"]["code"] == "353072"
-    assert attempt.json()["reference"] == "SIM-ORD-0002"
+    assert attempt.json()["reference"] == "SIM-ORD-0003"
 
 
 def test_a_partner_sees_their_orders_newest_first_with_status(river_isle):
@@ -170,7 +171,9 @@ def test_supplying_an_account_reaches_only_the_session_account(river_isle, demo_
 
 def internal_view():
     finance = TestClient(app)
-    return finance.get("/partner-sales/status").json(), finance.get("/partner-sales/records", params={"mon_period": "202605"}).json()
+    return [finance.get(path, params=params).json() for path, params in (
+        ("/partner-sales/status", {}), ("/partner-sales/records", {"mon_period": "202605"}), ("/partner-sales/orders", {}),
+    )]
 
 
 def test_saving_a_draft_sends_nothing_to_finance(river_isle):
@@ -200,10 +203,10 @@ def test_the_partner_reads_their_own_account_and_the_catalogue(river_isle):
 def test_reset_discards_drafts_and_orders_and_restarts_order_references(river_isle):
     order(river_isle)
     saved_draft(river_isle)
-    assert TestClient(app).post("/partner-sales/reset").json()["orders"] == 0
+    assert TestClient(app).post("/partner-sales/reset").json()["orders"] == 1
     assert river_isle.get("/partner-sales/my/draft").json() == {"draft": None}
     assert river_isle.get("/partner-sales/my/orders").json()["items"] == []
-    assert order(river_isle)["reference"] == "SIM-ORD-0001"
+    assert order(river_isle)["reference"] == "SIM-ORD-0002"
 
 
 def test_deleting_a_draft_that_was_submitted_elsewhere_is_refused(river_isle):

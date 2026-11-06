@@ -1,6 +1,6 @@
 """Fictional Partner Sales simulation (docs/adr/0002-partner-sales-two-logins.md).
 
-Holds drafts, invoices and collections in process memory, seeded at startup, so
+Holds drafts, partner orders, invoices and collections in process memory, seeded at startup, so
 every session sees the same records and a restart returns to the seed. It relies
 on the single-worker deployment. Nothing here reads or writes a financial source,
 and amounts are exact integers in kobo.
@@ -46,11 +46,14 @@ _EXAMPLE_INVOICES = [
      "lines": [{"product_code": "FBB-4G-ROUTER", "quantity": "3"}]},
 ]
 
+# Waits for Finance at first login. Its account, 295083, shares a name with 205044 and
+# is not the presentation's own account, 296065.
+_EXAMPLE_ORDER = {"account_code": "295083", "lines": [{"product_code": "FBB-MIFI", "quantity": "3"}, {"product_code": "RCC-0200", "quantity": "50"}]}
+
 MAX_QUANTITY = 1_000_000
 _MAX_DRAFTS_LISTED = 100
 DRAFT, UNPAID, PARTIALLY_PAID, PAID = STATUSES = ["Draft", "Unpaid", "Partially paid", "Paid"]
-# Finance's decisions on an order follow in #11.
-SUBMITTED, = ORDER_STATUSES = ["Submitted"]
+SUBMITTED, ISSUED, REJECTED = ORDER_STATUSES = ["Submitted", "Issued", "Rejected"]
 _PARTNERS_BY_CODE = {partner["code"]: partner for partner in PARTNERS}
 _PRODUCTS_BY_CODE = {product["code"]: product for product in CATALOGUE}
 
@@ -198,9 +201,25 @@ def _order_draft_view(draft: dict) -> dict:
 
 
 def _order_view(order: dict) -> dict:
+    """What the partner sees, including Finance's decision once there is one."""
     return {
-        "reference": order["reference"], "status": SUBMITTED, "account": _PARTNERS_BY_CODE[order["account_code"]],
+        "reference": order["reference"], "status": order["status"], "account": _PARTNERS_BY_CODE[order["account_code"]],
         "currency": "NGN", "lines": order["lines"], "total_minor": order["total_minor"],
+        "invoice": order["invoice"], "rejection_reason": order["rejection_reason"],
+    }
+
+
+def _finance_order_view(order: dict) -> dict:
+    """Finance's view, whose token a decision must send."""
+    return {**_order_view(order), "token": order["token"]}
+
+
+def _invoice(reference: str, token: str, account_code: str, issue_date: str, due_date: str, lines: list[dict]) -> dict:
+    """A frozen invoice from priced lines. Its month is its issue date's."""
+    return {
+        "reference": reference, "token": token, "seller": "MTN", "buyer": _PARTNERS_BY_CODE[account_code],
+        "period": _period_of(issue_date), "issue_date": issue_date, "due_date": due_date,
+        "currency": "NGN", "total_minor": sum(line["line_total_minor"] for line in lines), "lines": lines,
     }
 
 
@@ -250,6 +269,10 @@ class SalesSimulation:
                     f"seed-{draft['reference']}", RecordHandle(draft["reference"], draft["token"]),
                     example["collection"]["date"], example["collection"]["amount_minor"],
                 )
+        code = _EXAMPLE_ORDER["account_code"]
+        draft = self.create_order_draft(code)
+        draft = self.update_order_draft(code, draft["token"], _EXAMPLE_ORDER["lines"])
+        self.submit_order(code, "seed-order", draft["token"])
 
     def reset(self) -> dict:
         with self._lock:
@@ -308,15 +331,10 @@ class SalesSimulation:
         if draft["due_date"] and (not _is_date(draft["due_date"]) or draft["due_date"] < draft["issue_date"]):
             raise SalesRuleError("The due date cannot be before the issue date.")
         # Copies catalogue facts onto the invoice so nothing later can reprice it.
-        invoice = {
-            "reference": draft["reference"], "token": draft["token"], "seller": "MTN", "buyer": _PARTNERS_BY_CODE[draft["account_code"]],
-            "period": draft["period"], "issue_date": draft["issue_date"], "due_date": draft["due_date"],
-            "currency": "NGN", "total_minor": total,
-            "lines": [
-                {**_line_view(line), "quantity": int(line["quantity"]), "line_total_minor": _line_total(line)}
-                for line in draft["lines"]
-            ],
-        }
+        invoice = _invoice(
+            draft["reference"], draft["token"], draft["account_code"], draft["issue_date"], draft["due_date"],
+            [{**_line_view(line), "quantity": int(line["quantity"]), "line_total_minor": _line_total(line)} for line in draft["lines"]],
+        )
         del self._drafts[_draft_key(draft["account_code"], draft["period"])]
         self._invoices.append(invoice)
         return invoice
@@ -484,7 +502,8 @@ class SalesSimulation:
             if not all(_quantity_is_valid(line["quantity"]) for line in draft["lines"]):
                 raise SalesRuleError(f"Every quantity must be a whole number from 1 to {MAX_QUANTITY:,}.")
             order = {
-                "reference": _order_reference(self._next_order_sequence), "action_id": action_id, "account_code": code,
+                "reference": _order_reference(self._next_order_sequence), "token": _new_token(), "action_id": action_id, "account_code": code,
+                "status": SUBMITTED, "invoice": None, "rejection_reason": None,
                 "lines": [{**_line_view(line), "quantity": int(line["quantity"]), "line_total_minor": _line_total(line)} for line in draft["lines"]],
                 "total_minor": sum(_line_total(line) for line in draft["lines"]),
             }
@@ -509,6 +528,47 @@ class SalesSimulation:
             if found is None:
                 raise SalesNotFound
             return _order_view(found)
+
+    # Finance's review of submitted orders, across every partner.
+
+    def review_queue(self, limit: int, offset: int) -> dict:
+        """Orders awaiting a decision, oldest first, so the longest waiting leads."""
+        with self._lock:
+            waiting = [_finance_order_view(order) for order in self._orders if order["status"] == SUBMITTED]
+        return _page(waiting, limit, offset)
+
+    def _undecided(self, held: RecordHandle) -> dict:
+        """A decided order stays decided, so a second decision is a conflict."""
+        order = _require_held(next((order for order in self._orders if order["reference"] == held.reference), None), held.token)
+        if order["status"] != SUBMITTED:
+            raise SalesConflict
+        return order
+
+    def issue_order(self, held: RecordHandle, issue_date: str, due_date: str) -> dict:
+        """Issues exactly the submitted lines and total as a new invoice."""
+        with self._lock:
+            order = self._undecided(held)
+            if not _is_date(issue_date):
+                raise SalesRuleError("Enter a valid issue date.")
+            if not _is_date(due_date) or due_date < issue_date:
+                raise SalesRuleError("Enter a due date on or after the issue date.")
+            invoice = {
+                **_invoice(_invoice_reference(self._next_sequence), _new_token(), order["account_code"], issue_date, due_date, order["lines"]),
+                "order_reference": order["reference"],
+            }
+            self._next_sequence += 1
+            self._invoices.append(invoice)
+            order.update(status=ISSUED, invoice={"reference": invoice["reference"], "issue_date": issue_date, "due_date": due_date})
+            return invoice
+
+    def reject_order(self, held: RecordHandle, reason: str) -> dict:
+        """Final: the partner starts a new draft rather than resubmitting."""
+        with self._lock:
+            order = self._undecided(held)
+            if not reason.strip():
+                raise SalesRuleError("Enter a reason for the partner.")
+            order.update(status=REJECTED, rejection_reason=reason.strip())
+            return _finance_order_view(order)
 
 
 simulation = SalesSimulation()
