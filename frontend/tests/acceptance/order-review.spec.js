@@ -47,7 +47,7 @@ async function openFinance(browser) {
   await page.route(`${API_BASE}/**`, (route) => {
     const { pathname } = new URL(route.request().url());
     if (pathname.startsWith('/partner-sales') || pathname.startsWith('/auth/')) return route.fallback();
-    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'content-type,accept', 'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE' } });
+    if (route.request().method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'content-type,accept,x-fbb-expected-user', 'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE' } });
     if (pathname === '/periods') return route.fulfill({ headers: cors, json: { periods: ['202606', '202605'] } });
     if (pathname === '/health') return route.fulfill({ headers: cors, json: { sample_data_mode: true } });
     return route.fulfill({ status: 503, headers: cors, json: { detail: 'Unavailable in acceptance fixture' } });
@@ -368,4 +368,38 @@ test('ordering, rejection, issuing and collection work by keyboard on a narrow s
   await press(partner, partnerOrders(partner).getByRole('button', { name: 'Open order SIM-ORD-0002' }));
   await expect(workspace(partner).getByText('MTN Finance rejected this order: Order recharge cards in packs of 500.')).toBeVisible();
   await fitsWidth(partner);
+});
+
+test('signing in as Finance in the same browser stops the partner page before it saves anything', async ({ browser }) => {
+  await openFinance(browser);
+  const partner = await signedIn(browser, 'partner-296065');
+  await partner.goto('/');
+  await workspace(partner).getByRole('button', { name: 'Start a draft order' }).click();
+  await workspace(partner).getByRole('button', { name: 'Add RCC-0100 to draft order' }).click();
+
+  // Another tab in the same browser profile signs in as Finance, replacing the cookie.
+  expect((await partner.request.post(`${API_BASE}/auth/login`, { data: { username: 'finance', password: PASSWORD } })).ok()).toBe(true);
+  await workspace(partner).getByRole('button', { name: 'Save draft' }).click();
+  const signIn = partner.getByRole('main', { name: 'Sign in' });
+  await expect(signIn.getByRole('status')).toContainText('This browser is now signed in as a different user');
+
+  const again = await signedIn(browser, 'partner-296065');
+  expect((await (await again.request.get(`${API_BASE}/partner-sales/my/draft`)).json()).draft.lines).toEqual([]);
+});
+
+test('signing in as another partner in the same browser applies nothing to either account', async ({ browser }) => {
+  await openFinance(browser);
+  const partner = await signedIn(browser, 'partner-296065');
+  await partner.goto('/');
+  await workspace(partner).getByRole('button', { name: 'Start a draft order' }).click();
+  await workspace(partner).getByRole('button', { name: 'Add RCC-0100 to draft order' }).click();
+
+  // The same role, so only the page's own login tells the server it was replaced.
+  expect((await partner.request.post(`${API_BASE}/auth/login`, { data: { username: 'partner-353072', password: PASSWORD } })).ok()).toBe(true);
+  await workspace(partner).getByRole('button', { name: 'Save draft' }).click();
+  await expect(partner.getByRole('main', { name: 'Sign in' }).getByRole('status')).toContainText('This browser is now signed in as a different user');
+
+  expect((await (await partner.request.get(`${API_BASE}/partner-sales/my/draft`)).json()).draft).toBeNull();
+  const first = await signedIn(browser, 'partner-296065');
+  expect((await (await first.request.get(`${API_BASE}/partner-sales/my/draft`)).json()).draft.lines).toEqual([]);
 });

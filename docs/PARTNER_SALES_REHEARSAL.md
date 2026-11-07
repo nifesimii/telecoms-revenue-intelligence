@@ -21,9 +21,10 @@ The login page and both signed-in views should say the records are fictional.
 ### Two separate browser contexts
 
 Sign-in cookies are shared by every tab and window in one browser profile, so signing in
-as the partner in a second tab replaces Finance's session in the first: Finance's screens
-then fail to load, and a refresh shows the partner's view. Use two separate contexts,
-side by side:
+as the partner in a second tab replaces Finance's session in the first. The first tab
+refuses to act for the new login: on its next action, or when you return to it, it goes
+back to sign-in saying the browser is now signed in as a different user. Use two separate
+contexts, side by side:
 
 - **Finance window:** a normal window. Open
   `http://localhost:5173/?view=partner-sales&period=202605` and sign in with the internal
@@ -84,7 +85,7 @@ order again.
 | You see | Meaning | Do |
 | --- | --- | --- |
 | "Your session has ended" on the login page | The session expired (after 8 hours) or someone signed out in the same browser profile. Whatever was being sent was not applied | Sign in again |
-| Finance screens fail or show the partner's view | The partner signed in within the same browser profile, replacing Finance's session | Sign the partner in from a private window or second profile, then sign Finance in again |
+| "This browser is now signed in as a different user" on the login page | The other side signed in within the same browser profile, replacing this window's session. Nothing was applied | Sign the other side in from a private window or second profile, then sign in here again |
 | "This order was already decided" | Another Finance session decided it, or the simulation was reset. Nothing was applied | **Load latest orders** |
 | The partner does not see Finance's change | Neither side updates on its own | Refresh the partner window |
 | "This changed elsewhere or the simulation was reset" | Someone else changed this record or reset the simulation, so nothing was applied | **Load latest**, which discards what was typed on the page |

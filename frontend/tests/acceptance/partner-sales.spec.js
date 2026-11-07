@@ -56,7 +56,7 @@ async function routeReads(page, { health = { sample_data_mode: true }, periods =
     const { pathname, searchParams } = new URL(request.url());
     if (servedForReal(pathname)) return route.fallback();
     requests.push(pathname);
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'content-type,accept', 'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE' } });
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'content-type,accept,x-fbb-expected-user', 'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE' } });
     if (request.method() !== 'GET') {
       mutations.push(`${request.method()} ${pathname}`);
       return route.fulfill({ status: 503, headers: cors, json: { detail: 'Blocked by acceptance test' } });

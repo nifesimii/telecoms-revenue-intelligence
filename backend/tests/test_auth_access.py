@@ -247,3 +247,23 @@ def test_local_startup_without_auth_stays_closed(monkeypatch, demo_logins):
         client.cookies.clear()
         assert client.post("/auth/login", json={"username": "finance", "password": demo_logins["finance"]["password"]}).status_code == 503
         assert client.get("/periods").status_code == 401
+
+
+def test_a_request_for_a_different_user_than_the_session_is_refused(demo_logins):
+    """Tabs share one cookie, so a page names who it believes is signed in, and nothing
+    it sends is applied for another login, even one with the same role."""
+    client = signed_in(demo_logins["partner-353072"])
+    expected = {access.EXPECTED_USER_HEADER: "partner-296065"}
+    refused = client.post("/partner-sales/my/draft", headers=expected)
+    assert refused.status_code == 403
+    assert refused.json()["detail"] == access.DIFFERENT_USER_DETAIL
+    assert client.get("/partner-sales/my/draft", headers=expected).status_code == 403
+    assert client.get("/partner-sales/my/draft").json() == {"draft": None}
+
+
+def test_a_request_for_the_signed_in_user_or_naming_nobody_is_served(demo_logins):
+    client = signed_in(demo_logins["partner-296065"])
+    assert client.get("/partner-sales/my/draft", headers={access.EXPECTED_USER_HEADER: "partner-296065"}).status_code == 200
+    assert client.get("/partner-sales/my/draft").status_code == 200
+    # The session check itself answers who is signed in, whoever the page expected.
+    assert client.get("/auth/session", headers={access.EXPECTED_USER_HEADER: "finance"}).json()["username"] == "partner-296065"

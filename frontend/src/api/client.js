@@ -19,15 +19,36 @@ const api = axios.create({
   withCredentials: true,
 });
 
-// A refused session anywhere in the app returns the user to the login page.
+// A refused session anywhere in the app returns the user to the login page. A
+// refusal for the role may mean another tab in this browser signed in as someone
+// else, so the session gate checks who is signed in now.
 export const SESSION_ENDED_EVENT = 'fbb:session-ended';
+export const SESSION_CHECK_EVENT = 'fbb:session-check';
 const sessionPaths = ['/auth/login', '/auth/session'];
-const announceSessionEnded = () => {
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event(SESSION_ENDED_EVENT));
+const announce = (type) => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(type));
+};
+const announceRefusal = (status) => {
+  if (status === 401) announce(SESSION_ENDED_EVENT);
+  if (status === 403) announce(SESSION_CHECK_EVENT);
 };
 
+// Sent with every request, so the server refuses anything this page sends after
+// another tab signs in as someone else. backend/auth/access.py checks it.
+const EXPECTED_USER_HEADER = 'X-FBB-Expected-User';
+let expectedUser = null;
+export function setExpectedUser(username) {
+  expectedUser = username;
+}
+const expectedUserHeaders = () => (expectedUser ? { [EXPECTED_USER_HEADER]: expectedUser } : {});
+
+api.interceptors.request.use((request) => {
+  Object.entries(expectedUserHeaders()).forEach(([name, value]) => request.headers.set(name, value));
+  return request;
+});
+
 api.interceptors.response.use(undefined, (error) => {
-  if (error.response?.status === 401 && !sessionPaths.includes(error.config?.url)) announceSessionEnded();
+  if (!sessionPaths.includes(error.config?.url)) announceRefusal(error.response?.status);
   return Promise.reject(error);
 });
 
@@ -574,10 +595,10 @@ async function streamAnswer(path, payload, { signal, onText, onStatus } = {}) {
   try {
     const response = await fetch(`${baseURL.replace(/\/$/, '')}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson', ...expectedUserHeaders() },
       body: JSON.stringify(payload), signal: controller.signal, credentials: 'include',
     });
-    if (response.status === 401) announceSessionEnded();
+    announceRefusal(response.status);
     if (!response.ok) throw new Error(`Explanation unavailable (HTTP ${response.status}). Please retry.`);
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/x-ndjson')) {
       throw new Error('Invalid explanation response. Please retry.');

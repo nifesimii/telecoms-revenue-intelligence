@@ -3,6 +3,24 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-07 (Two logins in one browser profile)
+
+- Found while reviewing locally: signing in as Finance in a second tab of the same browser replaced the
+  partner tab's cookie, and the partner page then failed quietly (its saves got 403).
+- Every request now names the login the page is showing (`X-FBB-Expected-User`, set by `SessionGate`).
+  `backend/auth/access.py` refuses a restricted route with 403 "Signed in as a different user." when it
+  differs from the session, even under the same role (two partners), so nothing is applied for the wrong
+  account. A request naming nobody (curl, tests) is served as before.
+- Any 403, and every return to the window (focus or becoming visible), makes `SessionGate` ask
+  `/auth/session` who is signed in. If it is a different user, the page clears its cached data and returns
+  to sign-in with "This browser is now signed in as a different user…", suggesting a private window for
+  the second login. A 403 under the same login changes nothing, an unreachable server signs nobody out,
+  and an answer made stale by a sign-in or sign-out meanwhile is ignored. A check requested during another
+  runs after it.
+- Tests: two backend access tests; three mocked cases in `login.spec.js` (noticed from a refused read,
+  noticed on returning to the window, a refusal under the same login); and two real-backend cases in
+  `order-review.spec.js`, partner to Finance and partner to another partner, proving no draft changes.
+
 ## Session — 2026-11-07 (Partner Sales: finish the two-login presentation, #14)
 
 - A hosted deployment now refuses to start unless `DEMO_LOGINS` and `DEMO_SESSION_SECRET` are valid; the

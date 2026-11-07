@@ -1,13 +1,21 @@
 // Decides whether a session exists before any workspace mounts, so nothing is
 // requested on behalf of someone who has not signed in. Leaving a session clears
 // cached query results, so the next login in this browser cannot see them.
+//
+// Every tab in a browser profile shares one session cookie, so signing in elsewhere
+// replaces this page's login. Requests name the login shown, so the server refuses
+// them for anyone else; a refusal or a return to the window then checks who is
+// signed in now, and stops this page rather than act for the wrong account.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { getSession, SESSION_ENDED_EVENT, signOut } from '../../api/client.js';
+import { getSession, SESSION_CHECK_EVENT, SESSION_ENDED_EVENT, setExpectedUser, signOut } from '../../api/client.js';
 import LoginPage from './LoginPage.jsx';
 
 const ENDED_NOTICE = 'Your session has ended. Sign in again to continue.';
+const CHANGED_NOTICE = 'This browser is now signed in as a different user, from another tab or window, so this page stopped before acting for the wrong account. Sign in again to continue. To keep two logins open at once, use a private window for one of them.';
+
+const samePrincipal = (left, right) => left.username === right.username && left.role === right.role && left.account_code === right.account_code;
 
 export function SignedInAs({ session, onSignOut }) {
   const label = session.role === 'partner' ? `Partner account ${session.account_code}` : `Internal · ${session.username}`;
@@ -23,30 +31,81 @@ export default function SessionGate({ children }) {
   const [loadFailed, setLoadFailed] = useState(false);
   const [notice, setNotice] = useState('');
   const [signOutFailed, setSignOutFailed] = useState(false);
+  // The login this page shows, read by checks that outlive a render.
+  const shownRef = useRef();
+
+  // Requests name the login being shown from the moment it is shown, so the server
+  // refuses anything this page sends after another tab signs in as someone else.
+  const show = useCallback((next, message = '') => {
+    shownRef.current = next;
+    setExpectedUser(next?.username ?? null);
+    setNotice(message);
+    setSession(next);
+  }, []);
 
   const load = useCallback(() => {
     setLoadFailed(false);
-    return getSession().then(setSession).catch(() => setLoadFailed(true));
-  }, []);
+    return getSession().then((next) => show(next)).catch(() => setLoadFailed(true));
+  }, [show]);
 
   useEffect(() => { load(); }, [load]);
 
+  const leaveWith = useCallback((message) => {
+    if (shownRef.current) show(null, message);
+    queryClient.clear();
+  }, [queryClient, show]);
+
   useEffect(() => {
-    const ended = () => {
-      setSession((current) => {
-        if (current) setNotice(ENDED_NOTICE);
-        return null;
-      });
-      queryClient.clear();
-    };
+    const ended = () => leaveWith(ENDED_NOTICE);
     window.addEventListener(SESSION_ENDED_EVENT, ended);
     return () => window.removeEventListener(SESSION_ENDED_EVENT, ended);
-  }, [queryClient]);
+  }, [leaveWith]);
+
+  // One check at a time; a request made during one runs once it finishes, so a
+  // refusal that arrives mid-check is still checked.
+  const checking = useRef(false);
+  const checkAgain = useRef(false);
+  useEffect(() => {
+    const check = async () => {
+      if (checking.current) {
+        checkAgain.current = true;
+        return;
+      }
+      checking.current = true;
+      try {
+        do {
+          checkAgain.current = false;
+          const shown = shownRef.current;
+          if (!shown) return;
+          let current;
+          try {
+            current = await getSession();
+          } catch {
+            return; // An unreachable server says nothing about who is signed in.
+          }
+          // A sign-in or sign-out here while asking makes the answer out of date.
+          if (shownRef.current !== shown) continue;
+          if (current === null) leaveWith(ENDED_NOTICE);
+          else if (!samePrincipal(current, shown)) leaveWith(CHANGED_NOTICE);
+        } while (checkAgain.current);
+      } finally {
+        checking.current = false;
+      }
+    };
+    const checkWhenVisible = () => { if (document.visibilityState === 'visible') check(); };
+    window.addEventListener(SESSION_CHECK_EVENT, check);
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', checkWhenVisible);
+    return () => {
+      window.removeEventListener(SESSION_CHECK_EVENT, check);
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', checkWhenVisible);
+    };
+  }, [leaveWith]);
 
   const signedIn = (next) => {
     queryClient.clear();
-    setNotice('');
-    setSession(next);
+    show(next);
   };
 
   const leave = async () => {
@@ -58,8 +117,7 @@ export default function SessionGate({ children }) {
       return;
     }
     queryClient.clear();
-    setNotice('');
-    setSession(null);
+    show(null);
   };
 
   if (loadFailed) {

@@ -127,6 +127,12 @@ def _refuse_cross_site_changes(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Cross-site request refused.")
 
 
+# Every tab in a browser shares one session cookie, so signing in elsewhere replaces
+# a page's login. The page names the user it was showing; anything sent for another
+# user is refused, even under the same role, and the page returns to sign-in.
+EXPECTED_USER_HEADER = "X-FBB-Expected-User"
+DIFFERENT_USER_DETAIL = "Signed in as a different user."
+
 # The one role each restricted level admits; SIGNED_IN admits any.
 _REQUIRED_ROLE = {Access.INTERNAL: session.INTERNAL, Access.PARTNER: session.PARTNER}
 
@@ -145,5 +151,8 @@ def enforce_access(request: Request) -> None:
     if principal is None:
         raise HTTPException(status_code=401, detail="Authentication required.")
     required_role = _REQUIRED_ROLE.get(level)
+    expected_user = request.headers.get(EXPECTED_USER_HEADER)
+    if required_role and expected_user is not None and expected_user != principal.username:
+        raise HTTPException(status_code=403, detail=DIFFERENT_USER_DETAIL)
     if required_role and principal.role != required_role:
         raise HTTPException(status_code=403, detail="Not available for this login.")

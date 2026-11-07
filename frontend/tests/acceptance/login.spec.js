@@ -12,11 +12,11 @@ const LOGINS = {
 };
 
 async function mockApi(page, { signedInAs = null, reachable = true, configured = true } = {}) {
-  const state = { session: signedInAs && LOGINS[signedInAs], requests: [] };
+  const state = { session: signedInAs && LOGINS[signedInAs], requests: [], refuseReads: false };
   await page.route(API, async (route) => {
     const request = route.request();
     const { pathname } = new URL(request.url());
-    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'content-type,accept', 'access-control-allow-methods': 'GET,POST' } });
+    if (request.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { ...cors, 'access-control-allow-headers': 'content-type,accept,x-fbb-expected-user', 'access-control-allow-methods': 'GET,POST' } });
     state.requests.push(pathname);
     if (!reachable) return route.abort();
     if (pathname === '/auth/login') {
@@ -44,6 +44,7 @@ async function mockApi(page, { signedInAs = null, reachable = true, configured =
     }
     if (state.session.role !== 'internal') return route.fulfill({ status: 403, headers: cors, json: { detail: 'Not available for this login.' } });
     if (pathname === '/periods') return route.fulfill({ headers: cors, json: { periods: ['202605'] } });
+    if (state.refuseReads) return route.fulfill({ status: 403, headers: cors, json: { detail: 'Not available for this login.' } });
     return route.fulfill({ status: 503, headers: cors, json: { detail: 'Unavailable in acceptance fixture' } });
   });
   return state;
@@ -140,6 +141,44 @@ test('an ended session returns to login with an explanation', async ({ page }) =
   await expect(login(page).getByRole('status')).toHaveText('Your session has ended. Sign in again to continue.');
   await submit(page, 'finance');
   await expect(page.getByText('Signed in as Internal · finance')).toBeVisible();
+});
+
+const CHANGED_NOTICE = 'This browser is now signed in as a different user, from another tab or window, so this page stopped before acting for the wrong account. Sign in again to continue. To keep two logins open at once, use a private window for one of them.';
+
+test('a login changed in another tab is noticed from a refused read, and says why', async ({ page }) => {
+  const api = await mockApi(page, { signedInAs: 'finance' });
+  await page.goto('/');
+  await expect(page.getByText('Signed in as Internal · finance')).toBeVisible();
+  api.session = LOGINS['partner-296065'];
+  await workspaces(page).getByRole('button', { name: 'Payments', exact: true }).click({ timeout: 3000 }).catch(() => {});
+  await expect(login(page).getByRole('status')).toHaveText(CHANGED_NOTICE);
+  await submit(page, 'finance');
+  await expect(page.getByText('Signed in as Internal · finance')).toBeVisible();
+});
+
+test('returning to the window notices a login changed elsewhere before anything is clicked', async ({ page }) => {
+  const api = await mockApi(page, { signedInAs: 'partner-296065' });
+  await page.goto('/');
+  await expect(page.getByText('Signed in as Partner account 296065')).toBeVisible();
+  api.session = LOGINS.finance;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(login(page).getByRole('status')).toHaveText(CHANGED_NOTICE);
+});
+
+test('a refusal under the same login keeps you signed in', async ({ page }) => {
+  const api = await mockApi(page, { signedInAs: 'finance' });
+  await page.goto('/');
+  await expect(page.getByText('Signed in as Internal · finance')).toBeVisible();
+  api.refuseReads = true;
+  const checks = () => api.requests.filter((path) => path === '/auth/session').length;
+  const before = checks();
+  await workspaces(page).getByRole('button', { name: 'Payments', exact: true }).click();
+  await expect.poll(checks).toBeGreaterThan(before);
+  const afterRefusal = checks();
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect.poll(checks).toBeGreaterThan(afterRefusal);
+  await expect(page.getByText('Signed in as Internal · finance')).toBeVisible();
+  await expect(login(page)).toHaveCount(0);
 });
 
 test('an unreachable server is not presented as being signed out', async ({ page }) => {
