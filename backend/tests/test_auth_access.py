@@ -217,3 +217,33 @@ def test_cross_site_reads_with_a_session_are_not_granted_cors(demo_logins):
     client = signed_in(demo_logins["finance"])
     response = client.get("/auth/session", headers={"Origin": "https://evil.example"})
     assert "access-control-allow-origin" not in response.headers
+
+
+@pytest.mark.parametrize(
+    "logins,secret",
+    [("", "configured"), ("[]", "configured"), ("not json", "configured"), (None, "")],
+    ids=["no-logins", "empty-logins", "invalid-logins", "no-secret"],
+)
+def test_hosted_startup_fails_without_configured_auth(monkeypatch, logins, secret):
+    monkeypatch.setattr(config, "HOSTED_DEPLOYMENT", True)
+    if logins is not None:  # None keeps the generated logins.
+        monkeypatch.setattr(config, "DEMO_LOGINS", logins)
+    monkeypatch.setattr(config, "DEMO_SESSION_SECRET", secret)
+    with pytest.raises(RuntimeError, match="DEMO_LOGINS and DEMO_SESSION_SECRET"):
+        with TestClient(app):
+            pass
+
+
+def test_hosted_startup_succeeds_with_configured_auth(monkeypatch):
+    monkeypatch.setattr(config, "HOSTED_DEPLOYMENT", True)
+    with TestClient(app) as client:
+        assert client.get("/health").status_code == 200
+
+
+def test_local_startup_without_auth_stays_closed(monkeypatch, demo_logins):
+    monkeypatch.setattr(config, "HOSTED_DEPLOYMENT", False)
+    monkeypatch.setattr(config, "DEMO_LOGINS", "")
+    with TestClient(app) as client:
+        client.cookies.clear()
+        assert client.post("/auth/login", json={"username": "finance", "password": demo_logins["finance"]["password"]}).status_code == 503
+        assert client.get("/periods").status_code == 401

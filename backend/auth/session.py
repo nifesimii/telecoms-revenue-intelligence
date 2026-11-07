@@ -73,6 +73,11 @@ def _load_logins() -> dict[str, _Login]:
     return {login.principal.username: login for login in logins}
 
 
+def require_logins() -> None:
+    """Raise LoginsNotConfigured unless at least one valid login and a signing secret are set."""
+    _load_logins()
+
+
 def _same(left: str, right: str) -> bool:
     return hmac.compare_digest(left.encode(), right.encode())
 

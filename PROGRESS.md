@@ -3,6 +3,26 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-07 (Partner Sales: finish the two-login presentation, #14)
+
+- A hosted deployment now refuses to start unless `DEMO_LOGINS` and `DEMO_SESSION_SECRET` are valid; the
+  error names both variables. Locally the application still starts but stays closed (sign-in answers 503,
+  every other route 401). `render.yaml` and docs/DEPLOY.md replace the old `DEMO_USERNAME`/`DEMO_PASSWORD`
+  Basic Auth secrets with the two new ones, and DEPLOY.md warns that a deploy returns the simulation to its seed.
+- docs/PARTNER_SALES_REHEARSAL.md is now a two-window script: Finance in a normal window, the partner in a
+  private window or second profile (cookies are shared within a profile), with the partner refreshing after
+  each Finance step, a same-named-account check, a rejection variant, and a warning not to deploy right
+  before presenting.
+- New real-backend journeys in `order-review.spec.js`: a confirmed reset (and a cancelled one) reaches a
+  signed-in partner on their next refresh, including their saved draft, and a partner has no reset control
+  and gets 403; a session that ends mid-save or mid-issue returns to sign-in with an explanation and applies
+  nothing; and ordering, rejection, issuing and collection by keyboard at 360px.
+- Already in place from earlier slices and only checked here: internal-only reset with in-page
+  confirmation, stale-action refusals, fictional labelling on login and both shells, and the full parent
+  acceptance example with partner-353072 seeing none of it.
+- Next: the parent #7 is complete once #14 is reviewed; nothing is pushed until the user reviews locally.
+- Verification: backend 1,441 passed and 37 skipped; acceptance 100 passed; the production build passed.
+
 ## Session — 2026-11-06 (Partner Sales: partner sees their own Commission Account, #13)
 
 - The fictional commission statements moved from the frontend bundle to the server

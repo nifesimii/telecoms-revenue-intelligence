@@ -29,6 +29,9 @@ async function expectCommissionUnchanged(page) {
   await expect(account.getByRole('region', { name: 'Existing explanations' })).toHaveCount(0);
 }
 
+const simulationStatus = async (page) => (await page.request.get(`${API_BASE}/partner-sales/status`)).json();
+const fitsWidth = async (page) => expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+
 // A fresh context per side, so the two logins never share a cookie.
 async function signedIn(browser, username) {
   const context = await browser.newContext();
@@ -118,7 +121,7 @@ test('Finance issues a partner order and the partner sees the invoice', async ({
   await invoice.getByRole('button', { name: 'Back to invoices' }).click();
   await expect(workspace(finance).getByRole('status').filter({ hasText: 'Order SIM-ORD-0002 was issued as invoice SIM-INV-0004.' })).toBeFocused();
   await expect(queue(finance).getByRole('row')).toHaveCount(2);
-  expect((await (await finance.request.get(`${API_BASE}/partner-sales/status`)).json()).invoices).toBe(4);
+  expect((await simulationStatus(finance)).invoices).toBe(4);
 
   await partner.reload();
   await expect(partnerOrders(partner).getByRole('row', { name: /SIM-ORD-0002 Issued NGN 110,000\.00/ })).toBeVisible();
@@ -173,7 +176,7 @@ test('a partner sees their invoice without a payment control until Finance colle
   await expect(seen.getByRole('heading', { name: 'Simulated invoice SIM-INV-0004' })).toBeFocused();
   await expect(seen.getByText('NGN 110,000.00 outstanding. MTN Finance records collections against this invoice. Refresh to see new ones.')).toBeVisible();
   await expect(seen.getByRole('textbox', { name: 'Amount in NGN' })).toHaveCount(0);
-  expect(await partner.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await fitsWidth(partner);
   const [invoice] = (await (await partner.request.get(`${API_BASE}/partner-sales/my/invoices`)).json()).items;
   expect((await partner.request.post(`${API_BASE}/partner-sales/invoices/${invoice.reference}/collections`, { data: { token: 'any', action_id: 'partner-try', date: '2026-06-01', amount_minor: 100 } })).status()).toBe(403);
 
@@ -222,14 +225,14 @@ test('an order decided elsewhere is refused with an explanation, and nothing cha
   const elsewhere = await signedIn(browser, 'finance');
   const [waiting] = (await (await elsewhere.request.get(`${API_BASE}/partner-sales/orders`)).json()).items;
   expect((await elsewhere.request.post(`${API_BASE}/partner-sales/orders/SIM-ORD-0001/reject`, { data: { token: waiting.token, reason: 'Duplicate of an earlier order.' } })).ok()).toBe(true);
-  const status = await (await elsewhere.request.get(`${API_BASE}/partner-sales/status`)).json();
+  const status = await simulationStatus(elsewhere);
 
   await order.getByLabel('Due date').fill('2026-06-30');
   await order.getByRole('button', { name: 'Issue invoice' }).click();
   await expect(order.getByRole('alert')).toContainText('This order was already decided, possibly in another session, or the simulation was reset. Nothing here was applied.');
   await expect(order.getByRole('button', { name: 'Issue invoice' })).toBeDisabled();
   await expect(order.getByRole('button', { name: 'Reject order' })).toBeDisabled();
-  expect(await (await elsewhere.request.get(`${API_BASE}/partner-sales/status`)).json()).toEqual(status);
+  expect(await simulationStatus(elsewhere)).toEqual(status);
 
   await order.getByRole('button', { name: 'Load latest orders' }).click();
   await expect(workspace(finance).getByRole('heading', { name: 'Orders awaiting review' })).toBeFocused();
@@ -242,5 +245,127 @@ test('order review fits a narrow screen', async ({ browser }) => {
   await openPartnerSales(finance);
   await queue(finance).getByRole('button', { name: 'Review order SIM-ORD-0001' }).click();
   await expect(review(finance, 'SIM-ORD-0001')).toBeVisible();
-  expect(await finance.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await fitsWidth(finance);
+});
+
+test('Finance resets for everyone after confirming, and a signed-in partner sees the seed on their next refresh', async ({ browser }) => {
+  const finance = await openFinance(browser);
+  const partner = await partnerSubmits(browser);
+  await workspace(partner).getByRole('button', { name: 'Start a draft order' }).click();
+  await workspace(partner).getByRole('button', { name: 'Add RCC-0100 to draft order' }).click();
+  await workspace(partner).getByRole('button', { name: 'Save draft' }).click();
+  await expect(workspace(partner).getByText('Draft saved. Nothing has been sent to MTN Finance.')).toBeVisible();
+
+  // A partner has no reset, on the page or through the API.
+  await expect(partner.getByRole('button', { name: 'Reset simulation' })).toHaveCount(0);
+  expect((await partner.request.post(`${API_BASE}/partner-sales/reset`)).status()).toBe(403);
+  expect((await simulationStatus(finance)).orders).toBe(2);
+
+  await openPartnerSales(finance);
+  await workspace(finance).getByRole('button', { name: 'Reset simulation' }).click();
+  const confirm = workspace(finance).getByRole('group', { name: 'Confirm simulation reset' });
+  await expect(confirm).toContainText('2 partner orders');
+  await expect(confirm.getByRole('button', { name: 'Keep simulation' })).toBeFocused();
+  await finance.keyboard.press('Enter');
+  await expect(workspace(finance).getByRole('button', { name: 'Reset simulation' })).toBeFocused();
+  expect((await simulationStatus(finance)).orders).toBe(2);
+
+  await finance.keyboard.press('Enter');
+  await confirm.getByRole('button', { name: 'Reset to starting point' }).click();
+  await expect(workspace(finance).getByText('Simulation reset to its starting point: 3 example invoices in May 2026, and the next invoice will be SIM-INV-0004.')).toBeFocused();
+  await expect(queue(finance).getByRole('button', { name: 'Review order SIM-ORD-0001' })).toBeVisible();
+  await expect(queue(finance).getByRole('button', { name: 'Review order SIM-ORD-0002' })).toHaveCount(0);
+
+  await partner.reload();
+  await expect(workspace(partner).getByText('You have no draft order.')).toBeVisible();
+  await expect(workspace(partner).getByText('You have not submitted any orders yet.')).toBeVisible();
+  await expect(workspace(partner).getByText('MTN Finance has not issued you any invoices yet.')).toBeVisible();
+  await expectCommissionUnchanged(partner);
+});
+
+test('a session that ends mid-action returns to sign-in with an explanation, and nothing was applied', async ({ browser }) => {
+  const finance = await openFinance(browser);
+  const partner = await signedIn(browser, 'partner-296065');
+  await partner.goto('/');
+  await workspace(partner).getByRole('button', { name: 'Start a draft order' }).click();
+  await workspace(partner).getByRole('button', { name: 'Add RCC-0100 to draft order' }).click();
+  await partner.context().clearCookies();
+  await workspace(partner).getByRole('button', { name: 'Save draft' }).click();
+  const signIn = partner.getByRole('main', { name: 'Sign in' });
+  await expect(signIn.getByText('Your session has ended. Sign in again to continue.')).toBeVisible();
+  await expect(signIn.getByText('Demonstration only. Partner Sales records are fictional and are not actual obligations.')).toBeVisible();
+
+  await signIn.getByLabel('Username').fill('partner-296065');
+  await signIn.getByLabel('Password').fill(PASSWORD);
+  await signIn.getByLabel('Password').press('Enter');
+  await expect(workspace(partner).getByRole('heading', { name: 'Your draft order' })).toBeVisible();
+  await expect(workspace(partner).getByText('No lines yet. Add a product from the catalogue.')).toBeVisible();
+
+  await openPartnerSales(finance);
+  await queue(finance).getByRole('button', { name: 'Review order SIM-ORD-0001' }).click();
+  await review(finance, 'SIM-ORD-0001').getByLabel('Due date').fill('2026-06-30');
+  await finance.context().clearCookies();
+  await review(finance, 'SIM-ORD-0001').getByRole('button', { name: 'Issue invoice' }).click();
+  await expect(finance.getByRole('main', { name: 'Sign in' }).getByText('Your session has ended. Sign in again to continue.')).toBeVisible();
+  const elsewhere = await signedIn(browser, 'finance');
+  expect(await simulationStatus(elsewhere)).toMatchObject({ invoices: 3, orders: 1 });
+  expect((await (await elsewhere.request.get(`${API_BASE}/partner-sales/orders`)).json()).items.map((order) => order.reference)).toEqual(['SIM-ORD-0001']);
+});
+
+test('ordering, rejection, issuing and collection work by keyboard on a narrow screen', async ({ browser }) => {
+  const finance = await openFinance(browser);
+  const partner = await signedIn(browser, 'partner-296065');
+  const press = async (page, locator) => {
+    await locator.focus();
+    await page.keyboard.press('Enter');
+  };
+
+  await partner.setViewportSize({ width: 360, height: 700 });
+  await partner.goto('/');
+  await expect(partner.getByText('Synthetic demonstration')).toBeVisible();
+  await press(partner, workspace(partner).getByRole('button', { name: 'Start a draft order' }));
+  await expect(workspace(partner).getByRole('heading', { name: 'Fictional product catalogue' })).toBeFocused();
+  await press(partner, workspace(partner).getByRole('button', { name: 'Add RCC-0100 to draft order' }));
+  await expect(workspace(partner).getByRole('textbox', { name: 'Quantity for RCC-0100' })).toBeFocused();
+  await partner.keyboard.press('Backspace');
+  await partner.keyboard.type('100');
+  await press(partner, workspace(partner).getByRole('button', { name: 'Preview order' }));
+  await expect(workspace(partner).getByRole('heading', { name: 'Order preview' })).toBeFocused();
+  await fitsWidth(partner);
+  await press(partner, workspace(partner).getByRole('button', { name: 'Submit order' }));
+  await expect(workspace(partner).getByText('Order SIM-ORD-0002 for NGN 10,000.00 was submitted to MTN Finance for review. It can no longer be changed or withdrawn.')).toBeFocused();
+  await fitsWidth(partner);
+
+  await finance.setViewportSize({ width: 360, height: 700 });
+  await openPartnerSales(finance);
+  await expect(finance.getByText('Synthetic demonstration').first()).toBeVisible();
+  await press(finance, queue(finance).getByRole('button', { name: 'Review order SIM-ORD-0002' }));
+  const rejecting = review(finance, 'SIM-ORD-0002');
+  await expect(rejecting.getByRole('heading', { name: 'Review order SIM-ORD-0002' })).toBeFocused();
+  await press(finance, rejecting.getByRole('button', { name: 'Reject order' }));
+  await expect(rejecting.getByLabel('Reason for rejecting')).toBeFocused();
+  await finance.keyboard.type('Order recharge cards in packs of 500.');
+  await press(finance, rejecting.getByRole('button', { name: 'Reject order' }));
+  await expect(workspace(finance).getByRole('status').filter({ hasText: 'Order SIM-ORD-0002 was rejected.' })).toBeFocused();
+
+  await press(finance, queue(finance).getByRole('button', { name: 'Review order SIM-ORD-0001' }));
+  const issuing = review(finance, 'SIM-ORD-0001');
+  await expect(issuing.getByRole('heading', { name: 'Review order SIM-ORD-0001' })).toBeFocused();
+  await issuing.getByLabel('Due date').fill('2026-06-30');
+  await fitsWidth(finance);
+  await press(finance, issuing.getByRole('button', { name: 'Issue invoice' }));
+  const invoice = workspace(finance).getByRole('region', { name: 'Simulated invoice SIM-INV-0004' });
+  await expect(invoice.getByRole('heading', { name: 'Simulated invoice SIM-INV-0004' })).toBeFocused();
+  await invoice.getByLabel('Amount in NGN').focus();
+  await finance.keyboard.type('40000');
+  await press(finance, invoice.getByRole('button', { name: 'Record collection' }));
+  await expect(invoice.getByRole('status').filter({ hasText: /^Recorded SIM-PAY-/ })).toBeVisible();
+  await expect(invoice.getByText('Partially paid', { exact: true })).toBeVisible();
+  await fitsWidth(finance);
+
+  await partner.reload();
+  await expect(partnerOrders(partner).getByRole('row', { name: /SIM-ORD-0002 Rejected/ })).toBeVisible();
+  await press(partner, partnerOrders(partner).getByRole('button', { name: 'Open order SIM-ORD-0002' }));
+  await expect(workspace(partner).getByText('MTN Finance rejected this order: Order recharge cards in packs of 500.')).toBeVisible();
+  await fitsWidth(partner);
 });

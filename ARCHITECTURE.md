@@ -1043,11 +1043,13 @@ Things that are deliberately incomplete, temporary, or non-obvious — don't
   legacy `zero_commission_trail` table to `verification_trail` on
   older audit DBs. Intentional convenience so a pre-existing DB
   doesn't need an operator migration.
-- **No auth.** Any caller can hit any endpoint and query any dealer.
-  Fine for the pilot; a real deployment needs authn/authz (flagged in
-  `docs/PRODUCTION_READINESS_LEARNING_PLAN.md`). The GM preview is
-  gated by HTTP Basic Auth at the FastAPI layer — not a real user
-  system.
+- **Demonstration logins only.** `backend/auth/` signs in fixed internal
+  and partner logins from `DEMO_LOGINS`, with a signed session cookie and a
+  deny-by-default route policy (docs/adr/0002-partner-sales-two-logins.md).
+  Without valid `DEMO_LOGINS` and `DEMO_SESSION_SECRET` the application stays
+  closed locally, and a hosted deployment refuses to start. It is not a real
+  user system: a production deployment needs enterprise identity and authz
+  (flagged in `docs/PRODUCTION_READINESS_LEARNING_PLAN.md`).
 - **No CI linter; one known-flaky test.**
   `test_inventory_agent.py::test_kb_inventory_rules_grounded` is a
   live-LLM test that occasionally emits "fraud" in a KB-forbidden

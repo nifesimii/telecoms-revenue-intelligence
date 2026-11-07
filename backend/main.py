@@ -26,6 +26,7 @@ from backend.agent import prompts
 from backend.api.auth_routes import router as auth_router
 from backend.api.routes import router as api_router
 from backend.api.sales_routes import router as sales_router
+from backend.auth import session
 from backend.auth.access import enforce_access
 
 logger = logging.getLogger(__name__)
@@ -190,7 +191,15 @@ def _seed_apdp_if_empty() -> bool:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """Verify the system prompt loads cleanly before serving traffic."""
+    """Verify the system prompt loads cleanly, and hosted sign-in is configured, before serving traffic."""
+    if config.HOSTED_DEPLOYMENT:
+        # Locally the application stays closed instead; hosted, a deploy should fail visibly.
+        try:
+            session.require_logins()
+        except session.LoginsNotConfigured:
+            raise RuntimeError(
+                "Hosted deployment needs valid DEMO_LOGINS and DEMO_SESSION_SECRET. See docs/DEPLOY.md."
+            ) from None
     system_prompt = prompts.get_system_prompt()
     if not system_prompt or len(system_prompt) < 500:
         raise RuntimeError(
