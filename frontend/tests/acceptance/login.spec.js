@@ -86,9 +86,14 @@ test('a partner sees only their own account and requests nothing internal', asyn
   await page.goto('/?view=payment');
   await submit(page, 'partner-296065');
   const main = page.getByRole('main', { name: 'Partner Sales' });
-  await expect(main.getByText('River Isle Ventures · Account 296065')).toBeVisible();
+  await expect(main.getByRole('heading', { level: 1, name: 'River Isle Ventures' })).toBeVisible();
+  await expect(main.getByText('Account 296065', { exact: true })).toBeVisible();
+  const showTab = (name) => main.getByRole('navigation', { name: 'Partner Sales sections' }).getByRole('button', { name: new RegExp(`^${name}`) }).click();
+  await showTab('My orders');
   await expect(main.getByText('You have not submitted any orders yet.')).toBeVisible();
+  await showTab('Invoices');
   await expect(main.getByText('MTN Finance has not issued you any invoices yet.')).toBeVisible();
+  await showTab('Commission');
   await expect(main.getByText('No fictional commission statement exists for your account. Its amounts are unavailable, not zero.')).toBeVisible();
   await expect(page.getByText('Signed in as Partner account 296065')).toBeVisible();
   await expect(page.getByText('Synthetic demonstration')).toBeVisible();

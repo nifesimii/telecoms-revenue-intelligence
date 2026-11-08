@@ -16,6 +16,7 @@ const partnerInvoices = (page) => workspace(page).getByRole('table', { name: 'Yo
 const partnerCommission = (page) => workspace(page).getByRole('region', { name: 'Your Partner Commission Account' });
 // The fictional statements for 296065, whose balances no order, invoice or collection changes.
 async function expectCommissionUnchanged(page) {
+  await partnerTab(page, 'Commission');
   const account = partnerCommission(page);
   await expect(account.getByLabel('Statement month')).toHaveValue('202606');
   await expect(account.getByLabel('Statement reconciliation')).toContainText('Closing outstandingNGN 1,418,759.61');
@@ -29,6 +30,8 @@ async function expectCommissionUnchanged(page) {
   await expect(account.getByRole('region', { name: 'Existing explanations' })).toHaveCount(0);
 }
 
+const partnerTabButton = (page, name) => workspace(page).getByRole('navigation', { name: 'Partner Sales sections' }).getByRole('button', { name: new RegExp(`^${name}`) });
+const partnerTab = (page, name) => partnerTabButton(page, name).click();
 const simulationStatus = async (page) => (await page.request.get(`${API_BASE}/partner-sales/status`)).json();
 const fitsWidth = async (page) => expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
 
@@ -63,6 +66,7 @@ async function openPartnerSales(page) {
 // Finance opens the presentation's invoice from the May 2026 list and records a collection.
 async function financeCollects(page, amount) {
   await openPartnerSales(page);
+  await workspace(page).getByRole('group', { name: 'Partner Sales views' }).getByRole('button', { name: /^Invoices/ }).click();
   await workspace(page).getByRole('button', { name: 'Open invoice SIM-INV-0004' }).click();
   const invoice = workspace(page).getByRole('region', { name: 'Simulated invoice SIM-INV-0004' });
   await invoice.getByLabel('Amount in NGN').fill(amount);
@@ -81,6 +85,8 @@ async function partnerSubmits(browser) {
   }
   await workspace(page).getByRole('button', { name: 'Preview order' }).click();
   await workspace(page).getByRole('button', { name: 'Submit order' }).click();
+  await expect(workspace(page).getByText('was submitted to MTN Finance')).toBeVisible();
+  await partnerTab(page, 'My orders');
   await expect(partnerOrders(page).getByRole('row', { name: /SIM-ORD-0002 Submitted/ })).toBeVisible();
   return page;
 }
@@ -90,13 +96,13 @@ test('Finance issues a partner order and the partner sees the invoice', async ({
   const partner = await partnerSubmits(browser);
   await expectCommissionUnchanged(partner);
   await openPartnerSales(finance);
-  await expect(queue(finance).getByRole('row', { name: /SIM-ORD-0001 Sunset Crest Communications · Account 295083 NGN 109,999\.99/ })).toBeVisible();
-  await expect(queue(finance).getByRole('row', { name: /SIM-ORD-0002 River Isle Ventures · Account 296065 NGN 110,000\.00/ })).toBeVisible();
+  await expect(queue(finance).getByRole('row', { name: /SIM-ORD-0001 Sunset Crest Communications\s*Account 295083 Submitted NGN 109,999\.99/ })).toBeVisible();
+  await expect(queue(finance).getByRole('row', { name: /SIM-ORD-0002 River Isle Ventures\s*Account 296065 Submitted NGN 110,000\.00/ })).toBeVisible();
 
   await queue(finance).getByRole('button', { name: 'Review order SIM-ORD-0002' }).click();
   const order = review(finance, 'SIM-ORD-0002');
   await expect(order.getByRole('heading', { name: 'Review order SIM-ORD-0002' })).toBeFocused();
-  await expect(order.getByText('River Isle Ventures · Account 296065')).toBeVisible();
+  await expect(order.getByRole('heading', { name: /River Isle Ventures · Account 296065/ })).toBeVisible();
   await expect(order.getByRole('row', { name: /Total NGN 110,000\.00/ })).toBeVisible();
 
   // The invoice belongs to its issue month, so it stays in the month being reviewed.
@@ -118,25 +124,29 @@ test('Finance issues a partner order and the partner sees the invoice', async ({
   await expect(invoice.getByRole('heading', { name: 'Simulated invoice SIM-INV-0004' })).toBeFocused();
   await expect(invoice.getByText('From partner order SIM-ORD-0002')).toBeVisible();
   await expect(invoice.getByText('Unpaid', { exact: true })).toBeVisible();
-  await invoice.getByRole('button', { name: 'Back to invoices' }).click();
+  await invoice.getByRole('button', { name: 'Back to orders' }).click();
   await expect(workspace(finance).getByRole('status').filter({ hasText: 'Order SIM-ORD-0002 was issued as invoice SIM-INV-0004.' })).toBeFocused();
   await expect(queue(finance).getByRole('row')).toHaveCount(2);
   expect((await simulationStatus(finance)).invoices).toBe(4);
 
   await partner.reload();
+  await partnerTab(partner, 'My orders');
   await expect(partnerOrders(partner).getByRole('row', { name: /SIM-ORD-0002 Issued NGN 110,000\.00/ })).toBeVisible();
   await partnerOrders(partner).getByRole('button', { name: 'Open order SIM-ORD-0002' }).click();
   await expect(workspace(partner).getByText('MTN Finance issued this order as invoice SIM-INV-0004 on 30 May 2026, due 29 Jun 2026.')).toBeVisible();
   await workspace(partner).getByRole('button', { name: 'Back to your orders' }).click();
-  await expect(partnerInvoices(partner).getByRole('row', { name: /SIM-INV-0004 30 May 2026 Unpaid NGN 110,000\.00 Outstanding NGN 110,000\.00/ })).toBeVisible();
+  await partnerTab(partner, 'Invoices');
+  await expect(partnerInvoices(partner).getByRole('row', { name: /SIM-INV-0004 30 May 2026 .*Unpaid NGN 110,000\.00 NGN 110,000\.00/ })).toBeVisible();
 
   // Finance records the collections; the partner sees each on their next refresh.
   await financeCollects(finance, '40,000');
   await partner.reload();
-  await expect(partnerInvoices(partner).getByRole('row', { name: /SIM-INV-0004 .* Partially paid NGN 110,000\.00 Outstanding NGN 70,000\.00/ })).toBeVisible();
+  await partnerTab(partner, 'Invoices');
+  await expect(partnerInvoices(partner).getByRole('row', { name: /SIM-INV-0004 .* Partially paid NGN 110,000\.00 NGN 70,000\.00/ })).toBeVisible();
   await expect(workspace(partner).getByLabel('Totals for all matching invoices')).toContainText('Outstanding purchase obligationNGN 70,000.00');
   await financeCollects(finance, '70,000');
   await partner.reload();
+  await partnerTab(partner, 'Invoices');
   await partnerInvoices(partner).getByRole('button', { name: 'Open invoice SIM-INV-0004' }).click();
   const seen = workspace(partner).getByRole('region', { name: 'Simulated invoice SIM-INV-0004' });
   await expect(seen.getByRole('heading', { name: 'Simulated invoice SIM-INV-0004' })).toBeFocused();
@@ -152,8 +162,11 @@ test('Finance issues a partner order and the partner sees the invoice', async ({
   // The same-named account sees none of it, and only its own statement.
   const namesake = await signedIn(browser, 'partner-353072');
   await namesake.goto('/');
+  await partnerTab(namesake, 'Invoices');
   await expect(workspace(namesake).getByText('MTN Finance has not issued you any invoices yet.')).toBeVisible();
+  await partnerTab(namesake, 'My orders');
   await expect(workspace(namesake).getByText('You have not submitted any orders yet.')).toBeVisible();
+  await partnerTab(namesake, 'Commission');
   await expect(partnerCommission(namesake).getByLabel('Statement month')).toHaveValue('202605');
   await expect(partnerCommission(namesake).getByLabel('Statement reconciliation')).toContainText('Opening outstandingUnavailable');
   await expect(partnerCommission(namesake).getByLabel('Statement month').locator('option')).toHaveText(['May 2026']);
@@ -170,6 +183,7 @@ test('a partner sees their invoice without a payment control until Finance colle
 
   await partner.setViewportSize({ width: 360, height: 700 });
   await partner.reload();
+  await partnerTab(partner, 'Invoices');
   await partnerInvoices(partner).getByRole('button', { name: 'Open invoice SIM-INV-0004' }).focus();
   await partner.keyboard.press('Enter');
   const seen = workspace(partner).getByRole('region', { name: 'Simulated invoice SIM-INV-0004' });
@@ -208,6 +222,7 @@ test('Finance rejects a partner order with a reason the partner then sees', asyn
   await expect(queue(finance).getByRole('button', { name: 'Review order SIM-ORD-0002' })).toHaveCount(0);
 
   await partner.reload();
+  await partnerTab(partner, 'My orders');
   await expect(partnerOrders(partner).getByRole('row', { name: /SIM-ORD-0002 Rejected/ })).toBeVisible();
   await partnerOrders(partner).getByRole('button', { name: 'Open order SIM-ORD-0002' }).click();
   await expect(workspace(partner).getByText('MTN Finance rejected this order: Recharge cards are out of stock this month.')).toBeVisible();
@@ -219,7 +234,7 @@ test('an order decided elsewhere is refused with an explanation, and nothing cha
   await openPartnerSales(finance);
   await queue(finance).getByRole('button', { name: 'Review order SIM-ORD-0001' }).click();
   const order = review(finance, 'SIM-ORD-0001');
-  await expect(order.getByText('Sunset Crest Communications · Account 295083')).toBeVisible();
+  await expect(order.getByRole('heading', { name: /Sunset Crest Communications · Account 295083/ })).toBeVisible();
 
   // Another Finance session decides it first.
   const elsewhere = await signedIn(browser, 'finance');
@@ -251,6 +266,7 @@ test('order review fits a narrow screen', async ({ browser }) => {
 test('Finance resets for everyone after confirming, and a signed-in partner sees the seed on their next refresh', async ({ browser }) => {
   const finance = await openFinance(browser);
   const partner = await partnerSubmits(browser);
+  await partnerTab(partner, 'Order');
   await workspace(partner).getByRole('button', { name: 'Start a draft order' }).click();
   await workspace(partner).getByRole('button', { name: 'Add RCC-0100 to draft order' }).click();
   await workspace(partner).getByRole('button', { name: 'Save draft' }).click();
@@ -278,7 +294,9 @@ test('Finance resets for everyone after confirming, and a signed-in partner sees
 
   await partner.reload();
   await expect(workspace(partner).getByText('You have no draft order.')).toBeVisible();
+  await partnerTab(partner, 'My orders');
   await expect(workspace(partner).getByText('You have not submitted any orders yet.')).toBeVisible();
+  await partnerTab(partner, 'Invoices');
   await expect(workspace(partner).getByText('MTN Finance has not issued you any invoices yet.')).toBeVisible();
   await expectCommissionUnchanged(partner);
 });
@@ -364,6 +382,7 @@ test('ordering, rejection, issuing and collection work by keyboard on a narrow s
   await fitsWidth(finance);
 
   await partner.reload();
+  await partnerTab(partner, 'My orders');
   await expect(partnerOrders(partner).getByRole('row', { name: /SIM-ORD-0002 Rejected/ })).toBeVisible();
   await press(partner, partnerOrders(partner).getByRole('button', { name: 'Open order SIM-ORD-0002' }));
   await expect(workspace(partner).getByText('MTN Finance rejected this order: Order recharge cards in packs of 500.')).toBeVisible();

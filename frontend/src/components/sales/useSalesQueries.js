@@ -2,13 +2,15 @@
 
 import { keepPreviousData, useQuery as useMonthlessQuery } from '@tanstack/react-query';
 import useQuery from '../../hooks/useWorkspaceQuery.js';
-import { getOrderQueue, getOwnInvoice, getOwnInvoices, getOwnOrder, getOwnOrderDraft, getOwnOrderingReference, getOwnOrders, getOwnStatement, getPartnerStatement, getSalesInvoice, getSalesObligations, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
+import { getOrderQueue, getOwnInvoice, getOwnInvoices, getOwnOrder, getOwnOrderDraft, getOwnOrderingReference, getOwnOrders, getOwnStatement, getPartnerAccounts, getPartnerStatement, getSalesInvoice, getSalesObligations, getSalesPeriodSummary, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
 
 const SALES = 'partner-sales';
 
 export const salesKeys = {
   reference: () => [SALES, 'reference'],
   status: () => [SALES, 'status'],
+  periodSummary: (period) => [SALES, 'period-summary', period],
+  partnerAccounts: (params) => [SALES, 'partner-accounts', params],
   records: (params) => [SALES, 'records', params],
   obligations: (accountCode, params) => [SALES, 'obligations', accountCode, params],
   invoiceAnyPage: (reference) => [SALES, 'invoice', reference],
@@ -35,8 +37,11 @@ const retryUnlessMissing = (failures, error) => error.response?.status !== 404 &
 export const useSalesReference = () => useQuery({ queryKey: salesKeys.reference(), queryFn: ({ signal }) => getSalesReference(signal), staleTime: Infinity });
 export const useSalesSimulationStatus = () => useQuery({ queryKey: salesKeys.status(), queryFn: ({ signal }) => getSalesStatus(signal) });
 
+export const useSalesPeriodSummary = (period) => useQuery({ queryKey: salesKeys.periodSummary(period), queryFn: ({ signal }) => getSalesPeriodSummary(period, signal) });
+
 // The paged reads, for usePagedQuery to run once it knows the page.
 export const recordsQuery = (params) => ({ queryKey: salesKeys.records(params), queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
+export const partnerAccountsQuery = (params) => ({ queryKey: salesKeys.partnerAccounts(params), queryFn: ({ signal }) => getPartnerAccounts(params, signal), placeholderData: keepPreviousData });
 export const obligationsQuery = (accountCode, params) => ({ queryKey: salesKeys.obligations(accountCode, params), queryFn: ({ signal }) => getSalesObligations(accountCode, params, signal), placeholderData: keepPreviousData });
 export const orderQueueQuery = (params) => ({ queryKey: salesKeys.orderQueue(params), queryFn: ({ signal }) => getOrderQueue(params, signal), placeholderData: keepPreviousData });
 export const invoiceQuery = (reference, params) => ({ queryKey: salesKeys.invoice(reference, params), queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });

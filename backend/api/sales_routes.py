@@ -63,6 +63,16 @@ def records(mon_period: Period, search: str = Query("", max_length=200), status:
     return simulation.records(mon_period, search, status, limit, offset)
 
 
+@router.get("/period-summary")
+def period_summary(mon_period: Period) -> dict:
+    return simulation.period_summary(mon_period)
+
+
+@router.get("/partners")
+def partner_accounts(search: str = Query("", max_length=200), limit: Limit = 25, offset: Offset = 0) -> dict:
+    return simulation.partner_accounts(search, limit, offset)
+
+
 @router.get("/invoices/{reference}")
 def invoice_detail(reference: str, limit: Limit = 25, offset: Offset = 0) -> dict:
     return _run(lambda: simulation.invoice_detail(reference, limit, offset))

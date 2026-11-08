@@ -27,11 +27,12 @@ async function signInAsPartner(page, playwright, username = 'partner-296065') {
   await page.getByLabel('Username').fill(username);
   await page.getByLabel('Password').fill(PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(workspace(page).getByRole('heading', { name: 'Partner Sales' })).toBeVisible();
+  await expect(workspace(page).getByRole('heading', { level: 1 })).toBeVisible();
   return { internal, outside };
 }
 
 const workspace = (page) => page.getByRole('main', { name: 'Partner Sales' });
+const showTab = (page, name) => workspace(page).getByRole('navigation', { name: 'Partner Sales sections' }).getByRole('button', { name: new RegExp(`^${name}`) }).click();
 const quantity = (page, code) => workspace(page).getByRole('textbox', { name: `Quantity for ${code}` });
 const orderTotal = (page) => workspace(page).getByText('Order total').locator('..');
 const orders = (page) => workspace(page).getByRole('table', { name: 'Your submitted orders' });
@@ -50,9 +51,12 @@ const preview = (page) => workspace(page).getByRole('region', { name: 'Order pre
 
 test('a partner drafts, previews and submits an order in their own account', async ({ page, playwright }) => {
   const { internal, outside } = await signInAsPartner(page, playwright);
-  await expect(workspace(page).getByText('River Isle Ventures · Account 296065').first()).toBeVisible();
+  await expect(workspace(page).getByRole('heading', { level: 1, name: 'River Isle Ventures' })).toBeVisible();
+  await expect(workspace(page).getByText('Account 296065', { exact: true })).toBeVisible();
   await expect(workspace(page).getByRole('radio')).toHaveCount(0);
+  await showTab(page, 'My orders');
   await expect(workspace(page).getByText('You have not submitted any orders yet.')).toBeVisible();
+  await showTab(page, 'Order');
 
   await draftAcceptanceExample(page);
   const draftLines = workspace(page).getByRole('list', { name: 'Draft order lines' });
@@ -70,11 +74,13 @@ test('a partner drafts, previews and submits an order in their own account', asy
   await preview(page).getByRole('button', { name: 'Submit order' }).dblclick();
   const notice = workspace(page).getByRole('status').filter({ hasText: 'Order SIM-ORD-0002 for NGN 110,000.00 was submitted' });
   await expect(notice).toBeFocused();
+  await showTab(page, 'My orders');
   await expect(orders(page).getByRole('row', { name: /SIM-ORD-0002 Submitted NGN 110,000\.00/ })).toBeVisible();
   await expect(orders(page).getByRole('row')).toHaveCount(2);
   expect((await (await internal.get(`${API_BASE}/partner-sales/status`)).json()).orders).toBe(2);
 
   await page.reload();
+  await showTab(page, 'My orders');
   await orders(page).getByRole('button', { name: 'Open order SIM-ORD-0002' }).click();
   const detail = workspace(page).getByRole('region', { name: 'Order SIM-ORD-0002' });
   await expect(detail.getByRole('heading', { name: 'Order SIM-ORD-0002' })).toBeFocused();
@@ -130,6 +136,8 @@ test('a partner with the same name sees none of another account\'s orders', asyn
   await draftAcceptanceExample(page);
   await workspace(page).getByRole('button', { name: 'Preview order' }).click();
   await preview(page).getByRole('button', { name: 'Submit order' }).click();
+  await expect(workspace(page).getByText('was submitted to MTN Finance')).toBeVisible();
+  await showTab(page, 'My orders');
   await expect(orders(page).getByRole('row', { name: /SIM-ORD-0002/ })).toBeVisible();
 
   const other = await browser.newContext();
@@ -138,9 +146,10 @@ test('a partner with the same name sees none of another account\'s orders', asyn
   await otherPage.getByLabel('Username').fill('partner-353072');
   await otherPage.getByLabel('Password').fill(PASSWORD);
   await otherPage.getByRole('button', { name: 'Sign in' }).click();
-  await expect(workspace(otherPage).getByText('River Isle Ventures · Account 353072').first()).toBeVisible();
-  await expect(workspace(otherPage).getByText('You have not submitted any orders yet.')).toBeVisible();
+  await expect(workspace(otherPage).getByText('Account 353072', { exact: true })).toBeVisible();
   await expect(workspace(otherPage).getByText('You have no draft order.')).toBeVisible();
+  await showTab(otherPage, 'My orders');
+  await expect(workspace(otherPage).getByText('You have not submitted any orders yet.')).toBeVisible();
   await other.close();
 });
 
@@ -173,7 +182,11 @@ test('a draft changed elsewhere is refused before it is previewed', async ({ pag
 test('ordering fits a narrow screen', async ({ page, playwright }) => {
   await page.setViewportSize({ width: 360, height: 700 });
   await signInAsPartner(page, playwright);
+  await expect(workspace(page).getByRole('region', { name: 'Your separate balances' })).toContainText('MTN would owe you');
+  await expect(workspace(page).getByRole('region', { name: 'Your separate balances' })).toContainText('You would owe MTN');
   await draftAcceptanceExample(page);
+  await workspace(page).getByRole('button', { name: 'View draft' }).click();
+  await expect(workspace(page).getByRole('heading', { name: 'Your draft order' })).toBeFocused();
   await workspace(page).getByRole('button', { name: 'Preview order' }).click();
   await expect(preview(page)).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);

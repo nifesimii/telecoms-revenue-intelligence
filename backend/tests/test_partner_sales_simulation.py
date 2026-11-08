@@ -168,6 +168,12 @@ def test_records_have_a_fixed_order():
     assert references(records()) == references(records())
 
 
+def test_records_carry_the_due_date_set_at_issue():
+    reference = invoice(issue_date="2026-06-10", due_date="2026-07-10")
+    row = next(item for item in records(mon_period="202606")["items"] if item["reference"] == reference)
+    assert row["due_date"] == "2026-07-10"
+
+
 def test_a_page_beyond_the_set_falls_back_to_its_last_page():
     page = records(limit=2, offset=50)
     assert page["pagination"]["offset"] == 2
@@ -289,3 +295,67 @@ def test_simulation_routes_are_internal_only(demo_logins):
     assert partner.post("/auth/login", json={"username": login["username"], "password": login["password"]}).status_code == 200
     assert partner.get("/partner-sales/records", params={"mon_period": PERIOD}).status_code == 403
     assert partner.post("/partner-sales/reset").status_code == 403
+
+
+def period_summary(period=PERIOD):
+    return client.get("/partner-sales/period-summary", params={"mon_period": period}).json()
+
+
+def test_period_summary_states_the_whole_month_and_every_waiting_order():
+    # The seed: 60,000.00 paid, 120,000.00 with 45,000.00 collected, 105,000.00 unpaid,
+    # and one order of 109,999.99 waiting.
+    assert period_summary() == {
+        "invoices": 3, "invoiced_minor": 28_500_000, "collected_minor": 10_500_000, "outstanding_minor": 18_000_000,
+        "open_invoices": 2, "partners_owing": 2, "orders_awaiting": {"count": 1, "total_minor": 10_999_999},
+    }
+
+
+def test_period_summary_counts_a_partner_with_two_open_invoices_once():
+    invoice(partner="74050")
+    summary = period_summary()
+    assert summary["open_invoices"] == 3
+    assert summary["partners_owing"] == 2
+
+
+def test_period_summary_of_a_month_without_invoices_still_counts_waiting_orders():
+    assert period_summary("202606") == {
+        "invoices": 0, "invoiced_minor": 0, "collected_minor": 0, "outstanding_minor": 0,
+        "open_invoices": 0, "partners_owing": 0, "orders_awaiting": {"count": 1, "total_minor": 10_999_999},
+    }
+
+
+def test_period_summary_requires_a_valid_month():
+    assert client.get("/partner-sales/period-summary").status_code == 422
+    assert client.get("/partner-sales/period-summary", params={"mon_period": "2026-05"}).status_code == 422
+
+
+def partner_accounts(**params):
+    return client.get("/partner-sales/partners", params=params).json()
+
+
+def test_partner_accounts_list_every_partner_with_what_each_would_owe():
+    page = partner_accounts()
+    assert [(row["partner"]["code"], row["open_invoices"], row["outstanding_minor"]) for row in page["items"]] == [
+        ("296065", 0, 0), ("353072", 0, 0), ("74050", 1, 10_500_000),
+        ("98052", 1, 7_500_000), ("205044", 0, 0), ("295083", 0, 0),
+    ]
+    assert page["pagination"] == {"total": 6, "returned": 6, "offset": 0, "limit": 25, "has_more": False}
+
+
+def test_partner_accounts_include_every_issue_month():
+    invoice(partner="296065", issue_date="2026-06-02", due_date="2026-07-02")
+    row = partner_accounts(search="296065")["items"][0]
+    assert (row["open_invoices"], row["outstanding_minor"]) == (1, 11_000_000)
+
+
+def test_partner_accounts_search_by_name_or_exact_account_digits():
+    assert [row["partner"]["code"] for row in partner_accounts(search="river isle")["items"]] == ["296065", "353072"]
+    assert [row["partner"]["code"] for row in partner_accounts(search="353072")["items"]] == ["353072"]
+    assert partner_accounts(search="nobody")["items"] == []
+
+
+def test_partner_accounts_are_bounded():
+    page = partner_accounts(limit=2, offset=2)
+    assert [row["partner"]["code"] for row in page["items"]] == ["74050", "98052"]
+    assert page["pagination"] == {"total": 6, "returned": 2, "offset": 2, "limit": 2, "has_more": True}
+    assert client.get("/partner-sales/partners", params={"limit": 101}).status_code == 422

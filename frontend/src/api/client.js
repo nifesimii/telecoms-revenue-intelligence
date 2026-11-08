@@ -425,6 +425,16 @@ export async function getSalesStatus(signal) {
   return data;
 }
 
+export async function getSalesPeriodSummary(period, signal) {
+  const { data } = await api.get('/partner-sales/period-summary', { params: { mon_period: period }, signal });
+  return data;
+}
+
+export async function getPartnerAccounts(params, signal) {
+  const { data } = await api.get('/partner-sales/partners', { params, signal });
+  return data;
+}
+
 export async function getSalesRecords(params, signal) {
   const { data } = await api.get('/partner-sales/records', { params, signal });
   return data;

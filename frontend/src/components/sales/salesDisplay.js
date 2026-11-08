@@ -4,7 +4,6 @@ import { formatCount } from '../../lib/format.js';
 
 export const partnerLabel = (partner) => `${partner.name} · Account ${partner.code}`;
 export const quantityLabel = (quantity, unit) => `${formatCount(quantity)} ${unit}${quantity === 1 ? '' : 's'}`;
-export const partnerMatches = (partner, term) => partner.code.includes(term) || partner.name.toLowerCase().includes(term);
 
 // The list row that opens an invoice, where focus returns after its detail closes.
 export const invoiceOpenerId = (reference) => `sales-open-${reference}`;

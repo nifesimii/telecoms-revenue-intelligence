@@ -6,29 +6,27 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { formatPeriod } from '../../lib/format.js';
 import { CommissionStatement } from './CommissionAccount.jsx';
-import { ReadState } from './InvoiceViews.jsx';
+import { ReadState } from './SalesReads.jsx';
 import { ownStatementQuery } from './useSalesQueries.js';
+
+const HEADING = 'sales-own-commission-heading';
 
 export default function PartnerCommission({ partner, periods }) {
   const [period, setPeriod] = useState(periods[0]);
-  return <section className="sales-paper" aria-labelledby="sales-own-commission-heading">
-    <h2 id="sales-own-commission-heading" className="text-lg font-semibold">Your Partner Commission Account</h2>
-    <p className="text-xs text-gray-600 mt-1">Fictional commission MTN would owe you. Your invoices are what you would owe MTN, a separate balance that is never netted against this one.</p>
-    {!periods.length ? <p role="status" className="text-sm text-gray-600 mt-4">No fictional commission statement exists for your account. Its amounts are unavailable, not zero.</p> : <>
-      <div className="sales-filters">
-        <label className="sales-field">Statement month<select value={period} onChange={(event) => setPeriod(event.target.value)}>
-          {periods.map((option) => <option key={option} value={option}>{formatPeriod(option)}</option>)}
-        </select></label>
-      </div>
-      <OwnStatement partner={partner} period={period} />
-    </>}
+  const read = useQuery({ ...ownStatementQuery(period), enabled: Boolean(period) });
+  const heading = <div className="sales-sec">
+    <div><h2 id={HEADING} aria-label="Your Partner Commission Account" className="sales-h">Commission statement</h2>
+      <p className="sales-muted">Closing outstanding is opening outstanding plus earnings less settlements.</p></div>
+    {periods.length > 0 && <label><span className="sr-only">Statement month</span><select className="overview-select" value={period} onChange={(event) => setPeriod(event.target.value)}>
+      {periods.map((option) => <option key={option} value={option}>{formatPeriod(option)}</option>)}
+    </select></label>}
+  </div>;
+  if (!periods.length || !read.data || read.isError) {
+    return <section className="overview-surface" aria-labelledby={HEADING}>{heading}
+      <div className="sales-body">{periods.length ? <ReadState query={read} what="commission statement" /> : <p role="status" className="sales-muted">No fictional commission statement exists for your account. Its amounts are unavailable, not zero.</p>}</div>
+    </section>;
+  }
+  return <section className="sales-stack" aria-labelledby={HEADING}>
+    <CommissionStatement statement={read.data.statement} partner={partner} period={period} heading={heading} />
   </section>;
-}
-
-function OwnStatement({ partner, period }) {
-  const read = useQuery(ownStatementQuery(period));
-  return <>
-    <ReadState query={read} what="commission statement" />
-    {read.data && <CommissionStatement statement={read.data.statement} partner={partner} period={period} />}
-  </>;
 }

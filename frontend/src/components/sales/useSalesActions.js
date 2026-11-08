@@ -35,5 +35,5 @@ export function useSalesActions() {
     return queryClient.resetQueries({ queryKey: salesKeys.invoiceAnyPage(reference) });
   };
 
-  return { loadLatestInvoice, recordCollection, issueOrder: decideOrder(issueOrder), rejectOrder: decideOrder(rejectOrder), loadLatestOrders: refresh, reset };
+  return { refresh, loadLatestInvoice, recordCollection, issueOrder: decideOrder(issueOrder), rejectOrder: decideOrder(rejectOrder), loadLatestOrders: refresh, reset };
 }

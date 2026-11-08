@@ -17,10 +17,10 @@ const CHANGED_NOTICE = 'This browser is now signed in as a different user, from 
 
 const samePrincipal = (left, right) => left.username === right.username && left.role === right.role && left.account_code === right.account_code;
 
-export function SignedInAs({ session, onSignOut }) {
+export function SignedInAs({ session, onSignOut, labelClassName = '' }) {
   const label = session.role === 'partner' ? `Partner account ${session.account_code}` : `Internal · ${session.username}`;
   return <div className="flex items-center gap-3 text-xs text-gray-600">
-    <span className="whitespace-nowrap">Signed in as {label}</span>
+    <span className={`whitespace-nowrap ${labelClassName}`}>Signed in as {label}</span>
     <button type="button" className="min-h-9 rounded-md border border-gray-300 bg-white px-3 py-1 text-sm text-gray-900" onClick={onSignOut}>Sign out</button>
   </div>;
 }

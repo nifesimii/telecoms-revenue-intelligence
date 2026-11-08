@@ -320,7 +320,7 @@ class SalesSimulation:
         balance = self._balance(invoice)
         return {
             "reference": invoice["reference"], "status": balance["status"], "partner": invoice["buyer"],
-            "date": invoice["issue_date"], "amount_minor": invoice["total_minor"],
+            "date": invoice["issue_date"], "due_date": invoice["due_date"], "amount_minor": invoice["total_minor"],
             "outstanding_minor": balance["outstanding_minor"], "as_of": balance["as_of"], "period": invoice["period"],
         }
 
@@ -353,6 +353,31 @@ class SalesSimulation:
         """One exact account's invoices from every issue month, newest first."""
         with self._lock:
             return _newest_first([self._invoice_record(invoice) for invoice in self._invoices if invoice["buyer"]["code"] == account_code])
+
+    def period_summary(self, period: str) -> dict:
+        """The whole issue month, whatever the invoice list is filtered to, and every order
+        still waiting, because an order has no month until it is issued."""
+        with self._lock:
+            records = [self._invoice_record(invoice) for invoice in self._invoices if invoice["period"] == period]
+            waiting = [order for order in self._orders if order["status"] == SUBMITTED]
+        owing = [record for record in records if record["outstanding_minor"]]
+        invoiced = sum(record["amount_minor"] for record in records)
+        return {
+            "invoices": len(records), "invoiced_minor": invoiced, "collected_minor": invoiced - _outstanding(records), "outstanding_minor": _outstanding(records),
+            "open_invoices": len(owing), "partners_owing": len({record["partner"]["code"] for record in owing}),
+            "orders_awaiting": {"count": len(waiting), "total_minor": sum(order["total_minor"] for order in waiting)},
+        }
+
+    def partner_accounts(self, search: str, limit: int, offset: int) -> dict:
+        """Each partner's open invoices across every month, in the fixed partner order."""
+        term = search.strip().lower()
+        matching = [partner for partner in PARTNERS if term in partner["code"] or term in partner["name"].lower()]
+        with self._lock:
+            records = [self._invoice_record(invoice) for invoice in self._invoices]
+        def account(partner: dict) -> dict:
+            owing = [record for record in records if record["partner"]["code"] == partner["code"] and record["outstanding_minor"]]
+            return {"partner": partner, "open_invoices": len(owing), "outstanding_minor": _outstanding(owing)}
+        return _page([account(partner) for partner in matching], limit, offset)
 
     def obligations(self, account_code: str, limit: int, offset: int) -> dict:
         """One exact account across every month, up to its latest simulated activity."""

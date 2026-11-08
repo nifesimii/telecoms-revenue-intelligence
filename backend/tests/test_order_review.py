@@ -146,6 +146,13 @@ def test_the_queue_keeps_same_named_partners_separate(finance, river_isle, demo_
     assert ([entry["reference"] for entry in page["items"]], page["pagination"]["total"]) == (["SIM-ORD-0002"], 3)
 
 
+def test_partners_cannot_read_the_finance_summaries(finance, river_isle):
+    assert river_isle.get("/partner-sales/period-summary", params={"mon_period": "202605"}).status_code == 403
+    assert river_isle.get("/partner-sales/partners").status_code == 403
+    assert finance.get("/partner-sales/period-summary", params={"mon_period": "202605"}).status_code == 200
+    assert finance.get("/partner-sales/partners").status_code == 200
+
+
 def test_partners_cannot_issue_or_reject_orders(finance, river_isle):
     reviewed = waiting(finance, SEEDED)
     assert issue(river_isle, reviewed).status_code == 403
