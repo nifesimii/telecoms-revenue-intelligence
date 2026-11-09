@@ -46,26 +46,28 @@ commission account offers no explanation links and says why.
 
 Records are shared and outlast the tab, so start at step 1 unless the API server has just started.
 
+Finance works across three tabs: **Orders to review**, **Invoices** and **Partner accounts**. The partner has four: **Order**, **My orders**, **Invoices** and **Commission**. Refreshing returns each side to its first tab. **Reset simulation** is in the page header, which order, invoice and account details hide, so go back to a tab first.
+
 | # | Window | Do | Expect |
 | --- | --- | --- | --- |
-| 1 | Finance | **Reset simulation**, then **Reset to starting point** | Notice says 3 example invoices in May 2026 and the next invoice will be SIM-INV-0004. 3 matching invoices: Paid, Partially paid and Unpaid, with NGN 180,000.00 outstanding. Order SIM-ORD-0001 awaits review. |
-| 2 | Partner | Refresh, then **Start a draft order** | No orders or invoices yet. An empty draft order for River Isle Ventures · Account 296065. Commission account for June 2026 closes at NGN 1,418,759.61. |
-| 3 | Partner | Add **FBB-5G-ROUTER**, quantity 2. Add **RCC-0100**, quantity 100. **Preview order**, then **Submit order** | Lines NGN 100,000.00 and NGN 10,000.00, total NGN 110,000.00. The order is listed as SIM-ORD-0002, Submitted. |
+| 1 | Finance | **Reset simulation**, then **Reset to starting point**. Open **Invoices**, then return to **Orders to review** | Notice says 3 example invoices in May 2026 and the next invoice will be SIM-INV-0004. 3 matching invoices: Paid, Partially paid and Unpaid, with NGN 180,000.00 outstanding. Order SIM-ORD-0001 awaits review. |
+| 2 | Partner | Refresh, then **Start a draft order**. Open **My orders**, **Invoices** and **Commission**, then return to **Order** | No orders or invoices yet. An empty draft order for River Isle Ventures · Account 296065. Commission account for June 2026 closes at NGN 1,418,759.61. |
+| 3 | Partner | Add **FBB-5G-ROUTER**, quantity 2. Add **RCC-0100**, quantity 100. **Preview order**, then **Submit order**. Open **My orders** | Lines NGN 100,000.00 and NGN 10,000.00, total NGN 110,000.00. The order is listed as SIM-ORD-0002, Submitted. |
 | 4 | Finance | Refresh the page, then **Review** SIM-ORD-0002 | The order for River Isle Ventures · Account 296065, total NGN 110,000.00, with issue date 31 May 2026. |
 | 5 | Finance | Enter a due date, then **Issue invoice** | Invoice SIM-INV-0004 from partner order SIM-ORD-0002. Status Unpaid. Outstanding NGN 110,000.00. |
-| 6 | Partner | Refresh | SIM-ORD-0002 is Issued. **Your invoices** lists SIM-INV-0004, Unpaid, NGN 110,000.00 outstanding. Opening it shows no payment control. |
-| 7 | Finance | Record a collection of **40000** | Recorded SIM-PAY-0003. Status Partially paid. Outstanding NGN 70,000.00. |
-| 8 | Partner | Refresh | SIM-INV-0004 is Partially paid, NGN 70,000.00 outstanding. |
-| 9 | Finance | Record a collection of **70000** | Recorded SIM-PAY-0004. Status Paid. Collected NGN 110,000.00. Outstanding NGN 0.00. |
-| 10 | Partner | Refresh, open SIM-INV-0004, then choose **May 2026** in the commission account | Paid, with both collections. Commission opening NGN 250,000.00, closing NGN 822,582.53, as before the order: invoices never change commission. No explanation links. |
-| 11 | Finance | **View purchase obligations**, then **View commission account** | Obligations list only SIM-INV-0004. Opening NGN 250,000.00, earnings NGN 954,922.38, settlements NGN 382,339.85, closing NGN 822,582.53. |
+| 6 | Partner | Refresh. Open **My orders**, then **Invoices**, then SIM-INV-0004 | SIM-ORD-0002 is Issued. **Invoices** lists SIM-INV-0004, Unpaid, NGN 110,000.00 outstanding. Opening it shows no payment control. |
+| 7 | Finance | On the open invoice, record a collection of **40000** | Recorded SIM-PAY-0003. Status Partially paid. Outstanding NGN 70,000.00. |
+| 8 | Partner | Refresh, then open **Invoices** | SIM-INV-0004 is Partially paid, NGN 70,000.00 outstanding. |
+| 9 | Finance | On the same invoice, record a collection of **70000** | Recorded SIM-PAY-0004. Status Paid. Collected NGN 110,000.00. Outstanding NGN 0.00. |
+| 10 | Partner | Refresh, open **Invoices**, then SIM-INV-0004. Open **Commission** and choose **May 2026** | Paid, with both collections. Commission opening NGN 250,000.00, closing NGN 822,582.53, as before the order: invoices never change commission. No explanation links. |
+| 11 | Finance | On the open invoice, **View all purchase obligations**, then **View commission account** | Obligations list only SIM-INV-0004. Opening NGN 250,000.00, earnings NGN 954,922.38, settlements NGN 382,339.85, closing NGN 822,582.53. |
 | 12 | Finance | **Explain activation commission**, then **Return to Partner Sales** | Commission opens on account 296065, May 2026, with a banner saying it was opened from the simulation. Returning shows the same statement, with focus back on the link. |
-| 13 | Optional, new private window | Sign in as **partner-353072** | A same-named account sees no orders or invoices, and only its own May 2026 statement. |
-| 14 | Finance | **Reset simulation**, then **Reset to starting point** | Back to the state after step 1. Partners have no reset control. |
-| 15 | Partner | Refresh | No orders, invoices or draft: the seed, for every partner. The next run gives the same references and amounts. |
+| 13 | Optional, new private window | Sign in as **partner-353072**. Open **Invoices**, **My orders** and **Commission** | A same-named account sees no orders or invoices, and only its own May 2026 statement. |
+| 14 | Finance | Use the **Back to** buttons until the tabs return, then **Reset simulation** and **Reset to starting point** | Back to the state after step 1. Partners have no reset control. |
+| 15 | Partner | Refresh. Open **My orders** and **Invoices**, then return to **Order** | No orders, invoices or draft: the seed, for every partner. The next run gives the same references and amounts. |
 
 To show a rejection instead, at step 5 enter a reason and **Reject order**. On their next
-refresh the partner sees the order as Rejected with that reason, and starts a new draft to
+refresh the partner sees the order under **My orders** as Rejected with that reason, and starts a new draft to
 order again.
 
 ## Points to say
