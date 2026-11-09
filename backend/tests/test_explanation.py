@@ -3,12 +3,17 @@ import json
 import os
 
 import pytest
+from backend.auth import session as auth_session
+
+# Raw ASGI requests bypass TestClient, so they carry their own internal session.
+INTERNAL_COOKIE = (b'cookie', f'{auth_session.COOKIE_NAME}={auth_session.issue_token(auth_session.Principal("finance", "internal"))}'.encode())
 
 os.environ['USE_SAMPLE_DATA'] = 'true'
 os.environ['PAYMENT_SOURCE'] = 'simulated'
 
 from fastapi.testclient import TestClient
 from backend.main import app
+from backend.tests.narrative_provider import draft_payload
 
 
 def test_rejects_invalid_finding_scope_before_inference():
@@ -34,34 +39,15 @@ class Provider:
     async def __aexit__(self, *args):
         self.closed = True
 
-    def stream(self, **kwargs):
-        self.calls.append(kwargs)
-        return Stream(self.failure)
-
-
-class Stream:
-    def __init__(self, failure):
-        self.failure = failure
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, *args):
-        pass
-
-    def __aiter__(self):
-        async def chunks():
-            from types import SimpleNamespace
-            yield SimpleNamespace(type='text', text='NGN 100.00 — ')
-            if self.failure:
-                raise self.failure
-            yield SimpleNamespace(type='text', text='verified evidence.')
-            yield SimpleNamespace(type='message_stop')
-        return chunks()
-
-    async def get_final_message(self):
+    async def create(self, **kwargs):
         from types import SimpleNamespace
-        return SimpleNamespace(stop_reason='end_turn', usage=None)
+        self.calls.append(kwargs)
+        if self.failure:
+            raise self.failure
+        return SimpleNamespace(stop_reason='tool_use', usage=None, content=[
+            SimpleNamespace(type='tool_use', name='compose_grounded_answer',
+                            input=draft_payload(json.loads(kwargs['messages'][-1]['content']),
+                                                'The retrieved evidence supports this finding.'))])
 
 
 def submit(monkeypatch, payload, provider=None):
@@ -115,14 +101,14 @@ def test_activation_provenance_reaches_explanation_prompt(module, period, synthe
     assert 'synthetic-data' not in prompt
 
 
-def test_streams_one_generation_with_exact_scope_whole_kb_and_completion_metadata(monkeypatch):
+def test_publishes_validated_generation_with_exact_scope_whole_kb_and_completion_metadata(monkeypatch):
     from backend.agent import prompts
     events, provider = submit(monkeypatch, COMMISSION)
-    assert [event['type'] for event in events] == ['text', 'text', 'complete']
-    assert events[-1]['response'] == 'NGN 100.00 — verified evidence.'
-    assert all(set(event) == {'type', 'text'} for event in events[:-1])
+    assert [event['type'] for event in events] == ['status', 'text', 'complete']
+    assert events[-1]['response'].startswith('The retrieved evidence supports this finding.')
+    assert events[1]['text'] == events[-1]['response']
     assert len(provider.calls) == 1
-    assert 'tools' not in provider.calls[0]
+    assert provider.calls[0]['tool_choice']['name'] == 'compose_grounded_answer'
     assert prompts.KB_CONTENT in provider.calls[0]['system'][0]['text']
     assert provider.calls[0]['system'][0]['cache_control'] == {'type': 'ephemeral'}
     raw = events[-1]['raw_data']
@@ -168,7 +154,7 @@ def test_unknown_inventory_product_is_not_explained(monkeypatch):
 
 def test_partial_stream_failure_is_sanitized_and_never_completed(monkeypatch):
     events, provider = submit(monkeypatch, COMMISSION, Provider(RuntimeError('secret SQL SELECT password')))
-    assert [event['type'] for event in events] == ['text', 'error']
+    assert [event['type'] for event in events] == ['status', 'error']
     assert events[-1]['error'] == 'explanation_failed'
     assert 'password' not in json.dumps(events)
     assert len(provider.calls) == 1
@@ -236,7 +222,7 @@ def test_disconnect_closes_provider_and_does_not_complete(monkeypatch):
         scope = {'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.3'},
                  'http_version': '1.1', 'method': 'POST', 'scheme': 'http',
                  'path': '/chat/explain', 'raw_path': b'/chat/explain', 'query_string': b'',
-                 'root_path': '', 'headers': [(b'content-type', b'application/json')],
+                 'root_path': '', 'headers': [(b'content-type', b'application/json'), INTERNAL_COOKIE],
                  'client': ('127.0.0.1', 123), 'server': ('test', 80)}
         await app(scope, receive, send)
         # Closing a suspended async generator runs its cancellation finalizer.
@@ -253,19 +239,14 @@ def test_disconnect_before_first_text_cancels_provider_on_asgi_24(monkeypatch):
     async def exercise():
         entered = asyncio.Event()
         closed = asyncio.Event()
-        class WaitingStream(Stream):
-            async def __aenter__(self):
-                entered.set()
-                return self
-            async def __aexit__(self, *args):
-                closed.set()
-            def __aiter__(self):
-                async def chunks():
-                    await asyncio.Event().wait()
-                    yield 'unreachable'
-                return chunks()
         provider = Provider()
-        provider.stream = lambda **kwargs: WaitingStream(None)
+        async def waiting_create(**kwargs):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+        provider.create = waiting_create
         monkeypatch.setattr(explanation, 'new_client', lambda key: provider)
         first = True
         async def receive():
@@ -280,7 +261,7 @@ def test_disconnect_before_first_text_cancels_provider_on_asgi_24(monkeypatch):
         scope = {'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.4'},
                  'http_version': '1.1', 'method': 'POST', 'scheme': 'http',
                  'path': '/chat/explain', 'raw_path': b'/chat/explain', 'query_string': b'',
-                 'root_path': '', 'headers': [(b'content-type', b'application/json')],
+                 'root_path': '', 'headers': [(b'content-type', b'application/json'), INTERNAL_COOKIE],
                  'client': ('127.0.0.1', 123), 'server': ('test', 80)}
         await asyncio.wait_for(app(scope, receive, send), 2)
         assert closed.is_set()
@@ -354,7 +335,7 @@ def test_ended_evidence_cannot_start_next_read(monkeypatch, termination):
         scope = {'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.4'},
                  'http_version': '1.1', 'method': 'POST', 'scheme': 'http',
                  'path': '/chat/explain', 'raw_path': b'/chat/explain', 'query_string': b'',
-                 'root_path': '', 'headers': [(b'content-type', b'application/json')],
+                 'root_path': '', 'headers': [(b'content-type', b'application/json'), INTERNAL_COOKIE],
                  'client': ('127.0.0.1', 123), 'server': ('test', 80)}
         try:
             await asyncio.wait_for(app(scope, receive, send), 2)
@@ -364,3 +345,51 @@ def test_ended_evidence_cannot_start_next_read(monkeypatch, termination):
     # asyncio.run waits for worker shutdown before checking subsequent reads.
     asyncio.run(disconnect() if termination == 'disconnect' else exercise())
     next_read.assert_not_called()
+
+
+def test_rejected_prose_never_reaches_findings_transport(monkeypatch):
+    from types import SimpleNamespace
+    provider = Provider()
+    async def create(**kwargs):
+        provider.calls.append(kwargs)
+        return SimpleNamespace(stop_reason='tool_use', usage=None, content=[
+            SimpleNamespace(type='tool_use', name='compose_grounded_answer',
+                            input=draft_payload(json.loads(kwargs['messages'][-1]['content']),
+                                                'Unsupported NGN 999.00.'))])
+    provider.create = create
+    events, _ = submit(monkeypatch, COMMISSION, provider)
+    assert [event['type'] for event in events] == ['status', 'error']
+    assert len(provider.calls) == 2
+    assert '999' not in json.dumps(events)
+
+
+def test_inventory_model_input_excludes_broader_metadata_counts(monkeypatch):
+    events, provider = submit(monkeypatch, {'dealer_id': '98052', 'mon_period': '202606',
+        'finding': {'module': 'inventory', 'type': 'INVENTORY_MISMATCH', 'product_code': '1186254'}})
+    payload = json.loads(provider.calls[0]['messages'][0]['content'])
+    assert payload['scope']['finding']['product_code'] == '1186254'
+    assert 'high_count' not in json.dumps(payload['evidence'])
+    assert 'synthetic_scenarios' not in json.dumps(payload['evidence'])
+    assert 'high_count' in events[-1]['raw_data']['get_inventory_comparison']['metadata']
+
+
+def test_mandatory_findings_caveats_survive_model_omission(monkeypatch):
+    events, _ = submit(monkeypatch, COMMISSION)
+    response = events[-1]['response']
+    assert 'Absence of evidence does not establish a zero amount or a root cause.' in response
+    assert 'bounded sample' in response
+
+
+@pytest.mark.parametrize('field,value', [('product_code', 'another-product'),
+                                         ('dealer_id', 'another-account')])
+def test_inventory_rejects_evidence_outside_selected_identity(monkeypatch, field, value):
+    from backend.agent import tool_executor
+    request = {'dealer_id': '98052', 'mon_period': '202606',
+               'finding': {'module': 'inventory', 'type': 'INVENTORY_MISMATCH',
+                           'product_code': '1186254'}}
+    evidence = tool_executor.execute_explanation_evidence(request)
+    evidence['raw_data']['get_inventory_comparison']['rows'][0][field] = value
+    monkeypatch.setattr(tool_executor, 'execute_explanation_evidence', lambda *a, **kw: evidence)
+    events, provider = submit(monkeypatch, request)
+    assert events[-1]['error'] == 'invalid_evidence'
+    assert not provider.calls

@@ -3,6 +3,299 @@
 Rolling status file — "pick up where I left off." Update a few bullets at the
 end of each work session. Newest session on top.
 
+## Session — 2026-11-07 (Two logins in one browser profile)
+
+- Found while reviewing locally: signing in as Finance in a second tab of the same browser replaced the
+  partner tab's cookie, and the partner page then failed quietly (its saves got 403).
+- Every request now names the login the page is showing (`X-FBB-Expected-User`, set by `SessionGate`).
+  `backend/auth/access.py` refuses a restricted route with 403 "Signed in as a different user." when it
+  differs from the session, even under the same role (two partners), so nothing is applied for the wrong
+  account. A request naming nobody (curl, tests) is served as before.
+- Any 403, and every return to the window (focus or becoming visible), makes `SessionGate` ask
+  `/auth/session` who is signed in. If it is a different user, the page clears its cached data and returns
+  to sign-in with "This browser is now signed in as a different user…", suggesting a private window for
+  the second login. A 403 under the same login changes nothing, an unreachable server signs nobody out,
+  and an answer made stale by a sign-in or sign-out meanwhile is ignored. A check requested during another
+  runs after it.
+- Tests: two backend access tests; three mocked cases in `login.spec.js` (noticed from a refused read,
+  noticed on returning to the window, a refusal under the same login); and two real-backend cases in
+  `order-review.spec.js`, partner to Finance and partner to another partner, proving no draft changes.
+
+## Session — 2026-11-07 (Partner Sales: finish the two-login presentation, #14)
+
+- A hosted deployment now refuses to start unless `DEMO_LOGINS` and `DEMO_SESSION_SECRET` are valid; the
+  error names both variables. Locally the application still starts but stays closed (sign-in answers 503,
+  every other route 401). `render.yaml` and docs/DEPLOY.md replace the old `DEMO_USERNAME`/`DEMO_PASSWORD`
+  Basic Auth secrets with the two new ones, and DEPLOY.md warns that a deploy returns the simulation to its seed.
+- docs/PARTNER_SALES_REHEARSAL.md is now a two-window script: Finance in a normal window, the partner in a
+  private window or second profile (cookies are shared within a profile), with the partner refreshing after
+  each Finance step, a same-named-account check, a rejection variant, and a warning not to deploy right
+  before presenting.
+- New real-backend journeys in `order-review.spec.js`: a confirmed reset (and a cancelled one) reaches a
+  signed-in partner on their next refresh, including their saved draft, and a partner has no reset control
+  and gets 403; a session that ends mid-save or mid-issue returns to sign-in with an explanation and applies
+  nothing; and ordering, rejection, issuing and collection by keyboard at 360px.
+- Already in place from earlier slices and only checked here: internal-only reset with in-page
+  confirmation, stale-action refusals, fictional labelling on login and both shells, and the full parent
+  acceptance example with partner-353072 seeing none of it.
+- Next: the parent #7 is complete once #14 is reviewed; nothing is pushed until the user reviews locally.
+- Verification: backend 1,441 passed and 37 skipped; acceptance 100 passed; the production build passed.
+
+## Session — 2026-11-06 (Partner Sales: partner sees their own Commission Account, #13)
+
+- The fictional commission statements moved from the frontend bundle to the server
+  (`backend/sales/statements.py`; the linked ones in `backend/sales/linked_commission_statements.json`, still
+  held to the public API by `test_partner_commission_fixtures.py`). The delivered frontend no longer contains
+  any partner's statement; a test fails if `SIM-OPEN-` reappears under `frontend/src`.
+- Finance reads `GET /partner-sales/partners/{account_code}/statement?mon_period=` (404 for an unknown
+  account, `null` for a month with no statement). A partner reads `GET /partner-sales/my/statement?mon_period=`,
+  with the account from the session, and `/my/reference` lists the months that have one as `statement_periods`.
+  A partner gets 403 on the internal route and an internal user 403 on the partner route.
+- A partner login now shows "Your Partner Commission Account" under its invoices, one month at a time, with the
+  same separate streams, Unavailable-versus-zero rules and opening/earnings/settlements/closing reconciliation
+  as Finance's view, but no explanation links. The partner response drops the `linked` flag. Invoice and
+  commission balances stay separate, with no net figure.
+- Decided here: the server sends the raw statement and the frontend keeps the evidence rules
+  (`commissionAccount.js`), so both views read it identically. A statement is returned whole (at most 120
+  entries, a fixed fixture) and activity still pages at up to 100 rows on the client.
+- Acceptance: the two-login journey checks the partner's statement before and after the order is issued and
+  collected, and partner-353072 sees only its own May 2026 statement with an Unavailable opening.
+- Next: #14.
+- Verification: backend 1,435 passed and 37 skipped; acceptance 97 passed; the production build passed.
+
+## Session — 2026-11-06 (Partner Sales: partner sees invoices and balances, #12)
+
+- A partner login now sees "Your invoices" under its orders. It lists the invoices Finance issued to its
+  account from every issue month, newest first, with a status filter and totals over every matching
+  invoice. Opening one shows the invoice detail read-only: lines, dates, the order it came from, its
+  collections and the outstanding balance. There is no collection form and no link to obligations. Routes
+  are `GET /partner-sales/my/invoices` and `/my/invoices/{reference}`. Like every `/my/*` route, the
+  account comes from the session, and another account's invoice is a 404, the same as a missing one.
+- Recording a collection stays internal-only: a partner gets 403 and the balance is unchanged. The partner
+  detail leaves out the invoice token and Finance's collection action ids.
+- Decided here: one `InvoiceDetail` serves both sides. Without `onRecordCollection` it is read-only, and a
+  query factory lets it read the partner route. `/my/reference` now publishes `invoice_statuses` for the filter.
+- Acceptance: the two-login journey now goes past issuing. Finance records NGN 40,000 and then NGN 70,000,
+  the partner sees Partially paid and then Paid after each refresh, and partner-353072 sees none of it. A
+  new journey covers the read-only detail by keyboard at 360px, the partner's refused collection and the
+  status filter.
+- Next: #13 (the partner's Commission Account), then #14.
+- Verification: backend 1,419 passed and 37 skipped; acceptance 97 passed; the production build passed.
+
+## Session — 2026-11-06 (Partner Sales: every invoice comes from a partner order, #15)
+
+- Finance can no longer draft or issue an invoice directly. The `/partner-sales/drafts` routes, their access
+  entries, the draft editor, preview and autosave are gone. A new access test fails if a classification names a
+  route that no longer exists. Lists, summaries and obligations hold invoices only: there is no drafts count, no
+  `is_draft`, and no Draft status filter. The status key is now `next_invoice_reference`, and the reset notice
+  reads "the next invoice will be SIM-INV-0004". The reset confirmation no longer counts drafts but still
+  mentions partners' draft orders.
+- This resolves the previous session's "kept on purpose: the internal invoice-draft flow".
+- Decided here: the three example invoices are built directly in the simulation, with no orders behind them.
+  SIM-ORD-0001 stays the waiting order. `_issue` is the one path for both the examples and an issued order.
+- Acceptance: the draft-only journeys were deleted, not ported. The handoff and complete-presentation journeys
+  now go partner submission → Finance issue. The other tests start from a prepared simulation.
+- Found while testing: a spec that clears captured requests right after opening the Overview can catch that
+  page's failed read retrying (TanStack `retry: 1`). It now opens Partner Sales directly.
+- Rehearsal: only steps 1–5 (invoice creation) were rewritten: partner-296065 orders, Finance issues
+  SIM-INV-0004. The duplicate step-9 row is left for #14.
+- Verification: backend 1,401 passed and 37 skipped; acceptance 96 passed (Partner Sales spec 76, also 3
+  repeats); the production build passed.
+
+## Session — 2026-11-06 (Partner Sales: Finance issues or rejects an order, #11)
+
+- Finance's Partner Sales workspace opens on "Orders awaiting review": submitted orders from every partner,
+  oldest first, each with its exact account code. Reviewing one issues it as a `SIM-INV-` invoice with the
+  order's lines and total, or rejects it with a required reason. The partner sees the invoice reference and
+  dates, or the reason, on their next refresh. Routes are `/partner-sales/orders` (internal only).
+- The seed now holds one submitted order, SIM-ORD-0001 for Sunset Crest 295083, so a partner's first order
+  is SIM-ORD-0002 and the reset confirmation counts it.
+- Decided here (not in the issue): both dates are required. The invoice's month is its issue date's month,
+  and the form keeps the issue date in the selected month (default: its last day), so the new invoice stays in
+  the list being reviewed. The server checks real dates and due ≥ issue, not the month. A decision sends the token of the order as it was
+  queued, so a second decision, or one made on an order replaced by a reset, gets 409 and changes nothing.
+  The UI explains that the order was already decided, then offers to load the latest orders. Decisions take
+  no action id: a retry after a lost response is also refused, and the queue shows the outcome.
+- Kept on purpose: the internal invoice-draft flow (see the comment on #11). It is not an order, so it
+  doesn't conflict with "internal users do not create orders", and removing it would mean rewriting most of
+  the Partner Sales acceptance suite. Whether to remove it is still open, ideally before #14's rehearsal guide.
+- A partner's full invoice and balance view stays in #12; here the partner sees the decision on the order.
+- Verification: backend 1,432 passed and 37 skipped; acceptance 118 tests (4 new order-review journeys, plus
+  #10 specs renumbered for the seeded order) passed; the new spec passed 3 repeats; the production build passed.
+
+## Session — 2026-11-05 (Partner Sales: partner drafts and submits an order, #10)
+
+- A partner login now builds one private draft order for its own account, previews it, and submits it as a
+  read-only `SIM-ORD-` order, then sees its orders with their status. Routes are `/partner-sales/my/*`: they
+  take the account from the session and accept none, and a new `partner` access level refuses internal users.
+- Decided here (not in the issue): one draft order per partner at a time, with no month or dates, because
+  Finance sets invoice dates when it issues (#11). Edits are saved explicitly (Save draft, or Preview, which
+  saves first) instead of as typed, so the preview always shows and submits the saved copy.
+- Submission takes a client action id, scoped to the partner's account, so a double click or a retried lost
+  response makes one order. Another account's order answers exactly like a missing one.
+- Left for #11 on purpose: the internal invoice-draft flow still works as before, so the rehearsal stays whole
+  until Finance can issue from an order. Finance cannot see submitted orders yet; the reset confirmation counts them.
+- Partner reads use TanStack's `useQuery` directly: the partner shell has no reporting month, and the workspace
+  hook needs one. `usePagedQuery` takes the query hook as an optional last argument for this.
+- Verification: backend 1,407 passed and 37 skipped; acceptance 114 tests (7 new partner-ordering journeys, plus
+  the login and reset copy updates) passed; the new partner spec passed 3 repeats; the production build passed.
+
+## Session — 2026-11-05 (Partner Sales: shared server data, #9)
+
+- Drafts, invoices and collections moved from browser storage to server process memory behind
+  `/partner-sales/*`, read through TanStack Query. Everyone signed in shares them, and a restart or
+  reset returns to the seed. Internal only for now: partner ordering is #10.
+- Moving to a server made issuing and resetting asynchronous, which exposed a focus bug: focus queued
+  for the next frame could fire before React rendered the target. Those paths now focus after the render.
+- Acceptance runs on a real API (port 8199) for sales and sign-in, with fixtures for other reads.
+- If the suite fails oddly, check `pmset -g log` first. A laptop sleeping mid-run produced timeouts, a
+  stalled pytest and page reloads from Vite's reconnect. Use `caffeinate -i`; lid-closed sleep still applies.
+- The review of #9 reopened it. References restart after a reset, so a tab left open could have changed
+  someone else's record with the same reference. Every draft and invoice now has a hidden token the server
+  checks: a stale change gets 409, and the screen offers **Load latest**. A draft's token changes on each
+  save, which also stops issuing anything other than the previewed version.
+- Same review: sales fields are `account_code` (`partner_code` names an audit subject), amounts must be
+  whole kobo, obligations say when drafts are left out, and a list that shrinks and regrows keeps its
+  corrected page. The sales helpers were split by job; the server publishes the quantity limit and statuses.
+- The second review found the browser's save queue could still mislead: hidden edits could be issued, and
+  warnings or typing could vanish. An editor now always shows what would be saved, warnings are per draft,
+  Load latest replaces only the refused record, and retrying a save whose response was lost succeeds.
+- Still open: `render.yaml` has the old demo variables, so hosted stays locked until #14; partner
+  statements stay in the frontend bundle until #13. Nothing is pushed.
+- Tidied what the second review left, with no change in behaviour: the browser reads `is_draft` and the
+  outstanding balance rather than comparing status names, the save queue is its own hook (`useDraftSaves`),
+  draft totals live in `draftPricing`, and every paged read goes through one `usePagedQuery`, so a view
+  cannot forget to record the server's page and bring the regrow bug back.
+
+## Session — 2026-11-03 (Partner Sales: example invoices)
+
+- Decided with the user after issue #6. Changed: the starting point now holds three example invoices
+  in May 2026, one each of Paid, Partially paid and Unpaid (NGN 180,000.00 outstanding), on accounts
+  205044, 98052 and 74050. The presenter still creates the NGN 110,000.00 invoice live on 296065,
+  whose obligations stay empty until then. This replaces the empty seed recorded below.
+- The examples take SIM-INV-0001 to 0003 and SIM-PAY-0001 to 0002, so the story is now SIM-INV-0004
+  with SIM-PAY-0003 and 0004. They are built through the normal issue and collection rules. The save
+  version is now 4, so a tab holding an older save shows the existing recovery state.
+- Kept as they were, by decision: the six sample-data accounts (not all 922 May dealers, and no live
+  dealers), the return banner after a reset, a refresh clearing filters and open invoice, and the
+  inline reset confirmation.
+- Most acceptance tests now opt into an empty start, so their references stay their own. The reset,
+  replay, keyboard and live-read tests use the real seeded start.
+- Known gap: without `?period=` the workspace opens on the newest month, June, which has no examples.
+  The header and reset notice say the examples are in May 2026; the rehearsal link opens on May.
+- Keyboard test: it raced focus moves that happen on the next frame or as an explanation opens, and failed
+  often when repeated. It now waits for focus to land first. A key press on **Return to Partner Sales**
+  before an explanation opens can still be lost; the product was not changed for this.
+- Verification: 95 Partner Sales acceptance tests, `explanation-transport` (11), `workspace-navigation`,
+  `workspace-scope-regressions` and the production build passed. The rehearsal ran twice against the
+  sample-mode API, with no non-GET requests, page errors or HTTP errors, before the final copy-only edits.
+  Backend suite not rerun: no backend change. In repeat runs of the keyboard test under heavy load (load
+  average 10-36), 3 of 90 failed on browser setup timeouts; 1 of an earlier 60 failed for an uncaptured reason.
+
+## Session — 2026-11-02 (Partner Sales: reset and replay)
+
+- Implemented GitHub issue #6: an inline-confirmed **Reset simulation** clears drafts, invoices,
+  collections, the selected partner, filters and open views, and restarts references. It touches
+  only the simulation's session key, makes no backend request, and also forgets the account a
+  returned explanation would otherwise reopen on refresh.
+- An explanation left open keeps its return banner after a reset (other workspaces are untouched);
+  returning reopens the same fictional statement, with no invoices or selected partner restored.
+- Default chosen here: the "versioned seed" is the empty simulation at the current save version
+  over the fixed cohort, catalogue and statements. No invoices are pre-seeded, because the
+  presentation creates its own and the references are then deterministic.
+- Storage recovery: a reset that cannot remove the save overwrites it; if neither works the alert
+  says the earlier simulation may return. Recovery moves focus rather than dropping it.
+- `docs/PARTNER_SALES_REHEARSAL.md` records the presenter sequence and expected results.
+- Verification: 92 Partner Sales acceptance tests, 17 transport tests, `workspace-navigation` and
+  `workspace-scope-regressions` passed; backend suite 1,167 passed and 37 skipped; production build
+  passed. The rehearsal was also run twice against the sample-mode API with no non-GET requests.
+- Test flakiness under load (load average about 10): the older refresh-return test asserted focus on the
+  heading, but focus legitimately lands on the link if it has already rendered, so it now asserts focus
+  within the account. "collections stay on their invoice" failed once in a full run and did not repeat
+  in 5 reruns or the next full run; a repeat-run failure was not captured. Cause not established.
+
+## Session — 2026-11-02 (Partner Sales: Partner Commission Account)
+
+- Implemented GitHub issue #5: partner detail opens a fictional dated commission statement
+  for the selected month. Closing is opening plus earnings less settlements; the independent
+  example closes at NGN 25,000.00 (20,000.00 + 15,000.00 - 10,000.00).
+- Activation and subscription commission stay separate, subscription revenue enters no total,
+  and recharge-card commission is excluded. Missing evidence shows Unavailable and blocks the
+  totals it affects; recorded zeros and no-source-records states stay distinct. Activity pages
+  at up to 100 rows in date-then-reference order, with totals over all entries.
+- Links to Commission and Payments appear only when `GET /dealers/{id}/statement` and
+  `GET /commissions/{id}/detail?stream=orsc` match the fixture to the kobo in sample mode.
+  Otherwise the handoff explains why and offers no other account. No API contract changed:
+  the statement response omits subscription commission, so the detail read supplies it.
+- `backend/tests/test_partner_commission_fixtures.py` holds the linked fixtures in
+  `linkedCommissionStatements.json` to the public API, so sample changes fail a test.
+- Defaults chosen here, not MTN policy: all opening balances, activity dates and references are
+  authored fictional values. Linked statements divide recorded monthly totals into fictional dated
+  entries, which the statement notice discloses; this needs owner confirmation against the spec's
+  "never manufacture transaction dates". A stream with no entries is unavailable, not zero. Statement fixtures cover May-June 2026
+  only, for selected accounts; other months show the no-statement state.
+- Browser back to Partner Sales does not restore focus; the Return button does. Returning after a
+  month change opens the statement for the newly selected month, following the global period.
+- Verification: 77 Partner Sales acceptance tests passed, 17 transport tests passed, backend
+  suite 1,167 passed and 37 skipped; production build passed. An earlier run under heavy machine
+  load failed two handoff tests; after a focus wait in the test helper they passed three repeats.
+
+## Session — 2026-11-02 (Partner Sales: invoice collections)
+
+- Implemented issue #4: invoice detail records fictional collections with a date,
+  generated `SIM-PAY` reference, exact kobo amount and stable action identifier.
+  Status derives from collections: Unpaid, Partially paid, Paid. History runs in date
+  order, with the balance after each collection, in pages of up to 100 rows.
+- Non-positive amounts, overpayments, dates before issue, and paid invoices are
+  rejected or offer no form; drafts have no collection path. Repeating an action has
+  one effect. Refunds and reversals are not offered.
+- The list, partner detail and invoice detail now show outstanding net of collections
+  with an explicit as-of date, and say it is not a month-end balance. Invoices stay in
+  their issue month, so a later collection reduces that month's listed outstanding.
+- Saved simulations moved to version 3, so an older tab save shows the recovery state.
+  Invalid saved collections also show it. No backend requests; commission is untouched.
+- Defaults chosen here, not MTN policy: references are generated rather than typed;
+  backdating and future dates are allowed provided the date is not before issue.
+- Latest: **61 acceptance**, **17 frontend transport** tests, production build; backend
+  **1,163 passed, 37 skipped** (no backend files changed).
+
+## Session — 2026-11-01 (Partner Sales: issue invoices and inspect obligations)
+
+- Implemented issue #3: explicit one-time issuance from the preview freezes buyer,
+  lines, prices and total as an unpaid invoice and consumes the draft. The invoice
+  list is scoped by issue month (drafts by intended month), with partner/code search,
+  status filter, fixed ordering, 25/50/100 rows and totals over the whole matching set.
+- Partner detail shows one exact account's invoices across all months. Its balance
+  is as of the latest simulated invoice activity, is not a month-end balance, excludes
+  drafts, and is labelled apart from commission. Returning restores filters, page and
+  focus; refresh returns to the list with filters cleared. Opening a draft from the
+  list moves focus to its editor and has no separate return path.
+- Saved simulations moved to version 2, so an older tab save shows the existing
+  recovery state. Statuses are Draft and Unpaid until collections (next ticket).
+- Latest: **40 acceptance**, **17 frontend transport** tests, production build; backend
+  **1,163 passed, 37 skipped** (no backend files changed).
+
+## Session — 2026-11-01 (Partner Sales: simulated invoice draft and preview)
+
+- Implemented issue #2, the first Partner Sales slice: exact-account partner
+  selection, bounded fictional catalogue, multi-line drafts in integer kobo,
+  validation, and a preview stating seller, buyer, reference, dates, lines and
+  total, with taxes/discounts and tax-invoice limits. Issuance, invoice lists,
+  collections, commission account and reset remain later tickets.
+- Drafts are browser-only, session-scoped and keyed by partner and month. Save
+  failure and incompatible saves are visible, with retry and start-over actions.
+  No backend reads or writes; the synthetic badge also shows in live-read mode.
+- Added `npm run test:acceptance` (`@playwright/test`, installed Chrome, fixture
+  API). Latest: **20 acceptance**, **17 frontend transport** tests, production
+  build, `workspace-navigation` and `workspace-scope-regressions` passed; backend
+  **1,163 passed, 37 skipped** (no backend files changed).
+- Review fixes: month seeded from the URL now requires `/periods` confirmation,
+  and date/count display moved to `lib/format.js`. Not in CI yet.
+- User accepted: one draft per partner and month with no discard; 1,000,000
+  quantity cap, issue-date-in-month and due-not-before-issue rules; sample account
+  codes as the cohort, shown even in live-read mode. These apply to the simulation
+  only and are not MTN commercial policy.
+
 ## Session — 2026-10-06 (Atlas demo reliability)
 
 - Missing account/period scope now completes a clarification without another

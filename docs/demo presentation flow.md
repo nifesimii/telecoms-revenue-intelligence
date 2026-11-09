@@ -23,17 +23,11 @@ feedback from the teams.
 
 ## Main demo questions
 
-| Step | Ask Atlas | What a good answer should demonstrate |
-| --- | --- | --- |
-| 1 | What activation commission is recorded for this dealer? | NGN 1,267,922.85, with the correct dealer and month. |
-| 2 | How much has been paid, and what remains outstanding? | Recorded settlement and outstanding amounts, with clear separation from subscription commission. |
-| 3 | Does that prove the dealer actually received the money? | Distinguishes recorded or simulated settlement evidence from bank or Oracle confirmation. |
-| 4 | Why did their activation commission change compared with May? | Explains the NGN 51,331.98 increase using the product comparison. |
-| 5 | Which product contributed most to the increase? | Identifies MIFI_1 and its NGN 33,906.87 contribution. |
-| 6 | Why do they have zero-commission records? | Identifies 104 records, discloses bounded inspection, and preserves uncertainty about causes. |
-| 7 | Which causes are confirmed, and which still need evidence? | Separates observations, documented possibilities, and verified findings. |
-| 8 | Were all those records outside the eligibility window? | Explains the audit's findings and the unresolved eligibility-policy conflict. |
-| 9 | What subscription revenue did they generate, and how much subscription commission was recorded? | Keeps NGN 14,080.50 revenue separate from NGN 1,518.00 commission. |
+This is the first.
+What activation commission is recorded for this dealer? | NGN 1,267,922.85, with the correct dealer and month. 
+how many other dealer codes are addressed to the same dealer and what is their total commission
+Why did their activation commission change compared with May? 
+
 
 For a short recording, prioritize steps **1, 2, 4, 6, and 7**, followed by the
 question about additional evidence below.

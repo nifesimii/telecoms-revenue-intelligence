@@ -48,7 +48,7 @@ def answer_text(payload):
             return 'Commission changed by NGN 39,873.42 for dealer 296065 between 202605 and 202606.'
         presentation = scope.get('presentation')
         if presentation == 'actions':
-            return 'Revenue Assurance: review the 50 zero-commission activations for dealer 296065 in 202606.'
+            return 'The evidence supports next steps for the affected activation records.'
         if presentation == 'dealer_draft':
             return 'Draft for Finance review. Dear River Isle Ventures, account 296065 has 50 zero-commission activations in 202606. This does not approve an adjustment or promise payment.'
         return 'I checked the evidence: dealer 296065 has 50 zero-commission activations in 202606.'
@@ -97,7 +97,7 @@ def tokenized_answer(payload, text):
     facts = payload['facts']
     replacements = {}
     for fact in facts:
-        for value in (str(fact['value']), str(fact['display'])):
+        for value in (str(fact['value']), str(fact['display']), str(fact['display']).removeprefix('NGN ')):
             if re.search(r'\d', value):
                 replacements.setdefault(value, '{{' + fact['id'] + '}}')
     if replacements:
@@ -106,11 +106,17 @@ def tokenized_answer(payload, text):
     return text
 
 
+def draft_payload(payload, text):
+    return {'headline': None, 'explanation_blocks': [{'text': text,
+            'claim_ids': [claim['id'] for claim in payload['claims']]}],
+            'next_step_ids': [action['id'] for action in payload['permitted_actions']] if payload['scope'].get('presentation') == 'actions' else []}
+
+
 def final_response(kwargs, *, text=None):
     payload = json.loads(kwargs['messages'][-1]['content'])
     answer = tokenized_answer(payload, text if text is not None else answer_text(payload))
     return SimpleNamespace(stop_reason='tool_use', usage=None, content=[SimpleNamespace(
-        type='tool_use', id='answer', name='compose_grounded_answer', input={'answer': answer})])
+        type='tool_use', id='answer', name='compose_grounded_answer', input=draft_payload(payload, answer))])
 
 
 def is_final_call(kwargs):

@@ -2,8 +2,9 @@
 #
 # One web service (Docker: FastAPI + built SPA on one origin) plus a managed
 # Postgres for the Audit Trails feature. Everything runs on sample data —
-# ANTHROPIC_API_KEY and the two DEMO_* creds are the only secrets to set by
-# hand in the Render dashboard after the blueprint provisions the services.
+# ANTHROPIC_API_KEY, DEMO_LOGINS and DEMO_SESSION_SECRET are the only secrets to
+# set by hand in the Render dashboard after the blueprint provisions the services.
+# The service refuses to start until both DEMO_* values are valid.
 #
 # Deploy: push this file to the repo, then in Render → "New" → "Blueprint" →
 # point at the repo. See docs/DEPLOY.md for the full walkthrough.
@@ -45,10 +46,12 @@ services:
       - key: ANTHROPIC_API_KEY
         sync: false
 
-      # ── Basic Auth gate (both required or the gate is disabled) ────────
-      - key: DEMO_USERNAME
+      # ── Two-login presentation (both required, or startup fails) ───────
+      # DEMO_LOGINS is a one-line JSON list of internal and partner logins;
+      # DEMO_SESSION_SECRET signs the session cookie. See docs/DEPLOY.md.
+      - key: DEMO_LOGINS
         sync: false
-      - key: DEMO_PASSWORD
+      - key: DEMO_SESSION_SECRET
         sync: false
 
       # ── Audit Postgres — wired from the managed DB above ───────────────

@@ -17,14 +17,17 @@ import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from backend import config
 from backend.agent import prompts
+from backend.api.auth_routes import router as auth_router
 from backend.api.routes import router as api_router
-from backend.middleware.basic_auth import install_if_configured as install_basic_auth
+from backend.api.sales_routes import router as sales_router
+from backend.auth import session
+from backend.auth.access import enforce_access
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +191,15 @@ def _seed_apdp_if_empty() -> bool:
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    """Verify the system prompt loads cleanly before serving traffic."""
+    """Verify the system prompt loads cleanly, and hosted sign-in is configured, before serving traffic."""
+    if config.HOSTED_DEPLOYMENT:
+        # Locally the application stays closed instead; hosted, a deploy should fail visibly.
+        try:
+            session.require_logins()
+        except session.LoginsNotConfigured:
+            raise RuntimeError(
+                "Hosted deployment needs valid DEMO_LOGINS and DEMO_SESSION_SECRET. See docs/DEPLOY.md."
+            ) from None
     system_prompt = prompts.get_system_prompt()
     if not system_prompt or len(system_prompt) < 500:
         raise RuntimeError(
@@ -222,6 +233,10 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=_lifespan,
+    dependencies=[Depends(enforce_access)],
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
 )
 
 app.add_middleware(
@@ -250,11 +265,6 @@ async def performance_observability(request, call_next):
     )
     return response
 
-# Basic Auth gate for the GM preview deploy. No-op locally unless
-# DEMO_USERNAME + DEMO_PASSWORD are set — production sets both as secrets.
-if install_basic_auth(app):
-    logger.info("Basic Auth middleware installed (DEMO_USERNAME/PASSWORD set).")
-
 
 # ---------------------------------------------------------------------------
 # Health probe
@@ -281,7 +291,9 @@ def health() -> dict:
 # Routers
 # ---------------------------------------------------------------------------
 
+app.include_router(auth_router)
 app.include_router(api_router)
+app.include_router(sales_router)
 
 
 # ---------------------------------------------------------------------------

@@ -20,5 +20,5 @@ def test_missing_source_keeps_scope_without_inventing_a_tool_call():
 
 def test_provenance_preserves_punctuation_and_leading_zeroes_in_account():
     client, _ = provider(lambda payload, attempt: 'Records are available.')
-    answer = compose(client, scope={'kind': 'measure', 'dealer_id': '001.23', 'periods': ['202606']})
+    answer = compose(client, scope={'kind': 'measure', 'dealer_id': '001.23', 'periods': ['202606']}, evidence={'dealer_id': '001.23'})
     assert 'Account: 001.23.' in answer

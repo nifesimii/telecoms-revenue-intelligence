@@ -1,8 +1,11 @@
 # Explain Findings latency
 
-The September 29 implementation removes model-selected evidence retrieval from
-the Overview Explain Findings path, streams the answer, and bounds provider
-failure recovery. General questions retain the existing tool loop and model.
+Ordinary chat and Explain Findings now share prepared evidence and complete-answer
+validation before publication. Findings retains its deterministic evidence lookup;
+ordinary chat resolves a bounded scope first. Progress may be shown while either
+path works, but provider drafts are withheld until validated. The September 29
+measurements below describe the earlier direct-streaming implementation and must
+not be interpreted as latency measurements of this publication contract.
 
 ## Request and response
 
@@ -24,7 +27,8 @@ source and status projection as the Payments API, including APDP record counts.
 
 The `application/x-ndjson` response emits one JSON object per line:
 
-- `{"type":"text","text":"..."}`: answer text only.
+- `{"type":"status", ...}`: application-owned progress before answer publication.
+- `{"type":"text","text":"..."}`: validated rendered answer text only.
 - `{"type":"complete","response":"...","tools_called":[],"raw_data":{},"error":null}`:
   final answer with the existing chat metadata.
 - `{"type":"error","error":"deadline_exceeded","message":"..."}`:
@@ -33,42 +37,59 @@ The `application/x-ndjson` response emits one JSON object per line:
 Other failure codes are `invalid_evidence` and `explanation_failed`. Invalid
 request schemas return HTTP 422 before streaming. Clients must treat EOF without
 completion as interrupted, retain any partial text as incomplete, and exclude
-incomplete answers from subsequent model history. No retry replays a stream
-after its first answer text. Disconnects cancel provider work, including waits
-before the first token. A read already running in a worker thread may finish
+incomplete answers from subsequent model history. Provisional or rejected model
+prose is never sent as answer text. No retry replays a published answer.
+Disconnects cancel provider work, including waits before publication. A read already running in a worker thread may finish
 after the waiting request is cancelled; cooperative checks prevent the next
 evidence operation from starting.
 
 ## Provider policy and observation
 
-The model remains `claude-sonnet-4-5`, with the existing 2048-token output limit.
-The explanation prompt requests a concise headline, supporting evidence,
-uncertainty and next action. Truncated streamed generations fail explicitly;
-completion requires the provider's terminal event and a successful stop reason.
-The unchanged full core KB receives an ephemeral provider cache breakpoint.
-With tool-enabled general chat, the preceding stable tool definitions are also
-inside that prefix. Caching the local Python prompt string alone would not do
-this. See the provider's [prompt-caching documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching)
-and [streaming documentation](https://platform.claude.com/docs/en/build-with-claude/streaming).
+`compose_answer()` receives an application-created `PreparedAnswer` containing
+validated scope, source-referenced facts and supported claims, permitted actions,
+mandatory caveats and structured attachments. Python prepares arithmetic using
+`Decimal`; model input uses decimal strings. Missing evidence is not zero, and
+paid, owed, outstanding and subscription revenue retain distinct meanings.
+Findings inventory evidence is projected to the exact selected product.
 
-The SDK has `max_retries=0`. Application recovery allows one retry per request,
-honors provider Retry-After guidance, and rejects waits exceeding the remaining
-90-second deadline. HTTP timeouts are connect 5s, read 30s, write 10s, pool 5s.
+The model returns a forced-tool `AnswerDraft` with a nullable headline,
+explanation blocks (`text`, `claim_ids`) and `next_step_ids`. Complete local
+validation checks references, scope, financial meaning, population, causality and
+unsafe content before rendering. Each placeholder must belong to a cited claim;
+claim IDs alone do not establish prose truth. Python renders selected action
+wording and appends mandatory source-specific disclosures even if omitted by the
+model. The limits remain 12,000 answer characters and 180 KB of model input.
+Refusals, truncation and invalid drafts are never published as partial prose.
+
+The static provider schemas are adapted using the installed SDK's schema
+transformer through `inference.strict_tool()`, with `strict: true` and existing
+forced tool selection. The original local schemas retain constraints and
+cross-field checks. See the provider's [strict tool documentation](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use).
+The full core KB and stable tool/system prefixes retain provider prompt caching;
+local Python prompt caching alone does not establish a provider cache hit. See
+[prompt-caching documentation](https://platform.claude.com/docs/en/build-with-claude/prompt-caching).
+
+The SDK has `max_retries=0`. A single recovery allowance is shared by provider
+retry, scope repair and answer repair. Recovery honors provider Retry-After
+guidance and rejects waits exceeding the remaining 90-second request deadline.
+There is no extra Findings retry budget or automatic evidence-only fallback. HTTP timeouts are connect 5s, read 30s, write 10s, pool 5s.
 These limits bound failures; they are not a claim of faster healthy inference.
 
 Inference logs carry an opaque request ID and contain timing/count/status fields,
 not questions, dealer identities, financial records or provider exception bodies.
 They report model-call duration/count, evidence/tool duration, retry waits/count,
-first provider text (streaming), buffered answer readiness, overall duration and
+provider timing, validated answer readiness, overall duration and
 input/output/cache token counts. Existing
 HTTP middleware timing measures response setup; use inference completion events
-for streamed full duration. Provider-first-text timing is distinct from browser
-render timing. The browser keeps local performance entries with opaque request
+for full request duration. Historical provider-first-text timing is distinct from
+validated publication and browser render timing. Time to first answer text now
+includes retrieval, composition and complete validation (plus scope resolution in
+ordinary chat); progress-event timing should be measured separately. The browser keeps local performance entries with opaque request
 IDs for first rendered text, network completion and rendered completion. A
 rendered-completion measurement can include time spent away from the thread;
 network completion is recorded independently. See `frontend/tests/README.md`.
 
-## Local measurements
+## Historical local measurements
 
 All measurements below use sample data or mocked HTTP, with no live Presto or
 billed model requests. They do not reproduce the user's production latency.
@@ -106,7 +127,7 @@ numbers are test-harness timings, not model latency estimates.
 
 ## Remaining operational validation
 
-### Live provider check — September 29, 2026
+### Historical live provider check — September 29, 2026
 
 After implementation QA, a bounded live check used the configured Anthropic
 provider with one synthetic June 2026 commission finding. It made one original
@@ -136,8 +157,10 @@ observed at the backend generator, not measured as live browser-visible text.
 
 ### Target-environment follow-up
 
-Run the same representative dealer/finding requests repeatedly in the target
-environment. Separate healthy calls, rate-limit failures and timeouts. Record
+Live-provider evaluations are opt-in. Mocked tests establish validation and
+transport behavior, not real-provider semantic accuracy or latency improvements.
+With explicit opt-in, run the same representative dealer/finding requests
+repeatedly in the target environment using the current validated-publication path. Separate healthy calls, rate-limit failures and timeouts. Record
 browser first-visible-text and complete-answer duration independently. Compare
 cold requests with subsequent requests showing nonzero `cache_read_input_tokens`;
 cache configuration alone does not prove cache hits or a latency reduction.

@@ -10,6 +10,10 @@ from fastapi.testclient import TestClient
 from backend.agent import agent, inference, prompts
 from backend.main import app
 from backend.tests.narrative_provider import final_response, is_final_call
+from backend.auth import session as auth_session
+
+# Raw ASGI requests bypass TestClient, so they carry their own internal session.
+INTERNAL_COOKIE = (b'cookie', f'{auth_session.COOKIE_NAME}={auth_session.issue_token(auth_session.Principal("finance", "internal"))}'.encode())
 
 
 class Provider:
@@ -326,7 +330,7 @@ def test_chat_stream_http_disconnect_cancels_before_first_text(monkeypatch):
         scope = {'type': 'http', 'asgi': {'version': '3.0', 'spec_version': '2.4'},
             'http_version': '1.1', 'method': 'POST', 'scheme': 'http',
             'path': '/chat/stream', 'raw_path': b'/chat/stream', 'query_string': b'',
-            'root_path': '', 'headers': [(b'content-type', b'application/json')],
+            'root_path': '', 'headers': [(b'content-type', b'application/json'), INTERNAL_COOKIE],
             'client': ('127.0.0.1', 123), 'server': ('test', 80)}
         await asyncio.wait_for(app(scope, receive, send), 2)
         assert source.closed

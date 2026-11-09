@@ -1,0 +1,59 @@
+// Partner Sales reads through the server simulation, which every session shares.
+
+import { keepPreviousData, useQuery as useMonthlessQuery } from '@tanstack/react-query';
+import useQuery from '../../hooks/useWorkspaceQuery.js';
+import { getOrderQueue, getOwnInvoice, getOwnInvoices, getOwnOrder, getOwnOrderDraft, getOwnOrderingReference, getOwnOrders, getOwnStatement, getPartnerAccounts, getPartnerStatement, getSalesInvoice, getSalesObligations, getSalesPeriodSummary, getSalesRecords, getSalesReference, getSalesStatus } from '../../api/client.js';
+
+const SALES = 'partner-sales';
+
+export const salesKeys = {
+  reference: () => [SALES, 'reference'],
+  status: () => [SALES, 'status'],
+  periodSummary: (period) => [SALES, 'period-summary', period],
+  partnerAccounts: (params) => [SALES, 'partner-accounts', params],
+  records: (params) => [SALES, 'records', params],
+  obligations: (accountCode, params) => [SALES, 'obligations', accountCode, params],
+  invoiceAnyPage: (reference) => [SALES, 'invoice', reference],
+  invoice: (reference, params) => [SALES, 'invoice', reference, params],
+  orderQueue: (params) => [SALES, 'order-queue', params],
+  ownReference: () => [SALES, 'reference', 'own'],
+  ownDraft: () => [SALES, 'own-draft'],
+  ownOrders: (params) => [SALES, 'own-orders', params],
+  // Every page of a partner's order list, for invalidating them together.
+  allOwnOrders: () => [SALES, 'own-orders'],
+  ownOrder: (reference) => [SALES, 'own-order', reference],
+  ownInvoices: (params) => [SALES, 'own-invoices', params],
+  ownInvoice: (reference, params) => [SALES, 'own-invoice', reference, params],
+  statement: (accountCode, period) => [SALES, 'statement', accountCode, period],
+  ownStatement: (period) => [SALES, 'own-statement', period],
+};
+
+// Everything that can change while the page is open. The reference data cannot.
+export const isSharedQuery = ({ queryKey }) => queryKey[0] === SALES && queryKey[1] !== 'reference';
+
+// A missing record will not appear by asking again.
+const retryUnlessMissing = (failures, error) => error.response?.status !== 404 && failures < 1;
+
+export const useSalesReference = () => useQuery({ queryKey: salesKeys.reference(), queryFn: ({ signal }) => getSalesReference(signal), staleTime: Infinity });
+export const useSalesSimulationStatus = () => useQuery({ queryKey: salesKeys.status(), queryFn: ({ signal }) => getSalesStatus(signal) });
+
+export const useSalesPeriodSummary = (period) => useQuery({ queryKey: salesKeys.periodSummary(period), queryFn: ({ signal }) => getSalesPeriodSummary(period, signal) });
+
+// The paged reads, for usePagedQuery to run once it knows the page.
+export const recordsQuery = (params) => ({ queryKey: salesKeys.records(params), queryFn: ({ signal }) => getSalesRecords(params, signal), placeholderData: keepPreviousData });
+export const partnerAccountsQuery = (params) => ({ queryKey: salesKeys.partnerAccounts(params), queryFn: ({ signal }) => getPartnerAccounts(params, signal), placeholderData: keepPreviousData });
+export const obligationsQuery = (accountCode, params) => ({ queryKey: salesKeys.obligations(accountCode, params), queryFn: ({ signal }) => getSalesObligations(accountCode, params, signal), placeholderData: keepPreviousData });
+export const orderQueueQuery = (params) => ({ queryKey: salesKeys.orderQueue(params), queryFn: ({ signal }) => getOrderQueue(params, signal), placeholderData: keepPreviousData });
+export const invoiceQuery = (reference, params) => ({ queryKey: salesKeys.invoice(reference, params), queryFn: ({ signal }) => getSalesInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });
+
+// A partner's own ordering, which belongs to no reporting month.
+export const useOwnOrderingReference = () => useMonthlessQuery({ queryKey: salesKeys.ownReference(), queryFn: ({ signal }) => getOwnOrderingReference(signal), staleTime: Infinity });
+export const useOwnOrderDraft = () => useMonthlessQuery({ queryKey: salesKeys.ownDraft(), queryFn: ({ signal }) => getOwnOrderDraft(signal) });
+export const useOwnOrder = (reference) => useMonthlessQuery({ queryKey: salesKeys.ownOrder(reference), queryFn: ({ signal }) => getOwnOrder(reference, signal), retry: retryUnlessMissing });
+export const ownOrdersQuery = (params) => ({ queryKey: salesKeys.ownOrders(params), queryFn: ({ signal }) => getOwnOrders(params, signal), placeholderData: keepPreviousData });
+export const ownInvoicesQuery = (params) => ({ queryKey: salesKeys.ownInvoices(params), queryFn: ({ signal }) => getOwnInvoices(params, signal), placeholderData: keepPreviousData });
+export const ownInvoiceQuery = (reference, params) => ({ queryKey: salesKeys.ownInvoice(reference, params), queryFn: ({ signal }) => getOwnInvoice(reference, params, signal), placeholderData: keepPreviousData, retry: retryUnlessMissing });
+
+// Fictional commission statements, which no simulation action changes.
+export const statementQuery = (accountCode, period) => ({ queryKey: salesKeys.statement(accountCode, period), queryFn: ({ signal }) => getPartnerStatement(accountCode, period, signal), staleTime: Infinity });
+export const ownStatementQuery = (period) => ({ queryKey: salesKeys.ownStatement(period), queryFn: ({ signal }) => getOwnStatement(period, signal), staleTime: Infinity });

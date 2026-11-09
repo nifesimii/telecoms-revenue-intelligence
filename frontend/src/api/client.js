@@ -16,7 +16,61 @@ const api = axios.create({
   // real request-length ceiling is the server's own agent loop cap.
   timeout: 120_000,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 });
+
+// A refused session anywhere in the app returns the user to the login page. A
+// refusal for the role may mean another tab in this browser signed in as someone
+// else, so the session gate checks who is signed in now.
+export const SESSION_ENDED_EVENT = 'fbb:session-ended';
+export const SESSION_CHECK_EVENT = 'fbb:session-check';
+const sessionPaths = ['/auth/login', '/auth/session'];
+const announce = (type) => {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(type));
+};
+const announceRefusal = (status) => {
+  if (status === 401) announce(SESSION_ENDED_EVENT);
+  if (status === 403) announce(SESSION_CHECK_EVENT);
+};
+
+// Sent with every request, so the server refuses anything this page sends after
+// another tab signs in as someone else. backend/auth/access.py checks it.
+const EXPECTED_USER_HEADER = 'X-FBB-Expected-User';
+let expectedUser = null;
+export function setExpectedUser(username) {
+  expectedUser = username;
+}
+const expectedUserHeaders = () => (expectedUser ? { [EXPECTED_USER_HEADER]: expectedUser } : {});
+
+api.interceptors.request.use((request) => {
+  Object.entries(expectedUserHeaders()).forEach(([name, value]) => request.headers.set(name, value));
+  return request;
+});
+
+api.interceptors.response.use(undefined, (error) => {
+  if (!sessionPaths.includes(error.config?.url)) announceRefusal(error.response?.status);
+  return Promise.reject(error);
+});
+
+// Resolves to null when nobody is signed in.
+export async function getSession() {
+  try {
+    const { data } = await api.get('/auth/session');
+    return data;
+  } catch (error) {
+    if (error.response?.status === 401) return null;
+    throw error;
+  }
+}
+
+export async function signIn(username, password) {
+  const { data } = await api.post('/auth/login', { username, password });
+  return data;
+}
+
+export async function signOut() {
+  await api.post('/auth/logout');
+}
 
 export async function getFinancialDealers(params, signal) {
   const { data } = await api.get('/financial-health', { params, signal });
@@ -360,6 +414,128 @@ export async function getPartnerHealth(period, prior_period) {
   return data;
 }
 
+// Fictional Partner Sales simulation. These routes touch no financial source.
+export async function getSalesReference(signal) {
+  const { data } = await api.get('/partner-sales/reference', { signal });
+  return data;
+}
+
+export async function getSalesStatus(signal) {
+  const { data } = await api.get('/partner-sales/status', { signal });
+  return data;
+}
+
+export async function getSalesPeriodSummary(period, signal) {
+  const { data } = await api.get('/partner-sales/period-summary', { params: { mon_period: period }, signal });
+  return data;
+}
+
+export async function getPartnerAccounts(params, signal) {
+  const { data } = await api.get('/partner-sales/partners', { params, signal });
+  return data;
+}
+
+export async function getSalesRecords(params, signal) {
+  const { data } = await api.get('/partner-sales/records', { params, signal });
+  return data;
+}
+
+export async function getSalesInvoice(reference, params, signal) {
+  const { data } = await api.get(`/partner-sales/invoices/${encodeURIComponent(reference)}`, { params, signal });
+  return data;
+}
+
+export async function recordSalesCollection(reference, collection) {
+  const { data } = await api.post(`/partner-sales/invoices/${encodeURIComponent(reference)}/collections`, collection);
+  return data;
+}
+
+export async function getSalesObligations(accountCode, params, signal) {
+  const { data } = await api.get(`/partner-sales/partners/${encodeURIComponent(accountCode)}/obligations`, { params, signal });
+  return data;
+}
+
+export async function resetSalesSimulation() {
+  const { data } = await api.post('/partner-sales/reset');
+  return data;
+}
+
+// Finance's review of submitted partner orders.
+export async function getOrderQueue(params, signal) {
+  const { data } = await api.get('/partner-sales/orders', { params, signal });
+  return data;
+}
+
+export async function issueOrder(reference, decision) {
+  const { data } = await api.post(`/partner-sales/orders/${encodeURIComponent(reference)}/issue`, decision);
+  return data;
+}
+
+export async function rejectOrder(reference, decision) {
+  const { data } = await api.post(`/partner-sales/orders/${encodeURIComponent(reference)}/reject`, decision);
+  return data;
+}
+
+// A partner's own ordering. The server takes the account from the session, so none is sent.
+export async function getOwnOrderingReference(signal) {
+  const { data } = await api.get('/partner-sales/my/reference', { signal });
+  return data;
+}
+
+export async function getOwnOrderDraft(signal) {
+  const { data } = await api.get('/partner-sales/my/draft', { signal });
+  return data;
+}
+
+export async function createOwnOrderDraft() {
+  const { data } = await api.post('/partner-sales/my/draft');
+  return data;
+}
+
+export async function saveOwnOrderDraft(change) {
+  const { data } = await api.put('/partner-sales/my/draft', change);
+  return data;
+}
+
+export async function deleteOwnOrderDraft(token) {
+  await api.delete('/partner-sales/my/draft', { params: { token } });
+}
+
+export async function submitOwnOrderDraft(submission) {
+  const { data } = await api.post('/partner-sales/my/draft/submit', submission);
+  return data;
+}
+
+export async function getOwnOrders(params, signal) {
+  const { data } = await api.get('/partner-sales/my/orders', { params, signal });
+  return data;
+}
+
+export async function getOwnOrder(reference, signal) {
+  const { data } = await api.get(`/partner-sales/my/orders/${encodeURIComponent(reference)}`, { signal });
+  return data;
+}
+
+export async function getOwnInvoices(params, signal) {
+  const { data } = await api.get('/partner-sales/my/invoices', { params, signal });
+  return data;
+}
+
+export async function getOwnInvoice(reference, params, signal) {
+  const { data } = await api.get(`/partner-sales/my/invoices/${encodeURIComponent(reference)}`, { params, signal });
+  return data;
+}
+
+export async function getPartnerStatement(accountCode, period, signal) {
+  const { data } = await api.get(`/partner-sales/partners/${encodeURIComponent(accountCode)}/statement`, { params: { mon_period: period }, signal });
+  return data;
+}
+
+export async function getOwnStatement(period, signal) {
+  const { data } = await api.get('/partner-sales/my/statement', { params: { mon_period: period }, signal });
+  return data;
+}
+
 export default api;
 
 
@@ -429,9 +605,10 @@ async function streamAnswer(path, payload, { signal, onText, onStatus } = {}) {
   try {
     const response = await fetch(`${baseURL.replace(/\/$/, '')}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
-      body: JSON.stringify(payload), signal: controller.signal,
+      headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson', ...expectedUserHeaders() },
+      body: JSON.stringify(payload), signal: controller.signal, credentials: 'include',
     });
+    announceRefusal(response.status);
     if (!response.ok) throw new Error(`Explanation unavailable (HTTP ${response.status}). Please retry.`);
     if (!response.headers.get('content-type')?.toLowerCase().includes('application/x-ndjson')) {
       throw new Error('Invalid explanation response. Please retry.');

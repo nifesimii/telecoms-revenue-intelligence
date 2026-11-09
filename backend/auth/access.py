@@ -1,0 +1,160 @@
+"""Deny-by-default access policy, applied to every API route.
+
+A route is internal-only unless this table says otherwise, so a new route is
+never exposed to partners by accident. A test also requires each route to be
+listed, keeping the decision explicit.
+"""
+from __future__ import annotations
+
+from enum import Enum
+from urllib.parse import urlsplit
+
+from fastapi import HTTPException, Request
+
+from backend import config
+from backend.auth import session
+
+
+class Access(Enum):
+    OPEN = "open"
+    SIGNED_IN = "signed_in"
+    INTERNAL = "internal"
+    PARTNER = "partner"
+
+
+# A partner's own records, always the session's account. Internal users are refused,
+# so review begins at submission.
+_PARTNER_PATHS = (
+    "/partner-sales/my/draft",
+    "/partner-sales/my/draft/submit",
+    "/partner-sales/my/invoices",
+    "/partner-sales/my/invoices/{reference}",
+    "/partner-sales/my/orders",
+    "/partner-sales/my/orders/{reference}",
+    "/partner-sales/my/reference",
+    "/partner-sales/my/statement",
+)
+
+
+_INTERNAL_PATHS = (
+    "/activations/accounts",
+    "/activations/accounts/export",
+    "/activations/accounts/{dealer_id}/detail",
+    "/activations/exceptions",
+    "/activations/summary",
+    "/activations/variance",
+    "/assurance/audit/breakdown",
+    "/assurance/audit/modules",
+    "/assurance/audit/records",
+    "/assurance/audit/records/export",
+    "/assurance/audit/records/{exact_subject}",
+    "/assurance/audit/run",
+    "/assurance/audit/trails",
+    "/assurance/audit/trails/{partner_code}",
+    "/assurance/overview",
+    "/assurance/overview/export",
+    "/assurance/status",
+    "/assurance/zero-commission/breakdown",
+    "/assurance/zero-commission/run",
+    "/assurance/zero-commission/trails",
+    "/assurance/zero-commission/trails/{partner_code}",
+    "/chat",
+    "/chat/explain",
+    "/chat/stream",
+    "/commissions",
+    "/commissions/export",
+    "/commissions/{dealer_id}/detail",
+    "/commissions/{dealer_id}/subscription-records",
+    "/commissions/{dealer_id}/zero-records",
+    "/dealers",
+    "/dealers/{dealer_id}/statement",
+    "/dealers/{dealer_id}/verification",
+    "/financial-health",
+    "/financial-health/{dealer_id}",
+    "/inventory/comparison",
+    "/inventory/comparison-page",
+    "/inventory/data-coverage-issues",
+    "/partner/health",
+    "/partner-sales/invoices/{reference}",
+    "/partner-sales/invoices/{reference}/collections",
+    "/partner-sales/orders",
+    "/partner-sales/orders/{reference}/issue",
+    "/partner-sales/orders/{reference}/reject",
+    "/partner-sales/partners",
+    "/partner-sales/partners/{account_code}/obligations",
+    "/partner-sales/partners/{account_code}/statement",
+    "/partner-sales/period-summary",
+    "/partner-sales/records",
+    "/partner-sales/reference",
+    "/partner-sales/reset",
+    "/partner-sales/status",
+    "/payments",
+    "/payments/accounts/{dealer_id}",
+    "/payments/analytics",
+    "/payments/disputes/draft",
+    "/payments/exceptions",
+    "/payments/export",
+    "/payments/position",
+    "/payments/summary",
+    "/payments/variance",
+    "/periods",
+)
+
+ROUTE_ACCESS: dict[str, Access] = {
+    "/health": Access.OPEN,
+    "/auth/login": Access.OPEN,
+    "/auth/logout": Access.OPEN,
+    "/auth/session": Access.SIGNED_IN,
+    **{path: Access.INTERNAL for path in _INTERNAL_PATHS},
+    **{path: Access.PARTNER for path in _PARTNER_PATHS},
+}
+
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def access_for(path: str) -> Access:
+    return ROUTE_ACCESS.get(path, Access.INTERNAL)
+
+
+def _refuse_cross_site_changes(request: Request) -> None:
+    """Session cookies travel automatically, so only trusted pages may change state."""
+    if request.method in _SAFE_METHODS:
+        return
+    origin = request.headers.get("origin")
+    if origin:
+        trusted = origin in config.CORS_ORIGINS or urlsplit(origin).netloc == request.headers.get("host")
+    else:
+        trusted = request.headers.get("sec-fetch-site") != "cross-site"
+    if not trusted:
+        raise HTTPException(status_code=403, detail="Cross-site request refused.")
+
+
+# Every tab in a browser shares one session cookie, so signing in elsewhere replaces
+# a page's login. The page names the user it was showing; anything sent for another
+# user is refused, even under the same role, and the page returns to sign-in.
+EXPECTED_USER_HEADER = "X-FBB-Expected-User"
+DIFFERENT_USER_DETAIL = "Signed in as a different user."
+
+# The one role each restricted level admits; SIGNED_IN admits any.
+_REQUIRED_ROLE = {Access.INTERNAL: session.INTERNAL, Access.PARTNER: session.PARTNER}
+
+
+def current_principal(request: Request) -> session.Principal | None:
+    return session.read_token(request.cookies.get(session.COOKIE_NAME))
+
+
+def enforce_access(request: Request) -> None:
+    """Application-wide dependency, so it runs before any route handler."""
+    _refuse_cross_site_changes(request)
+    level = access_for(request.scope["route"].path)
+    if level is Access.OPEN:
+        return
+    principal = current_principal(request)
+    if principal is None:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+    required_role = _REQUIRED_ROLE.get(level)
+    expected_user = request.headers.get(EXPECTED_USER_HEADER)
+    if required_role and expected_user is not None and expected_user != principal.username:
+        raise HTTPException(status_code=403, detail=DIFFERENT_USER_DETAIL)
+    if required_role and principal.role != required_role:
+        raise HTTPException(status_code=403, detail="Not available for this login.")

@@ -96,6 +96,12 @@ CORS_ORIGINS: list[str] = [
     if o.strip()
 ]
 
+# --- Demo logins (see backend/auth/session.py) ---
+# Without both values nobody can sign in; the application never falls back to open.
+DEMO_LOGINS: str = os.getenv("DEMO_LOGINS", "")
+DEMO_SESSION_SECRET: str = os.getenv("DEMO_SESSION_SECRET", "")
+HOSTED_DEPLOYMENT: bool = bool(os.getenv("RENDER_SERVICE_NAME"))
+
 # --- Sample data CSVs (absolute paths, used when USE_SAMPLE_DATA=true) ---
 #
 # Some sources are partitioned by mon_period (one CSV per month) and are

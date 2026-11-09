@@ -1,3 +1,4 @@
+from backend.tests.narrative_provider import draft_payload
 """Conversational record pages retain exact application-owned ranges and tables."""
 import asyncio
 import json
@@ -6,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.agent.inference import InferenceRun
+from backend.agent.answer_evidence import prepare_answer
 from backend.agent.narrative import NarrativeGroundingError, compose_answer
 
 
@@ -15,7 +17,7 @@ def run(answer, *, presentation='records', unavailable=False):
         payload = json.loads(kwargs['messages'][-1]['content'])
         calls.append(payload)
         return SimpleNamespace(stop_reason='tool_use', content=[SimpleNamespace(
-            type='tool_use', name='compose_grounded_answer', input={'answer': answer(payload)})])
+            type='tool_use', name='compose_grounded_answer', input=draft_payload(payload, answer(payload)))])
     client = SimpleNamespace(messages=SimpleNamespace(create=create))
     evidence = {'investigation': {'family': 'zero_commission', 'status': 'available',
         'total_records': 50, 'causes': [{'cause': 'USP_SNAPSHOT_MISS', 'count': 48}],
@@ -28,8 +30,8 @@ def run(answer, *, presentation='records', unavailable=False):
             pagination={'offset': 0, 'limit': 20, 'total': 0, 'has_more': False})
         context = 'No activation records cover this month.'
     result = asyncio.run(compose_answer(client, InferenceRun('test'), question='Next page please', history=[],
-        scope={'kind': 'measure', 'presentation': presentation, 'periods': ['202606'], 'dealer_id': '296065'},
-        evidence=evidence, tools_called=['get_zero_commission_records'], validated_context=context,
+        prepared=prepare_answer(scope={'kind': 'measure', 'presentation': presentation, 'periods': ['202606'], 'dealer_id': '296065'},
+        evidence=evidence, tools_called=['get_zero_commission_records'], validated_context=context),
         sample_mode=True, model='test'))
     return result, calls
 

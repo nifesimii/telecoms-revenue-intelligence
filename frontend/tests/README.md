@@ -7,6 +7,23 @@ node --test frontend/tests/*.test.mjs
 npm --prefix frontend run build
 ```
 
+Login and Partner Sales acceptance tests start their own Vite server and a real API
+on port 8199 with generated logins, and need an installed Chrome and the project's
+`.venv`: no Presto or model provider. Partner Sales and sign-in use that real API.
+All other reads are fixture-routed, and other non-GET requests are recorded and blocked:
+
+```sh
+npm --prefix frontend run test:acceptance
+```
+
+They run through the `@playwright/test` dev dependency instead of the
+`PLAYWRIGHT_MODULE` scripts below, so the suite is reproducible from `npm ci`.
+They include the complete presenter sequence in
+`docs/PARTNER_SALES_REHEARSAL.md`, replayed after a reset and run by keyboard at 320px.
+
+The scripts below predate required sign-in and need an authenticated browser
+session against the real backend.
+
 With sample-mode servers on localhost:5173 and localhost:8000:
 
 ```sh

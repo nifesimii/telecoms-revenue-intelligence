@@ -87,12 +87,14 @@ frontend/src/
 # 1. Copy sample env, default to sample-data mode (no Presto needed)
 cp .env.example .env
 echo "USE_SAMPLE_DATA=true" >> .env
+# Then set DEMO_SESSION_SECRET and a password for each login in DEMO_LOGINS.
+# The application stays closed until both are valid.
 
 # 2. Backend
 uvicorn backend.main:app --reload          # http://localhost:8000
 
 # 3. Frontend
-cd frontend && npm install && npm run dev  # http://localhost:5173
+cd frontend && npm install && npm run dev  # http://localhost:5173 (use localhost, not 127.0.0.1)
 
 # 4. Tests
 pytest backend/tests

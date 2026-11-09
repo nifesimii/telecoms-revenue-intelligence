@@ -15,7 +15,6 @@ too but the web service cold-starts after 15 min idle — not great for a demo.
 - Repo pushed to GitHub with these files:
   - `render.yaml` (blueprint at repo root)
   - `backend/Dockerfile` + `.dockerignore` at repo root
-  - `backend/middleware/basic_auth.py`
 - Render account (free to create). No card needed until you upgrade off free.
 - An Anthropic API key with budget for the demo window.
 
@@ -38,13 +37,16 @@ Go to the web service → **Environment** → set:
 | Key              | Value                                                   |
 |------------------|---------------------------------------------------------|
 | `ANTHROPIC_API_KEY` | Your Anthropic key                                   |
-| `DEMO_USERNAME`     | Chosen username (e.g. `mtn-gm`)                      |
-| `DEMO_PASSWORD`     | Strong random string — this gates the whole preview  |
+| `DEMO_SESSION_SECRET` | Long random string that signs session cookies, e.g. `python -c "import secrets; print(secrets.token_urlsafe(32))"` |
+| `DEMO_LOGINS`       | One-line JSON list of logins, shaped as in `.env.example`: one `internal` login, plus one `partner` login for each demonstration account, each with its own strong random password |
 
 Save. Render redeploys automatically.
 
-**If either `DEMO_*` is blank the gate is disabled and the app is public.**
-Both must be set.
+**If either `DEMO_*` value is blank or invalid the service refuses to start**
+(on Render, detected by `RENDER_SERVICE_NAME`; elsewhere the app starts but stays closed),
+and the deploy fails with a message naming both variables. The previous
+`DEMO_USERNAME` and `DEMO_PASSWORD` secrets are no longer read; delete them.
+Rotating `DEMO_SESSION_SECRET` signs everyone out.
 
 The Blueprint also links `FBB_AUDIT_PG_*` and `APDP_PG_*` to the managed
 `fbb-audit-pg` database automatically. If the web service was created manually
@@ -66,9 +68,8 @@ curl -i https://fbb-preview.onrender.com/health
 # payment_simulation.csv fixture. Use PAYMENT_SOURCE=apdp only in a dedicated
 # APDP integration environment.
 
-# Anything else — 401 without creds, 200 with them.
-curl -i https://fbb-preview.onrender.com/
-curl -i -u "mtn-gm:<password>" https://fbb-preview.onrender.com/periods
+# Every API route except sign-in answers 401 without a session cookie.
+curl -i https://fbb-preview.onrender.com/periods
 ```
 
 The application also enforces `simulated` when Render identifies the service
@@ -76,8 +77,8 @@ as `fbb-preview`. This guards against a stale dashboard-level
 `PAYMENT_SOURCE=apdp` override. Use a separately named service for APDP
 integration testing.
 
-In a browser: open the site, browser prompts for the basic-auth credentials,
-enter them once, the SPA loads. Click **Audit Trails** → **Run** → confirm
+In a browser: open the site and sign in on the login page with the internal
+login. Click **Audit Trails** → **Run** → confirm
 trails come back (proves the managed Postgres is wired end-to-end;
 `ensure_schema()` bootstraps the schema on first write).
 
@@ -88,9 +89,14 @@ band** (WhatsApp, not the same email as the URL).
 
 ## Operations
 
-**Rotate the password.** Dashboard → Environment → change `DEMO_PASSWORD` →
-Save. Render redeploys; browsers with the old creds cached get a 401 and
-re-prompt.
+**Rotate a password.** Dashboard → Environment → edit that login's password in
+`DEMO_LOGINS` → Save. Render redeploys, which also returns the Partner Sales
+simulation to its seed. Existing sessions, including those of a login removed from
+`DEMO_LOGINS`, stay valid for up to 8 hours unless `DEMO_SESSION_SECRET` is rotated too.
+
+**Do not deploy right before a presentation.** Every deploy or restart returns
+the Partner Sales simulation to its seed for everyone. See
+docs/PARTNER_SALES_REHEARSAL.md.
 
 **Redeploy after code changes.** Push to the tracked branch — `autoDeploy:
 true` in `render.yaml` picks it up. Or dashboard → **Manual Deploy**.
@@ -127,8 +133,13 @@ poking at data and want a fresh known-good state.
   `main.py`'s lifespan hook when `normalized.transactions` is empty.
   Real streaming ingestion via Kafka/Flink is out of scope for the
   demo (the Flink Docker build is broken — see `apdp/CLAUDE.md`).
-- **One shared credential.** Basic Auth is a gate, not a user system. Anyone
-  with the URL + password gets full access to every endpoint.
+- **Demonstration logins, not a user system.** `DEMO_LOGINS` holds fixed
+  internal and partner logins for the presentation
+  (docs/adr/0002-partner-sales-two-logins.md). Partner logins reach only
+  their own Partner Sales records; the internal login reaches everything.
+  There is no user administration, lockout or password reset.
+- **Single worker.** The Partner Sales simulation lives in process memory, so
+  the service must keep one worker; more would split the records.
 - **Frankfurt region.** Latency from Lagos is ~150–200 ms; acceptable for a
   demo. If it feels sluggish, Fly.io in JNB is the next step (needs a
   separate blueprint — not covered here).

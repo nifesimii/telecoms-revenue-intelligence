@@ -1,0 +1,45 @@
+[
+  {
+    "account_code": "296065",
+    "period": "202605",
+    "opening_minor": 25000000,
+    "opening_reference": "SIM-OPEN-296065-202605",
+    "subscription_recorded": true,
+    "subscription_revenue_minor": 11498629,
+    "activity": [
+      {"date": "2026-05-15", "reference": "SIM-COM-296065-0501", "stream": "activation", "kind": "earning", "amount_minor": 50000000},
+      {"date": "2026-05-20", "reference": "SIM-SET-296065-0501", "stream": "activation", "kind": "settlement", "amount_minor": 20000000},
+      {"date": "2026-05-29", "reference": "SIM-SET-296065-0502", "stream": "activation", "kind": "settlement", "amount_minor": 18048535},
+      {"date": "2026-05-31", "reference": "SIM-COM-296065-0502", "stream": "activation", "kind": "earning", "amount_minor": 45121338},
+      {"date": "2026-05-31", "reference": "SIM-COM-296065-0503", "stream": "subscription", "kind": "earning", "amount_minor": 370900},
+      {"date": "2026-05-31", "reference": "SIM-SET-296065-0503", "stream": "subscription", "kind": "settlement", "amount_minor": 185450}
+    ]
+  },
+  {
+    "account_code": "296065",
+    "period": "202606",
+    "opening_minor": 82258253,
+    "opening_reference": "SIM-OPEN-296065-202606",
+    "subscription_recorded": true,
+    "subscription_revenue_minor": 12026683,
+    "activity": [
+      {"date": "2026-06-15", "reference": "SIM-COM-296065-0601", "stream": "activation", "kind": "earning", "amount_minor": 50000000},
+      {"date": "2026-06-25", "reference": "SIM-SET-296065-0601", "stream": "activation", "kind": "settlement", "amount_minor": 39643472},
+      {"date": "2026-06-30", "reference": "SIM-COM-296065-0602", "stream": "activation", "kind": "earning", "amount_minor": 49108680},
+      {"date": "2026-06-30", "reference": "SIM-COM-296065-0603", "stream": "subscription", "kind": "earning", "amount_minor": 305000},
+      {"date": "2026-06-30", "reference": "SIM-SET-296065-0603", "stream": "subscription", "kind": "settlement", "amount_minor": 152500}
+    ]
+  },
+  {
+    "account_code": "353072",
+    "period": "202605",
+    "opening_minor": null,
+    "opening_reference": null,
+    "subscription_recorded": false,
+    "subscription_revenue_minor": null,
+    "activity": [
+      {"date": "2026-05-31", "reference": "SIM-COM-353072-0501", "stream": "activation", "kind": "earning", "amount_minor": 5399983},
+      {"date": "2026-05-31", "reference": "SIM-SET-353072-0501", "stream": "activation", "kind": "settlement", "amount_minor": 4859985}
+    ]
+  }
+]

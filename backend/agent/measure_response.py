@@ -154,6 +154,8 @@ def render_measure_response(request: dict, evidence: dict) -> str:
             raise ValueError('Investigation scope mismatch')
         return render_investigation(investigation, request.get('presentation', 'explanation'))
     _validate(request, evidence)
+    from backend.agent.answer_preparation import prepare_evidence
+    evidence = prepare_evidence(evidence, request)
     parts = []
     for measure in evidence["measures"]:
         if measure["measure"] == "verification_outcome":
@@ -174,12 +176,10 @@ def render_measure_response(request: dict, evidence: dict) -> str:
         comparing = request.get("operation") in {"compare", "explain"} and len(request["periods"]) > 1
         ranking = (measure["measure"] == "activation_commission" and request.get("limit") is not None
                    and request.get("operation") == "breakdown" and request.get("breakdown") == "dealer")
-        ranked_rows = []
-        if ranking and available:
-            ranked_rows = sorted(available[0]["rows"],
-                                 key=lambda row: (-Decimal(str(row["value"])), str(row["dealer_id"])))[:request["limit"]]
+        derived = measure['prepared']
+        ranked_rows = derived['ranked_rows']
         if ranking and ranked_rows:
-            selected_total = sum(Decimal(str(row["value"])) for row in ranked_rows)
+            selected_total = derived["ranked_total"]
             if request["limit"] == 1:
                 row = ranked_rows[0]
                 parts.append(f"Highest activation commission: {_number(selected_total, measure['unit'])} — "
@@ -195,13 +195,13 @@ def render_measure_response(request: dict, evidence: dict) -> str:
                 parts.append(f"{_text(period['period'])}: {_number(period['total'], measure['unit'])}.")
             if comparing and not missing and len(request["periods"]) == 2:
                 earlier, later = sorted(available, key=lambda p: p["period"])
-                delta = Decimal(str(later["total"])) - Decimal(str(earlier["total"]))
+                delta = derived["comparison"]["delta"]
                 change_label = "Snapshot change" if aggregation == "snapshot" else "Change"
                 parts.append(f"{change_label} ({later['period']} − {earlier['period']}): {_number(delta, measure['unit'])}.")
             elif comparing:
                 parts.append("Comparison unavailable: two fully evidenced periods are required.")
         elif available:
-            total = sum(Decimal(str(p["total"])) for p in available)
+            total = derived["total"]
             partial = "Partial total — " if missing else ""
             parts.append(f"{partial}{_text(measure['label'])}: {_number(total, measure['unit'])}.")
         else:
@@ -780,7 +780,7 @@ def _render_audit_module(module: dict, dealer: str) -> str:
             bullets.append(f"Showing {len(trails)} of {count:,} subjects.")
     caveats = [*module["caveats"], *(c for trail in trails for c in trail["caveats"])]
     bullets.extend(f"Caveat: {c}" for c in list(dict.fromkeys(caveats))[:_MAX_AUDIT_CAVEATS])
-    withheld = sum(trail.get("withheld", 0) for trail in trails)
+    withheld = module["prepared"]["withheld_count"]
     if withheld:
         bullets.append(f"{withheld:,} trail detail(s) not shown.")
     if count > 1 and any(c["conclusion"] == _INSUFFICIENT for c in module["conclusions"]):
@@ -865,7 +865,7 @@ def _render_verification(measure: dict, dealer_id: str | None, focus: str | None
             modules = [module for module in modules if module["module"] == focus]
             if not modules:
                 raise ValueError("Verification evidence does not include the requested focus")
-        tally = {status: sum(m["status"] == status for m in modules) for status in _VERIFIED_STATUSES}
+        tally = period["verification"]["prepared"]["status_counts"]
         noun = "module" if len(modules) == 1 else "modules"
         parts.append(f"Verification outcome for dealer {_text(dealer)}, {month}: " + _text(
             f"{len(modules)} audit {noun} — {tally['verified']} with a verdict, "
@@ -943,11 +943,11 @@ def _change_words(value: object) -> str:
     return f"{'up' if amount > 0 else 'down'} {_number(abs(amount), 'ngn')}"
 
 
-def _change_share(change: object, earlier: object) -> str:
-    base = _cents(earlier)
-    if base == 0:
-        return "new" if _cents(change) else "—"
-    return f"{_number(abs(_cents(change) / base * 100).quantize(Decimal('0.1')), 'count')}%"
+def _change_share(line: dict) -> str:
+    derived = line['prepared']
+    if derived['change_kind'] != 'percentage':
+        return 'new' if derived['change_kind'] == 'new' else '—'
+    return f"{_number(derived['change_pct'], 'count')}%"
 
 
 def _render_variance(measure: dict, dealer_id: str | None) -> list[str]:
@@ -966,7 +966,7 @@ def _render_variance(measure: dict, dealer_id: str | None) -> list[str]:
             continue
         totals = variance["totals"]
         change = _change_words(totals["change_ngn"])
-        share = _change_share(totals["change_ngn"], totals["earlier_ngn"])
+        share = _change_share(totals)
         parts.append(f"Activation commission for dealer {dealer}, {earlier} to {later}: {change} "
                      f"(from {_number(totals['earlier_ngn'], 'ngn')} to {_number(totals['later_ngn'], 'ngn')}"
                      f"{'' if share in {'new', '—'} or change == 'no change' else ', ' + share}).")
@@ -979,10 +979,9 @@ def _render_variance(measure: dict, dealer_id: str | None) -> list[str]:
         for label, line in [*((_text(p["product"]), p) for p in variance["products"]), ("Total", totals)]:
             lines.append(f"| {label} | {line['earlier_activations']:,} | {_number(line['earlier_ngn'], 'ngn')} | "
                          f"{line['later_activations']:,} | {_number(line['later_ngn'], 'ngn')} | "
-                         f"{_change_words(line['change_ngn'])} | {_change_share(line['change_ngn'], line['earlier_ngn'])} |")
+                         f"{_change_words(line['change_ngn'])} | {_change_share(line)} |")
         parts.append("\n".join(lines))
-        movers = sorted((p for p in variance["products"] if _cents(p["change_ngn"])),
-                        key=lambda p: (-abs(_cents(p["change_ngn"])), p["product"]))
+        movers = variance['prepared']['movers']
         if movers:
             parts.append(f"Largest change: {_text(movers[0]['product'])}, {_change_words(movers[0]['change_ngn'])}.")
         parts.append("This splits the change by product; it does not establish why it changed. "

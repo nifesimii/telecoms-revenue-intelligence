@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 import json
@@ -17,6 +18,20 @@ import httpx
 logger = logging.getLogger(__name__)
 REQUEST_DEADLINE_SECONDS = 90.0
 HTTP_TIMEOUT = httpx.Timeout(connect=5.0, read=30.0, write=10.0, pool=5.0)
+
+
+def strict_tool(tool: dict[str, Any]) -> dict[str, Any]:
+    """Adapt a static tool for the provider; keep original local constraints.
+
+    The SDK moves unsupported schema constraints into descriptions. Callers
+    must still validate against their original contract, including cross-field
+    checks. Copy first because SDK output can retain nested enum/required lists.
+    Never add request-specific evidence or identifiers to these cached schemas.
+    """
+    prepared = deepcopy(tool)
+    prepared['input_schema'] = anthropic.transform_schema(prepared['input_schema'])
+    prepared['strict'] = True
+    return prepared
 
 
 def new_client(api_key: str) -> anthropic.AsyncAnthropic:

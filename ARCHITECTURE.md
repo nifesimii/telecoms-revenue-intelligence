@@ -335,6 +335,11 @@ backend/
 │   ├── dealer_resolution.py A measure's dealer_name → one recorded code (exact name,
 │   │                        else unique partial name) before any evidence read;
 │   │                        none/several/unreadable answer without evidence.
+│   ├── answer_preparation.py Decimal arithmetic and bounded population/page facts.
+│   ├── answer_evidence.py  Application-created PreparedAnswer: scope, facts, claims,
+│   │                        permitted actions, mandatory caveats and attachments.
+│   ├── narrative.py        Shared compose_answer: AnswerDraft validation, repair,
+│   │                        and rendering before either transport publishes text.
 │   ├── measure_response.py Application-owned values, labels, coverage and tables.
 │   ├── tools.py            Tool definitions in Anthropic format. ~13 tools: the 4
 │   │                        core (dealer summary, zero-commission records, MoM
@@ -362,6 +367,13 @@ backend/
 │                            reconciliation anchors, …) fetched on demand via the
 │                            get_kb_section tool — kept OUT of the base prompt to
 │                            save tokens.
+│
+├── sales/                 simulation.py — the fictional Partner Sales simulation, in
+│                          process memory. statements.py — the fixed fictional Partner
+│                          Commission Account statements (linked ones in
+│                          linked_commission_statements.json), served per account so a
+│                          partner receives only their own. Served by api/sales_routes.py.
+│                          Touches no financial source (docs/adr/0002-partner-sales-two-logins.md).
 │
 ├── models/                Pydantic domain models (e.g. activation_summary).
 ├── data/                  generate_payment_simulation.py — builds the simulated
@@ -398,6 +410,24 @@ frontend/src/
     │                       full-period summary and on-demand account evidence.
     ├── inventory/          Inventory Intelligence tab + DataCoverageTicketModal.
     ├── payment/            Payment Intelligence tab + DisputeDraftModal.
+    ├── sales/              Partner Sales presentation simulation over /partner-sales: invoices
+    │                       frozen once from issued partner orders (Finance has no invoice drafts),
+    │                       idempotent invoice collections, a bounded invoice list and partner
+    │                       purchase obligations. Collections never touch commission. A separate
+    │                       fictional Partner Commission Account links to existing explanations
+    │                       only after read-only sample evidence reconciles to the kobo. Records are
+    │                       held by the server and shared by everyone signed in. A reset restores the
+    │                       starting seed (three example invoices and one submitted partner order)
+    │                       for all of them, and a change to a record that has since changed or been
+    │                       reset is refused. OrderReview.jsx is Finance's queue of submitted orders,
+    │                       each issued as an invoice or rejected with a reason, once. A partner login
+    │                       sees only PartnerOrdering.jsx: one private draft order for its own
+    │                       account, its orders with Finance's decisions, and its invoices with their
+    │                       collections and balances read-only (PartnerInvoices.jsx; recording a
+    │                       collection is Finance's), and its own Commission Account without
+    │                       explanation links (PartnerCommission.jsx), over /partner-sales/my/* (see
+    │                       docs/adr/0001-partner-sales-presentation-boundary.md,
+    │                       docs/adr/0002-partner-sales-two-logins.md and docs/PARTNER_SALES_REHEARSAL.md).
     ├── assurance/AssuranceStatusPanel.jsx   Overview (cross-module triage landing).
     ├── audit/AuditTrailPanel.jsx            Audit Trails tab (browse verification chains).
     └── shared/HelpIcon.jsx                  Tooltip + glossary (qualified vs unqualified).
@@ -441,7 +471,10 @@ workspaces. Public view IDs remain `overview`, `commission`, `activation`,
 
 Workspace switches push history entries; initial URL normalization and period
 changes replace the current entry. `popstate` restores the URL view and month.
-Period validation waits for the available-month list. Serializable investigation
+`partner-sales` is a fictional simulation. Its partner orders, invoices and collections live in
+server process memory (`backend/sales/simulation.py`, `/partner-sales/*`), reset on restart, and never reach
+Atlas, the audit datastore or other workspaces. The header shows the synthetic badge there even in live-read mode. Its commission statements are server fixtures too (`backend/sales/statements.py`), read per exact account and month, so the delivered frontend carries none. A statement is a fixed fixture of at most 120 entries, returned whole and paged at up to 100 rows in the browser; reconciling one to recorded evidence sends only the account and month, in existing GET reads that are skipped in live-read mode. Explanation handoffs carry a serializable
+`origin`, so the shell offers a return that restores the statement, including after a refresh. Period validation waits for the available-month list. Serializable investigation
 context/revisions live in each entry's `fbbWorkspace` history state; restoring a
 revision remounts that contextual workspace when necessary. Context is not added
 to the shareable URL. DOM focus targets for Audit returns remain in memory.
@@ -514,10 +547,11 @@ Browser (CommissionAssistant) → api/client.js POST /chat/stream
       → tool_executor → db/measure_evidence → named existing queries/services
         → queries.py owns CSV coverage and query reads
       ← bounded projections with complete aggregates and source-specific coverage
-      → existing response builders validate evidence and compute derived figures
-      → narrative supplies structured evidence, scope, history and fact references
-    ← Claude composes prose; application checks references before publication
-      + application-owned tables, tool/period provenance and audit disclosures
+      → application prepares Decimal arithmetic and validates source evidence
+      → PreparedAnswer supplies scope, facts, supported claims and allowed actions
+    ← Claude returns an AnswerDraft; compose_answer validates the whole draft
+      → application renders facts, selected actions, tables and mandatory caveats
+      + tool/period provenance and audit disclosures
   ← NDJSON status/text events, then {type: complete, response, tools_called, ...}
 ← progress events, then validated markdown and completion
 ```
@@ -529,14 +563,31 @@ text includes scope resolution, evidence retrieval and final composition.
 
 Scope interpretation is still probabilistic. Deterministic enforcement begins at
 the validated interpretation: the model cannot choose arbitrary data tools.
-The final composition stage uses application-owned fact references for values,
-accounts, periods and source identifiers. Unknown references and known invalid
-candidates are withheld; one repair shares the original deadline. Rejection or
-provider failure after retrieval returns a concise explanation failure with the
-retrieved evidence retained. Cancellation and the overall deadline retain their
-existing transport behavior. Reference checks constrain factual values but do
-not prove semantic correctness: a model can still misdescribe a supported fact.
-Public conversation tests and real-provider evaluations cover that residual risk.
+Both answer paths use `compose_answer()` over an application-created
+`PreparedAnswer`. Its scope preserves exact account, month, Findings identity and
+inventory product. Facts carry answer-local IDs, financial meaning, units,
+availability, source references, coverage and derivation references. Preparation
+owns totals, comparisons, ranked subtotals, variance percentages, investigation
+counts, product contributions and page ranges. Money remains `Decimal` internally
+and becomes decimal strings for model input. Narrative and tables consume the
+same prepared values; unavailable evidence remains distinct from recorded zero.
+
+The model returns an `AnswerDraft`: a nullable headline, explanation blocks with
+`text` and `claim_ids`, and `next_step_ids`. Every fact placeholder must belong to
+a claim cited by its block. Unknown fact, claim or action IDs fail validation,
+alongside financial-meaning, scope, population, causal and unsafe-content checks.
+A claim reference does not prove arbitrary prose true. Selected actions use
+application-owned wording, and mandatory source-specific caveats are appended
+even when the draft omits them. The answer limit remains 12,000 characters and
+the model-input limit remains 180 KB. Facts are extracted from structured evidence
+and exact authoritative KB blocks with source context, never generated Markdown.
+
+Rejected drafts are withheld. One repair shares the original deadline and
+recovery allowance; exhausted recovery returns a concise explanation failure
+with retrieved evidence retained, without an automatic evidence-only fallback.
+Cancellation and the overall deadline retain their existing transport behavior.
+Mocked tests verify enforcement and publication boundaries, not real-provider
+semantic accuracy or latency. Live-provider evaluation remains opt-in.
 The latest question, reporting month and workspace context are distinct inputs;
 existing scoped conversation history supplies user-agreed definitions and accepted
 alternatives. Ambiguous requests clarify; clear unsupported requests select a
@@ -572,21 +623,25 @@ Existing standalone tools and scoped finding explanations keep their contracts;
 ordinary chat no longer performs an unrestricted model-selected tool loop.
 See `docs/ATLAS_MEASURE_SCOPE.md` for capabilities and verification limits.
 
-### Explain Findings — scoped evidence and streamed generation
+### Explain Findings — scoped evidence and validated publication
 
 Overview's Explain Findings action carries an exact dealer, month, finding
 module/type and, for inventory, required product code. After explicit submission,
 `POST /chat/explain` validates this identity against existing assurance/query
 evidence through `tool_executor.execute_explanation_evidence` and
-`db/explanation_evidence.py`. It then makes one explanation-generation call,
-without a model-selected tool round trip. The full core KB remains in the
-system prompt. Source provenance, missing-evidence qualifications and bounded
-detail counts accompany the evidence; a zero-record sample cannot establish
-population-wide root-cause counts.
+`db/explanation_evidence.py`. The already retrieved evidence passes through the
+same preparation and `compose_answer()` contract as ordinary chat, without scope
+interpretation or an evidence reread. Inventory model input contains only the
+selected product's evidence; broader retrieval metadata cannot become selected
+product facts. The full core KB remains in the system prompt. Source provenance,
+missing-evidence qualifications and bounded detail counts accompany the evidence;
+a zero-record sample cannot establish population-wide root-cause counts.
 
-The response is NDJSON: incremental `text` events followed by one `complete`
-event carrying the existing response/tool/data metadata, or a sanitized `error`
-event. Partial answers remain visibly incomplete. Scoped conversations survive
+The response is NDJSON: progress `status` events precede publication. Only after
+complete draft validation may `text` events publish the rendered answer, followed
+by one `complete` event with the existing response/tool/data metadata. Refusal,
+truncation, timeout or exhausted recovery produces a sanitized `error`; provisional
+or rejected model prose never reaches the transport. Scoped conversations survive
 workspace navigation, and Stop cancels the active request. Edited questions and
 follow-ups use the evidence-bound ordinary chat path. See `docs/INFERENCE_LATENCY.md` for
 the wire contract, timing measurements and operational validation limits.
@@ -594,7 +649,11 @@ the wire contract, timing measurements and operational validation limits.
 Both paths share `agent/inference.py`: SDK retries are disabled, and one recovery
 allowance is shared by provider retry, scope repair and narrative repair within
 the existing 90-second request deadline. HTTP timeouts are explicit. Stable
-system/tool prefixes use provider prompt caching. Payload-free
+system/tool prefixes use provider prompt caching. Static forced-tool schemas use
+`inference.strict_tool()`, which deep-copies the definition and applies the installed
+Anthropic SDK schema transformer with `strict: true`. Original local constraints
+and cross-field checks remain authoritative; strict provider schemas do not replace
+grounding validation. Payload-free
 logs separate evidence, model calls, retries, first text, total duration and
 token/cache usage. Streaming cannot retry after emitting answer text. Blocking
 read-only data work runs in a worker thread; cancellation stops the waiting
@@ -777,8 +836,9 @@ small while keeping the detail reachable.
 
 **The ordinary agent turn (`agent/agent.py`).** `run_agent()` makes a structured
 scope-resolution call, retrieves and validates bounded evidence, then delegates
-final prose to `agent/narrative.py`. Claude receives structured facts and writes
-the answer; existing builders still own validation, derived arithmetic and tables.
+final prose to shared `compose_answer()` in `agent/narrative.py`. Claude explains
+supported claims; Python owns prepared arithmetic, evidence status, required
+caveats, tables, provenance and permitted next steps.
 Policy and evidence answers use composition. Missing-scope clarifications,
 unresolved dealer names and portfolio discovery complete directly using
 application-owned responses, so asking for an account or period cannot fail
@@ -897,7 +957,7 @@ on the same (dealer, period).
   assurance/audit modules directly — go through `execute_query`. (This is a hard
   rule in `CLAUDE.md`.)
 - **Config via `backend/config.py`.** All env vars are read once there into
-  module constants. Don't call `os.getenv` elsewhere. `.env.example` documents
+  module constants. Don't read the environment elsewhere; test setup that configures a server it starts is exempt. `.env.example` documents
   every variable; copy it to `.env` for local runs.
 - **Mode flags.** `USE_SAMPLE_DATA` (CSV vs Presto) and `PAYMENT_SOURCE`
   (simulated vs apdp) are the two switches that change where data comes from.
@@ -920,6 +980,7 @@ on the same (dealer, period).
   | **Agent tool INPUT parameters** (`get_dealer_summary`, `get_zero_commission_records`, etc.) | `distributor_code` | Documented in CLAUDE.md and grounded into the KB. Renaming would invalidate the model's tool schema. |
   | **API response fields** (`GET /dealers`, `GET /payments/summary`, everything the frontend consumes) | `dealer_id` / `dealer_name` | User-facing vocabulary — Finance/RA talk about "dealers", not "distributors". Uniform across every endpoint. |
   | **Audit-trail subject** (`audit.verification_trail.partner_code`) | `partner_code` / `partner_name` | Generic — supports composite keys like `"{dealer}:{product}"` for the `inventory_mismatch` module. |
+  | **Partner Sales simulation** (`/partner-sales/*`, `backend/sales/`) | `account_code` (a `partner` or `buyer` object calls it `code`, beside its `name`) | One exact trade partner account; same-named accounts have different codes. Used by the two-login demo sessions too. Never a dealer aggregate or an audit subject. |
 
   **How to remember this in code.**
   - If you're writing SQL or reading from a raw DataFrame → `distributor_code`.
@@ -982,11 +1043,13 @@ Things that are deliberately incomplete, temporary, or non-obvious — don't
   legacy `zero_commission_trail` table to `verification_trail` on
   older audit DBs. Intentional convenience so a pre-existing DB
   doesn't need an operator migration.
-- **No auth.** Any caller can hit any endpoint and query any dealer.
-  Fine for the pilot; a real deployment needs authn/authz (flagged in
-  `docs/PRODUCTION_READINESS_LEARNING_PLAN.md`). The GM preview is
-  gated by HTTP Basic Auth at the FastAPI layer — not a real user
-  system.
+- **Demonstration logins only.** `backend/auth/` signs in fixed internal
+  and partner logins from `DEMO_LOGINS`, with a signed session cookie and a
+  deny-by-default route policy (docs/adr/0002-partner-sales-two-logins.md).
+  Without valid `DEMO_LOGINS` and `DEMO_SESSION_SECRET` the application stays
+  closed locally, and a hosted deployment refuses to start. It is not a real
+  user system: a production deployment needs enterprise identity and authz
+  (flagged in `docs/PRODUCTION_READINESS_LEARNING_PLAN.md`).
 - **No CI linter; one known-flaky test.**
   `test_inventory_agent.py::test_kb_inventory_rules_grounded` is a
   live-LLM test that occasionally emits "fraud" in a KB-forbidden
