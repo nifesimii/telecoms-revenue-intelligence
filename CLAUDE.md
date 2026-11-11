@@ -1,4 +1,4 @@
-# FBB Trade Partner Intelligence Platform
+# Trade Partner Intelligence Platform
 ## Claude Code Instructions
 
 > See ARCHITECTURE.md for codebase structure and design decisions (onboarding

@@ -226,7 +226,7 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="FBB Trade Partner Intelligence API",
+    title="Trade Partner Intelligence Platform API",
     description=(
         "Finance intelligence backend for MTN Nigeria's Fixed Broadband "
         "trade partner commission programme."

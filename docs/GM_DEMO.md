@@ -1,4 +1,4 @@
-# FBB Trade Partner Intelligence — Demo Guide
+# Trade Partner Intelligence Platform — Demo Guide
 
 A short read-along for the preview at
 [https://fbb-preview.onrender.com](https://fbb-preview.onrender.com). Log

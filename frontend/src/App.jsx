@@ -214,7 +214,7 @@ function Shell({ session, onSignOut }) {
             <div className="flex min-w-0 items-center gap-3">
               <span aria-hidden="true" className="w-1 h-8 bg-mtn-yellow rounded-sm shrink-0" />
               <span className="text-base font-semibold tracking-tight text-gray-900">
-                FBB Trade Partner Intelligence
+                Trade Partner Intelligence Platform
               </span>
             </div>
             <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-3 sm:w-auto sm:gap-5">

@@ -1,6 +1,6 @@
 # Deploy — GM Preview on Render
 
-Getting a shareable link for the FBB Trade Partner Intelligence Platform.
+Getting a shareable link for the Trade Partner Intelligence Platform.
 Single Render web service (Docker) that serves both the FastAPI backend and
 the built React SPA on one origin, plus one managed Postgres for the Audit
 Trails feature. Everything runs on sample data — no MTN systems touched.

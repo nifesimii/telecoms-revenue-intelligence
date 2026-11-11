@@ -1,4 +1,4 @@
-# Onboarding — Getting Productive on the FBB Trade Partner Intelligence Codebase
+# Onboarding — Getting Productive on the Trade Partner Intelligence Platform Codebase
 
 For new team members joining the platform. Work through the steps in order,
 at your own pace. Each step names concrete files to read, actions to take,

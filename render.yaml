@@ -1,4 +1,4 @@
-# Render Blueprint — FBB Trade Partner Intelligence GM preview.
+# Render Blueprint — Trade Partner Intelligence Platform GM preview.
 #
 # One web service (Docker: FastAPI + built SPA on one origin) plus a managed
 # Postgres for the Audit Trails feature. Everything runs on sample data —

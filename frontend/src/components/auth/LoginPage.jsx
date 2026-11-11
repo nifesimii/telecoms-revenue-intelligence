@@ -35,7 +35,7 @@ export default function LoginPage({ notice, onSignedIn }) {
     <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6">
       <div className="flex items-center gap-3">
         <span aria-hidden="true" className="h-8 w-1 shrink-0 rounded-sm bg-mtn-yellow" />
-        <h1 className="text-base font-semibold tracking-tight text-gray-900">FBB Trade Partner Intelligence</h1>
+        <h1 className="text-base font-semibold tracking-tight text-gray-900">Trade Partner Intelligence Platform</h1>
       </div>
       <p className="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">Demonstration only. Partner Sales records are fictional and are not actual obligations.</p>
       {notice && <p role="status" className="mt-3 text-sm text-gray-700">{notice}</p>}
