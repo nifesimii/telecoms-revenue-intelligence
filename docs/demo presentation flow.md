@@ -5,7 +5,9 @@ Use this document to develop the recording sequence and add questions, narration
 or screen actions later.
 
 Take the audience through one investigation: **what we owe → what has been paid →
-what changed → what the evidence supports → what Finance should do next**.
+what changed → what the evidence supports → what Finance should do next**. Then
+show the other direction with Partner Sales: **what the partner would owe MTN for
+purchases, kept separate from the commission MTN would owe them**.
 
 ## Opening and setup
 
@@ -76,6 +78,36 @@ recorded checks; they do not resolve that policy conflict.
 
 Use this as an example of Atlas identifying a decision that Finance must resolve.
 
+## Partner Sales: the other direction
+
+River Isle Ventures, account 296065, connects the two parts. It is the Atlas
+rehearsal's second dealer, the Partner Sales rehearsal partner, and the only account
+whose Partner Sales commission account links back to the Commission evidence, in
+May 2026. Step numbers refer to the [Partner Sales rehearsal](PARTNER_SALES_REHEARSAL.md).
+
+Before recording, put two windows side by side: Finance in a normal window and the
+partner in a private window, signed in as **partner-296065**. As Finance, choose
+**Reset simulation**, then **Reset to starting point** shortly before you start.
+
+| # | Part | Do | Say or show |
+| --- | --- | --- | --- |
+| 1 | Hand-off in Atlas | Switch to River Isle Ventures, 296065. Ask for June activations, then **"And May?"** | 495, then 472. Atlas keeps the dealer, and the demonstration is now in May 2026, the month Partner Sales uses. |
+| 2 | The partner's view | Rehearsal steps 2 and 3: start a draft order, add 2 × FBB-5G-ROUTER and 100 × RCC-0100, preview and submit | The partner signs in to their own account only. The order totals NGN 110,000.00. |
+| 3 | Finance acts | Steps 4 to 9: review SIM-ORD-0002, issue invoice SIM-INV-0004, record 40000, then 70000. Refresh the partner window after each | Each Finance action reaches the partner on their next refresh: Issued, Partially paid, then Paid. |
+| 4 | Two separate balances | Steps 10 and 11: the partner's May commission account, then Finance's purchase obligations and commission account | The May commission account still closes at NGN 822,582.53. The partner would owe MTN for purchases and MTN would owe the partner commission. The two are never netted. |
+| 5 | Back to the evidence | Step 12: **Explain activation commission**, then **Return to Partner Sales** | The partner's statement leads back to the recorded evidence Atlas works from. |
+
+Every Partner Sales record is fictional. Issuing an invoice or recording a
+collection establishes no actual purchase obligation or payment, and never changes
+commission.
+
+### For a shorter recording
+
+- Skip rehearsal steps 13 to 15, the second partner and the final reset. Keep step
+  13 if Revenue Assurance wants to see that a partner reaches only their own records.
+- Show issuing only, not the rejection variant.
+- Allow 20 to 30 seconds for each Atlas answer.
+
 ## Future additions
 
 - Additional questions:
@@ -83,11 +115,15 @@ Use this as an example of Atlas identifying a decision that Finance must resolve
 - Screen actions or transitions:
 - Feedback from Finance:
 - Feedback from Revenue Assurance:
+- Feedback questions: Would partners use a view like this? Do "purchase
+  obligation" and "commission account" match the terms Finance uses?
 - Closing message:
 
 ## Related rehearsal reference
 
 See [Atlas demo rehearsal](ATLAS_DEMO_REHEARSAL.md) for additional questions,
-sample figures, test commands, and verification limits. This document captures
+sample figures, test commands, and verification limits, and the
+[Partner Sales rehearsal](PARTNER_SALES_REHEARSAL.md) for every Partner Sales step,
+what to expect and what to do if something goes wrong. This document captures
 the proposed presentation flow; not every exact wording above has been separately
 live-tested.
