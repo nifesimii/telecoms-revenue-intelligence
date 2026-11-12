@@ -141,7 +141,8 @@ def test_policy_quote_is_verified_against_complete_core_kb(monkeypatch):
 def test_invented_policy_quote_does_not_cross_answer_boundary(monkeypatch):
     install_scope_provider(monkeypatch, {"kind": "knowledge", "knowledge_quote": "All partners earn 99% commission."})
     result = _run(run_agent("What is the rate?"))
-    assert result["response"] == FALLBACK_RESPONSE
+    assert "99%" not in result["response"]
+    assert result["response"].startswith("Please specify the measure")
 
 
 def test_financial_statements_render_source_lines_without_summing_them(monkeypatch):

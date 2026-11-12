@@ -179,6 +179,10 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
             original_candidate = candidate
         try:
             scope = MeasureScope.model_validate(candidate)
+            if scope.kind == 'knowledge':
+                # A paraphrased KB quote is an invalid scope; repair it here
+                # rather than fail the turn after scope resolution.
+                knowledge_response(scope, prompts.KB_CONTENT, sample_mode=config.USE_SAMPLE_DATA)
             if attempt and not repair_preserves_scope(original_candidate, scope):
                 run.log('scope_validation', stage='scope', reason='repair_scope_changed', repair_count=attempt)
                 scope = MeasureScope(kind='clarification', clarification='request')

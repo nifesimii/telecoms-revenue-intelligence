@@ -127,9 +127,27 @@ def test_invalid_scope_never_calls_data_tools(monkeypatch, changes):
 
 
 def test_no_unverified_knowledge_quote_crosses_output_boundary(monkeypatch):
-    install_plan(monkeypatch, {'kind': 'knowledge', 'knowledge_quote': 'Dealer 74050 earned NGN 900,000.00.'})
+    create = install_plan(monkeypatch, {'kind': 'knowledge', 'knowledge_quote': 'Dealer 74050 earned NGN 900,000.00.'})
     result = asyncio.run(agent.run_agent('What commission is owed to 74050?'))
-    assert result['response'] == agent.FALLBACK_RESPONSE
+    assert 'NGN 900,000.00' not in result['response']
+    assert result['response'].startswith('Please specify the measure')
+    assert create.await_count == 2
+
+
+def test_misquoted_knowledge_scope_is_repaired_before_answering(monkeypatch):
+    quote = '| 5G ROUTER            | 68,465.12                | 8,215.81              | TOZED ROUMOD4393, ZTE MC888D 5G CPE, HUAWEI ROUWIR4332      |'
+    plans = iter([{'kind': 'knowledge', 'knowledge_quote': 'Commission is final once reviewed.'},
+                  {'kind': 'knowledge', 'knowledge_quote': quote}])
+    from backend.tests.narrative_provider import final_response, is_final_call
+    async def reply(**kwargs):
+        if is_final_call(kwargs):
+            return final_response(kwargs)
+        return SimpleNamespace(content=[ToolUseBlock(type='tool_use', id='scope', name='resolve_measure_request',
+                                                     input=next(plans))], stop_reason='tool_use', usage=None)
+    client = SimpleNamespace(messages=SimpleNamespace(create=AsyncMock(side_effect=reply)), close=AsyncMock())
+    monkeypatch.setattr(agent, 'new_client', lambda key: client)
+    result = asyncio.run(agent.run_agent('What is the commission rate for a 5G Router activation?'))
+    assert '8,215.81' in result['response']
 
 
 def test_name_code_lookup_remains_available_without_unrelated_figures(monkeypatch):
