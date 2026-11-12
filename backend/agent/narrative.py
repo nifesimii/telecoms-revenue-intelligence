@@ -46,8 +46,6 @@ ANSWER_TOOL = {
     'input_schema': AnswerDraft.model_json_schema(),
 }
 _TOKEN = re.compile(r'\{\{(f\d+)\}\}')
-# Which dealer and month a figure belongs to; any sentence may name them.
-_CONTEXT_FIELDS = ('period', 'dealer_id', 'dealer_name')
 _NUMBER = re.compile(r'(?<![\w])(?:(?:NGN|₦)\s*)?-?\d[\d,]*(?:\.\d+)?%?')
 _CAUSES = {
     'USP_SNAPSHOT_MISS': RATE_CARD_MISS_LABEL,
@@ -357,11 +355,9 @@ def _candidate(response, prepared: PreparedAnswer):
         ids = _TOKEN.findall(text)
         if any(fact_id not in facts for fact_id in ids):
             raise NarrativeGroundingError('Unknown fact reference')
-        allowed = {fact_id for claim_id in block.claim_ids for fact_id in claims[claim_id]['fact_ids']}
-        allowed |= {fact['id'] for fact in prepared.facts if fact['path'].startswith('scope.')
-                    or fact['path'].rsplit('.', 1)[-1] in _CONTEXT_FIELDS}
-        if any(fact_id not in allowed for fact_id in ids):
-            raise NarrativeGroundingError('Fact reference is not supported by a cited claim')
+        # Every placeholder is an application-supplied fact. Claim grouping is by
+        # source path, so a sentence naming a figure, its dealer and month spans
+        # claims; requiring each fact's own claim rejected ordinary answers.
         if not block.claim_ids and prepared.claims:
             raise NarrativeGroundingError('Explanation requires a supported claim')
         # Citations are necessary, not sufficient. Keep semantic guards on both

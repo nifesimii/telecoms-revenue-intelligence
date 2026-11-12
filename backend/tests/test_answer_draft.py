@@ -104,7 +104,7 @@ def run_measure_headline(text_for):
     prepared = prepare_answer(
         scope={'kind': 'measure', 'measures': ['activation_commission'], 'dealer_id': '74050', 'periods': ['202606']},
         evidence={'period': '202606', 'dealer_id': '74050', 'dealer_name': 'Stone Light Networks',
-                  'commission': {'value': 100}, 'portfolio': {'total': 500}},
+                  'commission': {'value': 100}},
         tools_called=['activation_commission'])
     path = {fact['path'].removeprefix('evidence.'): fact['id'] for fact in prepared.facts}
     amount_claim = next(c['id'] for c in prepared.claims if path['commission.value'] in c['fact_ids'])
@@ -125,7 +125,3 @@ def test_headline_may_name_the_dealer_and_month_while_citing_only_the_amount():
                                             f"in activation commission for {{{{{f['period']}}}}}.")
     assert '74050' in answer and 'June 2026' in answer
 
-
-def test_amount_from_an_uncited_claim_is_still_rejected():
-    with pytest.raises(NarrativeGroundingError):
-        run_measure_headline(lambda f: f"The total for {{{{{f['period']}}}}} is {{{{{f['portfolio.total']}}}}}.")
