@@ -98,3 +98,34 @@ def test_repair_cannot_push_model_input_past_byte_limit():
         asyncio.run(compose_answer(client, InferenceRun('test'), prepared=prepared,
                                   question=question, history=[], sample_mode=False, model='test'))
     assert len(calls) == 1
+
+
+def run_measure_headline(text_for):
+    prepared = prepare_answer(
+        scope={'kind': 'measure', 'measures': ['activation_commission'], 'dealer_id': '74050', 'periods': ['202606']},
+        evidence={'period': '202606', 'dealer_id': '74050', 'dealer_name': 'Stone Light Networks',
+                  'commission': {'value': 100}, 'portfolio': {'total': 500}},
+        tools_called=['activation_commission'])
+    path = {fact['path'].removeprefix('evidence.'): fact['id'] for fact in prepared.facts}
+    amount_claim = next(c['id'] for c in prepared.claims if path['commission.value'] in c['fact_ids'])
+
+    async def create(**kwargs):
+        return SimpleNamespace(stop_reason='tool_use', content=[SimpleNamespace(
+            type='tool_use', name='compose_grounded_answer', input={
+                'headline': {'text': text_for(path), 'claim_ids': [amount_claim]},
+                'explanation_blocks': [], 'next_step_ids': []})])
+    client = SimpleNamespace(messages=SimpleNamespace(create=create))
+    return asyncio.run(compose_answer(client, InferenceRun('test'), prepared=prepared,
+                                     question='What activation commission is recorded for this dealer?',
+                                     history=[], sample_mode=False, model='test'))
+
+
+def test_headline_may_name_the_dealer_and_month_while_citing_only_the_amount():
+    answer = run_measure_headline(lambda f: f"Dealer {{{{{f['dealer_id']}}}}} earned {{{{{f['commission.value']}}}}} "
+                                            f"in activation commission for {{{{{f['period']}}}}}.")
+    assert '74050' in answer and 'June 2026' in answer
+
+
+def test_amount_from_an_uncited_claim_is_still_rejected():
+    with pytest.raises(NarrativeGroundingError):
+        run_measure_headline(lambda f: f"The total for {{{{{f['period']}}}}} is {{{{{f['portfolio.total']}}}}}.")

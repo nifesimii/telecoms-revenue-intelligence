@@ -20,7 +20,7 @@ from backend.agent.measure_scope import (
 )
 from backend.agent.measure_response import render_measure_response, render_dealer_codes, render_affiliation, render_discovery
 from backend.agent.dealer_resolution import resolve_dealer_name
-from backend.agent.inference import InferenceRun, cached_system, new_client, strict_tool
+from backend.agent.inference import InferenceRun, cached_system, new_client
 from backend.agent.answer_evidence import prepare_answer
 from backend.agent.narrative import compose_answer, NarrativeGroundingError, NARRATIVE_FALLBACK
 
@@ -168,7 +168,8 @@ async def _run_turn(client: Any, run: InferenceRun, user_message: str,
             client, **({'emit': discard_draft} if emit is not None else {}),
             model=MODEL_NAME, max_tokens=MAX_TOKENS,
             system=cached_system(prompts.get_measure_system_prompt()),
-            tools=[strict_tool(SCOPE_TOOL)], tool_choice={'type': 'tool', 'name': SCOPE_TOOL['name']},
+            # Not strict: the provider transform loosens fields MeasureScope then rejects.
+            tools=[SCOPE_TOOL], tool_choice={'type': 'tool', 'name': SCOPE_TOOL['name']},
             messages=messages,
         )
         blocks = [block for block in response.content if block.type == 'tool_use']
